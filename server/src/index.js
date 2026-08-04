@@ -1,30 +1,43 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
+const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
 const connectDB = require('./config/db');
+const { initSocket } = require('./sockets/violationSocket');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
 
+// CORS for Express API
 app.use(cors());
 app.use(express.json());
 
-// connectDB(); // Un-comment when ready to test mongodb
+// Initialize Socket.io
+const io = initSocket(server);
+app.locals.io = io; // Make io accessible in routes
 
-require('./sockets/violationSocket')(io);
+// Connect to MongoDB (without crashing if it fails)
+connectDB();
 
-app.use('/violations', require('./routes/violations'));
+// Mount Routes
+app.use('/', require('./routes/violations'));
 app.use('/sessions', require('./routes/sessions'));
-app.use('/submissions', require('./routes/submissions'));
 app.use('/exam', require('./routes/examPaper'));
+app.use('/risk-score', require('./routes/riskScore'));
 
-app.use(require('./middleware/errorHandler'));
+// Test Route: /health
+app.get('/health', (req, res) => {
+    // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+    const isConnected = mongoose.connection.readyState === 1;
+    res.json({
+        status: "ok",
+        db: isConnected ? "connected" : "disconnected"
+    });
+});
 
-const PORT = process.env.SERVER_PORT || 3000;
+const PORT = process.env.SERVER_PORT || 5000;
 server.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
 });

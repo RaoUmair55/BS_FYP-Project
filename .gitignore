@@ -6,3 +6,5 @@ uploads/
 screenshots/
 dist/
 build/
+./server/.env 
+./client/.env
