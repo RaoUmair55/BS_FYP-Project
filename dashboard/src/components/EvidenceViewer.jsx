@@ -1,0 +1,1 @@
+export default function EvidenceViewer({ evidence }) { return <div>Evidence Viewer</div>; }

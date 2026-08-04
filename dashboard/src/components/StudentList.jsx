@@ -1,0 +1,1 @@
+export default function StudentList({ students }) { return <div>Student List</div>; }

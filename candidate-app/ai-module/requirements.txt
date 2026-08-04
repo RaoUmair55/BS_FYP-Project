@@ -1,0 +1,7 @@
+opencv-python==4.9.0.80
+mediapipe==0.10.9
+onnxruntime==1.17.0
+fastapi==0.109.2
+uvicorn==0.27.1
+psutil==5.9.8
+pydantic==2.6.1

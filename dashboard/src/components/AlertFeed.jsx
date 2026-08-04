@@ -1,0 +1,1 @@
+export default function AlertFeed({ alerts }) { return <div>Alert Feed</div>; }

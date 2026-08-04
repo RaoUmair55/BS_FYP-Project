@@ -1,0 +1,1 @@
+export default function RiskScoreBadge({ score }) { return <div>Risk Score: {score}</div>; }

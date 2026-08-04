@@ -1,0 +1,1 @@
+export default function PaperUploader({ onUpload }) { return <div>Paper Uploader</div>; }
