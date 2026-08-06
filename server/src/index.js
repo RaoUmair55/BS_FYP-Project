@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const connectDB = require('./config/db');
@@ -13,6 +14,9 @@ const server = http.createServer(app);
 // CORS for Express API
 app.use(cors());
 app.use(express.json());
+
+// Serve static uploads (for screenshots)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Initialize Socket.io
 const io = initSocket(server);

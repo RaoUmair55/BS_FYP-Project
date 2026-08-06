@@ -1,0 +1,128 @@
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px 0 rgba(60,64,67,0.1);
+    z-index: 10;
+}
+
+.dashboard-header h1 {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 500;
+    color: var(--google-grey-800);
+    letter-spacing: 0;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+
+.tab-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.tab-buttons button {
+    padding: 8px 24px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 24px; /* Pill shape */
+    font-weight: 500;
+    font-size: 0.875rem;
+    font-family: var(--font-sans);
+    transition: all 0.2s ease;
+}
+
+.tab-buttons button:hover {
+    background: var(--google-grey-100);
+    color: var(--google-grey-800);
+}
+
+.tab-buttons button.active {
+    background: #e8f0fe;
+    color: var(--google-blue);
+}
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-surface);
+    padding: 6px 16px;
+    border-radius: 24px;
+    border: 1px solid var(--border-color);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+.status-dot.connected {
+    background-color: var(--google-green);
+}
+.status-dot.disconnected {
+    background-color: var(--google-red);
+}
+
+.dashboard-main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    padding: 24px;
+    gap: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.dashboard-left {
+    width: 40%;
+    min-width: 380px;
+    background: var(--bg-surface);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--elevation-1);
+}
+
+.dashboard-right {
+    width: 60%;
+    flex: 1;
+    background: var(--bg-surface);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--elevation-1);
+}
+
+.dashboard-main-single {
+    padding: 40px;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+}

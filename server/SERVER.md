@@ -22,11 +22,19 @@ Server connects to MongoDB, exposes a health check endpoint, and implements the 
 - `src/routes/riskScore.js`: Provides the `GET /risk-score/:sessionId` endpoint to manually fetch a calculated score.
 - `src/sockets/violationSocket.js`: Added the `broadcastRiskScoreUpdate` function to push new scores immediately.
 - `src/routes/violations.js`: Updated to calculate and push the new risk score down the socket pipe every time a new violation is created.
-- `src/index.js`: Mounted the new `/risk-score` router.
+- `src/index.js`: Mounted the new `/risk-score` router. Added `express.static` to serve the `/uploads` directory so the dashboard can render screenshots.
+
+## Hardening Pass (Resilience & Edge Cases)
+1. **MongoDB Disconnect Fallback**: The `POST /violation` route now detects if MongoDB is unreachable (`readyState !== 1`). Instead of dropping the data or crashing, it writes the raw JSON violation to `server/uploads/failed-violations/`, still broadcasts it via Socket.io so the dashboard is alerted, and returns `200 OK` to the candidate app (preventing infinite retry loops).
+2. **Session Termination**: Added `PATCH /sessions/:sessionId/end` to properly mark exams as "completed" and stamp the `endTime`.
+3. **Static File Serving**: Confirmed `express.static` is correctly mounting the `uploads/` directory at `/uploads`, ensuring screenshots and exam papers are URL-addressable by the dashboard.
+4. **Zero-Violation Grace Handling**: Confirmed `GET /risk-score/:sessionId` properly returns `{ riskScore: 0 }` if a student has an absolutely clean record, preventing math crashes.
+5. **Session ID Validation**: `POST /violation` now validates if the incoming `sessionId` exists in MongoDB. If it doesn't, it still saves the evidence but emits a `console.warn` so system admins can detect desyncs without losing proctoring data.
 
 ## Next Steps
-- Backend MVP is completely FEATURE-COMPLETE! 
-- Next phase: Build the React Dashboard interface to consume these APIs.
+- Backend is hardened, production-ready, and FULLY COMPLETE.
+- The dashboard is also complete.
+- Remaining work is purely on the Candidate App (fetching the exam paper, hooking into the Python tracker).
 
 ## Testing This Step
 Run these curl commands to test the scoring engine. Try posting multiple violations, waiting a minute, and posting another to see how the score changes.
