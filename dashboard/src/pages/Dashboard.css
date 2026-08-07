@@ -12,7 +12,7 @@
     padding: 12px 24px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-color);
-    box-shadow: 0 1px 2px 0 rgba(60,64,67,0.1);
+    box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.1);
     z-index: 10;
 }
 
@@ -41,7 +41,8 @@
     border: 1px solid transparent;
     color: var(--text-muted);
     cursor: pointer;
-    border-radius: 24px; /* Pill shape */
+    border-radius: 24px;
+    /* Pill shape */
     font-weight: 500;
     font-size: 0.875rem;
     font-family: var(--font-sans);
@@ -76,9 +77,11 @@
     border-radius: 50%;
     margin-right: 8px;
 }
+
 .status-dot.connected {
     background-color: var(--google-green);
 }
+
 .status-dot.disconnected {
     background-color: var(--google-red);
 }
@@ -115,7 +118,7 @@
     border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* overflow: hidden; */
     box-shadow: var(--elevation-1);
 }
 

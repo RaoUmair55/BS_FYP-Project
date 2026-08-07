@@ -1,1 +1,25 @@
-["chrome.exe", "explorer.exe", "notepad.exe"]
+{
+  "exam_whitelist": [
+    "electron.exe",
+    "candidate-app-electron.exe",
+    "python.exe"
+  ],
+  "dev_whitelist": [
+    "electron.exe",
+    "candidate-app-electron.exe",
+    "python.exe",
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "wt.exe",
+    "code.exe",
+    "antigravity ide.exe",
+    "msedge.exe",
+    "chrome.exe",
+    "node.exe",
+    "firefox.exe",
+    "brave.exe",
+    "ollama.exe",
+    "ollama_llama_server.exe"
+  ]
+}

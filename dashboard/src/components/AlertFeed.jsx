@@ -36,6 +36,9 @@ export default function AlertFeed({ violations }) {
                         <span className="feed-time">{timeAgo(v.timestamp)}</span>
                     </div>
                     <div className="feed-session mono">Session: {v.sessionId}</div>
+                    {v.type === 'unauthorized_app' && v.details?.object_class && (
+                        <div className="feed-details">App: {v.details.object_class}</div>
+                    )}
                 </div>
             ))}
         </div>

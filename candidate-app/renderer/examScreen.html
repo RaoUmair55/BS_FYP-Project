@@ -1,9 +1,117 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <link rel="stylesheet" href="styles/main.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IntegrityFlow — Exam in Progress</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f4f7f6;
+      color: #333;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      text-align: center;
+      max-width: 500px;
+    }
+    h1 {
+      margin-top: 0;
+      color: #2c3e50;
+    }
+    .status {
+      padding: 12px 20px;
+      background-color: #e8f5e9;
+      color: #2e7d32;
+      border-radius: 4px;
+      margin-bottom: 24px;
+      font-weight: 500;
+    }
+    .status.error {
+      background-color: #ffebee;
+      color: #c62828;
+    }
+    button {
+      background-color: #1976d2;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #1565c0;
+    }
+    button:active {
+      background-color: #0d47a1;
+    }
+  </style>
 </head>
 <body>
-  <h1>Exam Screen</h1>
+
+  <div class="container">
+    <h1>IntegrityFlow</h1>
+    <h2>Exam in Progress</h2>
+    <div id="statusIndicator" class="status">
+      System Active & Monitoring
+    </div>
+    
+    <!-- Temporary button to test the pipeline -->
+    <button id="testViolationBtn">Send Test Violation</button>
+  </div>
+
+  <script>
+    // Listen for AI module crashes
+    window.api.onPythonCrash((info) => {
+      const statusEl = document.getElementById('statusIndicator');
+      statusEl.className = 'status error';
+      statusEl.innerText = `Critical Error: AI Module Stopped (Code: ${info.code})`;
+      
+      const btn = document.getElementById('testViolationBtn');
+      btn.disabled = true;
+      btn.style.backgroundColor = '#ccc';
+      btn.style.cursor = 'not-allowed';
+    });
+
+    document.getElementById('testViolationBtn').addEventListener('click', () => {
+      // Dummy payload matching CONTRACT.md
+      const payload = {
+        sessionId: "dummy-session-123", // backend handles unknown gracefully
+        type: "second_person_detected",
+        severity: 4,
+        timestamp: new Date().toISOString(),
+        details: {
+          confidence: 0.95,
+          duration: 3000
+        }
+      };
+
+      console.log('Sending test violation:', payload);
+      
+      // Call the IPC exposed via preload.js
+      window.api.sendTestViolation(payload);
+      
+      // Brief visual feedback
+      const btn = document.getElementById('testViolationBtn');
+      const originalText = btn.innerText;
+      btn.innerText = 'Sent!';
+      btn.style.backgroundColor = '#4caf50';
+      setTimeout(() => {
+        btn.innerText = originalText;
+        btn.style.backgroundColor = '';
+      }, 1500);
+    });
+  </script>
 </body>
 </html>
