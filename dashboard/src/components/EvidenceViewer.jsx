@@ -73,7 +73,7 @@ export default function EvidenceViewer({ sessionId }) {
                             
                             {v.screenshotPath && (
                                 <div className="evidence-image">
-                                    <img src={`${API_BASE_URL}/${v.screenshotPath}`} alt="Violation evidence" />
+                                    <img src={`${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`} alt="Violation evidence" />
                                 </div>
                             )}
                         </div>

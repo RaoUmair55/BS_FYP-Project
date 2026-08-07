@@ -6,11 +6,44 @@ const Violation = require('../models/Violation');
 const Session = require('../models/Session');
 const { broadcastViolation, broadcastRiskScoreUpdate } = require('../sockets/violationSocket');
 const { calculateRiskScore } = require('../scoring/severityEngine');
+const multer = require('multer');
+
+// Configure multer for screenshot uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, '../../uploads/screenshots');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
+    }
+});
+const upload = multer({ storage });
+
 const router = express.Router();
 
 // POST /violation
-router.post('/violation', async (req, res) => {
+router.post('/violation', upload.single('screenshot'), async (req, res) => {
     try {
+        // Handle multipart/form-data stringified fields
+        let details = req.body.details;
+        if (typeof details === 'string') {
+            try {
+                details = JSON.parse(details);
+            } catch (e) {
+                // fallback
+            }
+        }
+        
+        let screenshotPath = req.body.screenshotPath;
+        if (req.file) {
+            screenshotPath = `/uploads/screenshots/${req.file.filename}`;
+        }
+        
+        const severity = parseInt(req.body.severity, 10) || req.body.severity;
         // Validation check for unknown sessionId
         const sessionExists = await Session.exists({ _id: req.body.sessionId }).catch(() => null);
         if (!sessionExists && mongoose.connection.readyState === 1) {
@@ -20,10 +53,10 @@ router.post('/violation', async (req, res) => {
         const newViolation = new Violation({
             sessionId: req.body.sessionId,
             type: req.body.type,
-            severity: req.body.severity,
+            severity: severity,
             timestamp: req.body.timestamp,
-            details: req.body.details,
-            screenshotPath: req.body.screenshotPath
+            details: details,
+            screenshotPath: screenshotPath
         });
 
         // Check if MongoDB is connected (readyState 1 = connected)

@@ -1,9 +1,78 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <link rel="stylesheet" href="styles/main.css">
+  <meta charset="UTF-8">
+  <title>System Self-Check</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 2rem; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+    h1 { margin-top: 0; font-size: 1.5rem; text-align: center; }
+    .check-item { margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #e5e7eb; }
+    .check-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; font-weight: bold; }
+    .status-icon { font-size: 1.25rem; }
+    .status-pending { color: #9ca3af; }
+    .status-pass { color: #10b981; }
+    .status-fail { color: #ef4444; }
+    .check-content { display: flex; flex-direction: column; gap: 0.5rem; }
+    video { width: 100%; max-width: 320px; height: 240px; background: #000; border-radius: 4px; object-fit: cover; }
+    .mic-meter-container { width: 100%; height: 20px; background: #e5e7eb; border-radius: 10px; overflow: hidden; }
+    .mic-meter { height: 100%; background: #10b981; width: 0%; transition: width 0.1s; }
+    .app-list { list-style-type: none; padding: 0; margin: 0; color: #ef4444; }
+    .app-list li { margin-bottom: 0.25rem; }
+    button { background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; font-size: 1rem; cursor: pointer; width: 100%; font-weight: bold; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    button:hover:not(:disabled) { background: #2563eb; }
+    .secondary-button { background: #e5e7eb; color: #374151; margin-top: 0.5rem; }
+    .secondary-button:hover:not(:disabled) { background: #d1d5db; }
+  </style>
 </head>
 <body>
-  <h1>Self Check Screen</h1>
+  <div class="container">
+    <h1>System Self-Check</h1>
+    <p style="text-align: center; color: #6b7280; margin-bottom: 2rem;">Please complete the following checks before starting your exam.</p>
+
+    <div class="check-item" id="check-camera">
+      <div class="check-header">
+        <span>1. Camera Check</span>
+        <span class="status-icon status-pending">⏳</span>
+      </div>
+      <div class="check-content">
+        <video id="camera-preview" autoplay muted playsinline></video>
+        <p class="error-text" style="color: #ef4444; display: none;"></p>
+        <button id="btn-check-camera" class="secondary-button">Start Camera Check</button>
+      </div>
+    </div>
+
+    <div class="check-item" id="check-mic">
+      <div class="check-header">
+        <span>2. Microphone Check</span>
+        <span class="status-icon status-pending">⏳</span>
+      </div>
+      <div class="check-content">
+        <div class="mic-meter-container">
+          <div class="mic-meter" id="mic-level"></div>
+        </div>
+        <p style="font-size: 0.875rem; color: #6b7280;">Please make some noise to test your microphone.</p>
+        <p class="error-text" style="color: #ef4444; display: none;"></p>
+        <button id="btn-check-mic" class="secondary-button">Start Mic Check</button>
+      </div>
+    </div>
+
+    <div class="check-item" id="check-apps">
+      <div class="check-header">
+        <span>3. Running Apps Check</span>
+        <span class="status-icon status-pending">⏳</span>
+      </div>
+      <div class="check-content">
+        <p style="font-size: 0.875rem; color: #6b7280;">Checking for unauthorized background apps...</p>
+        <ul class="app-list" id="unauthorized-list"></ul>
+        <p class="error-text" style="color: #ef4444; display: none;"></p>
+        <button id="btn-check-apps" class="secondary-button">Run App Check</button>
+      </div>
+    </div>
+
+    <button id="btn-begin-exam" disabled>Begin Exam</button>
+  </div>
+  <script src="./selfCheck.js"></script>
 </body>
 </html>

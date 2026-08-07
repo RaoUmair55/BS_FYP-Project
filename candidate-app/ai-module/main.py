@@ -22,6 +22,9 @@ if __name__ == "__main__":
         on_violation_callback=send_violation_to_electron,
         mode=app_mode
     )
+    # Inject enforcer instance so server can use it for check_running_apps
+    server.enforcer = enforcer
+    
     monitor = AIMonitor()
     
     enforcer.start()

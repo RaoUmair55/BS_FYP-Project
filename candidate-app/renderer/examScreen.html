@@ -87,7 +87,7 @@
     document.getElementById('testViolationBtn').addEventListener('click', () => {
       // Dummy payload matching CONTRACT.md
       const payload = {
-        sessionId: "dummy-session-123", // backend handles unknown gracefully
+        sessionId: "661234567890abcdef123456", // must match Electron env and DB
         type: "second_person_detected",
         severity: 4,
         timestamp: new Date().toISOString(),

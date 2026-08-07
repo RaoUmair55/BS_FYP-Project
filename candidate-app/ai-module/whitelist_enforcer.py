@@ -4,6 +4,7 @@ import time
 import json
 import os
 from datetime import datetime, timezone
+import screenshot_capture
 
 class WhitelistEnforcer:
     """
@@ -64,8 +65,62 @@ class WhitelistEnforcer:
             "audiodg.exe"
         }
         
+        # Hardcoded list of common Windows services/drivers/telemetry to skip
+        # as false positives during self-check.
+        self.KNOWN_BACKGROUND_SERVICES = {
+            "searchindexer.exe", "searchprotocolhost.exe", "searchfilterhost.exe",
+            "officeclicktorun.exe", "mousocoreworker.exe", "unsecapp.exe",
+            "wmiprvse.exe", "dllhost.exe", "registry", "memory compression",
+            "securityhealthservice.exe", "msmpeng.exe", "nissrv.exe",
+            "smartscreen.exe", "aggregatorhost.exe", "compattelrunner.exe",
+            "backgroundtaskhost.exe", "backgroundtransferhost.exe",
+            "dashost.exe", "sppsvc.exe", "wudfhost.exe"
+        }
+        
         # Protect this exact AI module process instance
         self.protected_pid = os.getpid()
+        self.protected_pids = {self.protected_pid}
+        
+        # Dynamically protect the developer's process tree (e.g., VS Code and its terminals).
+        # This prevents the AI module from committing suicide by killing the terminal/IDE hosting it.
+        try:
+            curr = psutil.Process(self.protected_pid)
+            while curr.parent() is not None and curr.parent().name().lower() not in self.SAFETY_LIST:
+                curr = curr.parent()
+                self.protected_pids.add(curr.pid)
+            
+            # Protect all descendants of the dev environment root (protects sibling dev servers)
+            for child in curr.children(recursive=True):
+                self.protected_pids.add(child.pid)
+        except Exception:
+            pass
+
+    def _get_window_titles(self):
+        try:
+            import ctypes
+            EnumWindows = ctypes.windll.user32.EnumWindows
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+            GetWindowText = ctypes.windll.user32.GetWindowTextW
+            GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
+            IsWindowVisible = ctypes.windll.user32.IsWindowVisible
+            GetWindowThreadProcessId = ctypes.windll.user32.GetWindowThreadProcessId
+
+            titles = {}
+            def foreach_window(hwnd, lParam):
+                if IsWindowVisible(hwnd):
+                    length = GetWindowTextLength(hwnd)
+                    if length > 0:
+                        buff = ctypes.create_unicode_buffer(length + 1)
+                        GetWindowText(hwnd, buff, length + 1)
+                        pid = ctypes.c_ulong()
+                        GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                        if pid.value not in titles:
+                            titles[pid.value] = buff.value
+                return True
+            EnumWindows(EnumWindowsProc(foreach_window), 0)
+            return titles
+        except Exception:
+            return {}
 
     def load_whitelist(self):
         config_path = os.path.join(os.path.dirname(__file__), 'config', 'whitelist.json')
@@ -116,12 +171,16 @@ class WhitelistEnforcer:
 
                     name_lower = name.lower()
                     
-                    # 2. Protect the AI module itself dynamically
-                    if pid == self.protected_pid:
+                    # 2. Protect the AI module and its dev environment dynamically
+                    if pid in self.protected_pids:
                         continue
                         
                     # 3. Protect critical OS processes
                     if name_lower in self.SAFETY_LIST:
+                        continue
+                        
+                    # 3.5. Ignore known harmless background services and drivers
+                    if name_lower in self.KNOWN_BACKGROUND_SERVICES:
                         continue
                         
                     # 4. Exam Mode Hard Block
@@ -151,6 +210,16 @@ class WhitelistEnforcer:
         self.violation_counts[name_lower] = self.violation_counts.get(name_lower, 0) + 1
         count = self.violation_counts[name_lower]
         
+        # Calculate severity (base 3, +1 for each repeat, max 5)
+        severity = min(5, 3 + (count - 1))
+        
+        # Wait a moment to let the unauthorized app's UI actually render on screen
+        # otherwise the screenshot might be taken before the window is visible
+        time.sleep(1.5)
+        
+        # Capture screenshot BEFORE terminating the app, so we get the evidence
+        screenshot_path = screenshot_capture.capture_screenshot(self.session_id, "unauthorized_app")
+        
         # Terminate gracefully, then force kill if needed
         try:
             proc.terminate()
@@ -161,10 +230,7 @@ class WhitelistEnforcer:
                 proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             print(f"[WhitelistEnforcer] Could not terminate {name_lower}: {e}")
-            return # If we couldn't kill it, maybe we don't send the violation yet, or maybe we do. We'll still send it.
-
-        # Calculate severity (base 3, +1 for each repeat, max 5)
-        severity = min(5, 3 + (count - 1))
+            return # If we couldn't kill it, maybe we don't send the violation yet.
         
         # Format payload matching CONTRACT.md
         payload = {
@@ -177,9 +243,70 @@ class WhitelistEnforcer:
             }
         }
         
+        if screenshot_path:
+            payload["screenshotPath"] = screenshot_path
+        
         # Dispatch
         try:
             if self.on_violation_callback:
                 self.on_violation_callback(payload)
         except Exception as e:
             print(f"[WhitelistEnforcer] Error sending violation callback: {e}")
+
+    def check_running_apps(self):
+        """
+        One-off check to list currently running non-whitelisted apps using dev_whitelist rules.
+        """
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'whitelist.json')
+        dev_whitelist = set()
+        try:
+            with open(config_path, 'r') as f:
+                data = json.load(f)
+                entries = data.get('dev_whitelist', [])
+                dev_whitelist = {app.lower() for app in entries}
+        except Exception as e:
+            print(f"[WhitelistEnforcer] Error loading dev whitelist for check: {e}")
+            
+        unauthorized_apps = []
+        current_user = os.environ.get('USERNAME', '').lower()
+        window_titles = self._get_window_titles()
+        seen_names = set()
+        
+        for proc in psutil.process_iter(['pid', 'name', 'username']):
+            try:
+                name = proc.info.get('name')
+                username = proc.info.get('username') or ''
+                pid = proc.info.get('pid')
+                if not name: 
+                    continue
+                    
+                username_lower = username.lower()
+                if not username_lower or any(sys_acc in username_lower for sys_acc in ['nt authority\\system', 'local service', 'network service', 'window manager']): 
+                    continue
+                    
+                if current_user and current_user not in username_lower:
+                    continue
+                
+                name_lower = name.lower()
+                if pid == self.protected_pid: 
+                    continue
+                if name_lower in self.SAFETY_LIST: 
+                    continue
+                if name_lower in self.KNOWN_BACKGROUND_SERVICES:
+                    continue
+                if name_lower in dev_whitelist: 
+                    continue
+                
+                if name_lower in seen_names:
+                    continue
+                seen_names.add(name_lower)
+                
+                title = window_titles.get(pid)
+                display_name = f"{title} ({name})" if title else name
+                unauthorized_apps.append(display_name)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+            except Exception as e:
+                pass
+                
+        return unauthorized_apps

@@ -20,6 +20,18 @@
     "firefox.exe",
     "brave.exe",
     "ollama.exe",
-    "ollama_llama_server.exe"
+    "ollama_llama_server.exe",
+    "pyrefly.exe",
+    "settings.exe",
+    "control.exe",
+    "taskmgr.exe",
+    "explorer.exe",
+    "shellExperienceHost.exe",
+    "SearchHost.exe",
+    "SearchIndexer.exe",
+    "language_server_windows_x64.exe",
+    "esbuild.exe",
+    "useroobebroker.exe",
+    "filecoauth.exe"
   ]
 }
