@@ -10,8 +10,9 @@ This module implements the full end-to-end event pipeline, as well as **Module 1
 3. **AI Module Spawning**: Once the receiver is listening, Electron spawns the Python AI module (`ai-module/main.py`) as a child process and polls its `/health` endpoint until it's ready. By default, it spawns in `dev` mode to avoid accidentally killing your OS or development environment prematurely.
 4. **Self-Check Flow (Mode Transition)**: The app loads the `selfCheck.html` screen, verifying the camera, microphone, and checking for unauthorized background apps. Clicking "Begin Exam" triggers an IPC call that gracefully restarts the Python AI module in strict `exam` mode and transitions the UI to the actual exam screen.
 5. **Whitelist Enforcement**: The `WhitelistEnforcer` polls running processes every 2.5s. It terminates unauthorized applications (escalating to force-kills if necessary) and generates violations with increasing severity for repeat offenses.
-6. **Violation Detection & Screenshot Capture**: When Python detects a violation (e.g., "unauthorized_app"), it captures a screenshot (compressed to <200KB), saves it locally, and POSTs a payload (including the `sessionId` and `screenshotPath`) to Electron's local receiver.
-7. **Forwarding**: The Electron receiver immediately forwards this payload to the central backend server (`SERVER_URL`) via a `multipart/form-data` request, attaching the screenshot image along with built-in retry logic in case of network instability.
+6. **In-App Paper Viewer (Module 7B)**: The exam screen seamlessly fetches and renders the question paper (PDF or DOCX) entirely inside the Electron window, preventing the need for any external viewers.
+7. **Violation Detection & Screenshot Capture**: When Python detects a violation (e.g., "unauthorized_app"), it captures a screenshot (compressed to <200KB), saves it locally, and POSTs a payload (including the `sessionId` and `screenshotPath`) to Electron's local receiver.
+8. **Forwarding**: The Electron receiver immediately forwards this payload to the central backend server (`SERVER_URL`) via a `multipart/form-data` request, attaching the screenshot image along with built-in retry logic in case of network instability.
 
 ## Files Changed/Added
 
@@ -22,8 +23,10 @@ This module implements the full end-to-end event pipeline, as well as **Module 1
 - `ai-module/config/README.md`: Explains why each entry in `whitelist.json` exists.
 - `ai-module/screenshot_capture.py` (NEW): Captures the full screen using `mss` and compresses it to a lightweight JPEG (<200KB) upon violation detection.
 - `ai-module/main.py`: Modified to pass the `EXAM_SESSION_ID` and the electron-forwarding callback to the `WhitelistEnforcer`.
-- `electron/main.js`: Modified to initially load `selfCheck.html`, handle the `start-exam-mode` IPC command (restarting python), and act as a proxy for the `/check-apps` endpoint.
-- `electron/preload.js`: Exposes `checkApps()` and `startExamMode()` to the renderer.
+- `renderer/examScreen.html` & `renderer/examScreen.js`: Refactored to include a split-screen UI featuring the in-app paper viewer, loaded securely via an `esbuild` bundled script.
+- `electron/main.js`: Modified to pull central session info from `.env` and serve it to the renderer via `get-session-info`.
+- `electron/preload.js`: Exposes `checkApps()`, `startExamMode()`, and `getSessionInfo()` to the renderer.
+- `electron/package.json`: Added `pdfjs-dist` and `mammoth` for paper rendering, and `esbuild` for bundling the renderer script securely.
 - `electron/ipc/pythonBridge.js` & `electron/ipc/violationForwarder.js`: Updated to handle `multipart/form-data` forwarding of the screenshot image to the backend server.
 
 ## Safety List
@@ -41,6 +44,12 @@ To facilitate local development while maintaining strict security during real ex
 
 ## Architecture Note: Mode Transition
 The `selfCheck.html` screen serves as a deliberate and necessary transition point between the relaxed `dev` environment and the strict `exam` environment. Without this, starting the Electron app directly in `exam` mode would immediately aggressively kill any development tools (terminals, IDEs, local AI instances) running on the same machine, making testing and development extremely painful and risky. By spawning the AI module in `dev` mode initially, students can safely perform checks, and the strict mode is only applied at the exact moment they commit to beginning the exam.
+
+## Architecture Note: In-App Paper Viewer (Module 7B)
+The question paper viewer explicitly renders PDFs (via Mozilla's `pdfjs-dist`) and DOCX files (via `mammoth`) directly inside an Electron `<canvas>`/`<div>`. We do **NOT** use `shell.openPath` or `shell.openExternal`.
+Why? 
+1. The strict Whitelist Enforcer would immediately terminate any external process (like Chrome, Edge, Acrobat, Word) as soon as it opens.
+2. Even if we whitelisted those apps, allowing an external browser or Word processor opens a massive cheating vector (access to the internet, copy/paste, extensions, plugins), entirely defeating the purpose of the whitelist. Rendering entirely inside our isolated Chromium environment solves both problems.
 
 ## Architecture Note: App Check Filtering
 During the self-check phase, listing raw running processes surfaced OS services, drivers, and antivirus components that students cannot and should not attempt to close. We enforce strict filtering by ignoring system accounts (`NT AUTHORITY\SYSTEM`, `LOCAL SERVICE`, etc.), enforcing that the process belongs to the logged-in user, and ignoring a `KNOWN_BACKGROUND_SERVICES` list for common false positives (e.g., `msmpeng.exe`, `securityhealthservice.exe`). This is a best-effort list, not exhaustive, and may need additions as more false positives are found during testing.
@@ -75,12 +84,18 @@ To verify the end-to-end integration, self-check flow, and whitelist enforcement
 5. **Test App Checking**: Open an unauthorized application (like `calc.exe`). Click "Run App Check" and confirm it is listed with a prompt to close it. Close it, click "Re-check Apps", and confirm the check passes.
 6. **Test Mode Transition**: Confirm "Begin Exam" is disabled until all checks pass. Click it, and confirm the app transitions to `examScreen.html`.
 7. **Verify Enforcement**: Look at the terminal output to confirm the Python AI module restarted and logged that it is running in EXAM mode.
-8. Open an unauthorized application like `Calculator` (`calc.exe`).
-9. Confirm that the application is forcefully terminated within ~3 seconds.
-10. Look at the dashboard — an `unauthorized_app` violation should appear in the `AlertFeed`.
-11. Confirm a screenshot file appears in `ai-module/screenshots/` and its file size is roughly in the 50-200KB range.
-12. Confirm that clicking into EvidenceViewer for that session actually displays the captured screenshot image (not a broken image icon).
-13. Re-open the same unauthorized application and confirm that the new violation generated has an increased severity level (escalation).
+8. **Verify In-App Paper**:
+   - Upload a test PDF via the dashboard's PaperUploader (`EXAM-101`).
+   - Start a full exam flow, confirm the paper renders inside the left panel of the exam screen with no external window opening.
+   - Confirm the whitelist enforcer's running-apps log shows no browser was ever spawned.
+   - Repeat the test with a DOCX file to test `mammoth.js` HTML injection.
+   - Test the "no paper uploaded" state by using a fresh `EXAM_ID` in `.env` and ensuring a friendly error shows instead of crashing.
+9. Open an unauthorized application like `Calculator` (`calc.exe`).
+10. Confirm that the application is forcefully terminated within ~3 seconds.
+11. Look at the dashboard — an `unauthorized_app` violation should appear in the `AlertFeed`.
+12. Confirm a screenshot file appears in `ai-module/screenshots/` and its file size is roughly in the 50-200KB range.
+13. Confirm that clicking into EvidenceViewer for that session actually displays the captured screenshot image (not a broken image icon).
+14. Re-open the same unauthorized application and confirm that the new violation generated has an increased severity level (escalation).
 
 ## Known Limitation
 - The face detection in `selfCheck.js` is currently a basic placeholder (verifying only that the video stream is active/not blank). This will be upgraded once Module 2's MediaPipe integration is complete.

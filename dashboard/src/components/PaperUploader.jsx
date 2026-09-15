@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { uploadPaper } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { uploadPaper, getExams } from '../services/api';
 import './Components.css';
 
 export default function PaperUploader() {
@@ -7,6 +7,15 @@ export default function PaperUploader() {
     const [file, setFile] = useState(null);
     const [status, setStatus] = useState({ type: '', message: '' });
     const [loading, setLoading] = useState(false);
+    const [exams, setExams] = useState([]);
+
+    const fetchExams = () => {
+        getExams().then(res => setExams(res.data)).catch(console.error);
+    };
+
+    useEffect(() => {
+        fetchExams();
+    }, []);
 
     const handleFileChange = (e) => {
         setStatus({ type: '', message: '' });
@@ -45,6 +54,7 @@ export default function PaperUploader() {
             setExamId('');
             setFile(null);
             e.target.reset(); // Clear file input visually
+            fetchExams(); // Refresh list
         } catch (err) {
             console.error("Upload error:", err);
             const errMsg = err.response?.data?.error || "Upload failed due to network or server error.";
@@ -64,7 +74,7 @@ export default function PaperUploader() {
                         type="text" 
                         value={examId} 
                         onChange={(e) => setExamId(e.target.value)} 
-                        placeholder="e.g. CS101"
+                        placeholder="e.g. EXAM-101"
                         disabled={loading}
                     />
                 </div>
@@ -86,6 +96,32 @@ export default function PaperUploader() {
                     {status.message}
                 </div>
             )}
+
+            <div className="active-exams-section" style={{ marginTop: '30px' }}>
+                <h3>Created Exams</h3>
+                {exams.length === 0 ? (
+                    <p style={{ color: '#64748b', fontSize: '14px' }}>No exams created yet.</p>
+                ) : (
+                    <table className="student-table" style={{ marginTop: '10px' }}>
+                        <thead>
+                            <tr>
+                                <th>Exam ID</th>
+                                <th>Paper Filename</th>
+                                <th>Created At</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {exams.map(ex => (
+                                <tr key={ex._id}>
+                                    <td className="mono" style={{ fontWeight: '600' }}>{ex.examId}</td>
+                                    <td>{ex.paperFilename}</td>
+                                    <td style={{ color: '#64748b' }}>{new Date(ex.createdAt).toLocaleString()}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
         </div>
     );
 }

@@ -131,7 +131,38 @@ btnApps.addEventListener('click', async () => {
       
       apps.forEach(app => {
         const li = document.createElement('li');
-        li.textContent = `Please close: ${app}`;
+        li.style.display = 'flex';
+        li.style.justifyContent = 'space-between';
+        li.style.alignItems = 'center';
+        li.style.marginBottom = '8px';
+        li.style.padding = '8px';
+        li.style.background = '#f9fafb';
+        li.style.border = '1px solid #e5e7eb';
+        li.style.borderRadius = '4px';
+
+        const text = document.createElement('span');
+        text.textContent = app.display;
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        closeBtn.style.padding = '4px 12px';
+        closeBtn.style.fontSize = '12px';
+        closeBtn.style.backgroundColor = '#ef4444';
+        
+        closeBtn.onclick = async () => {
+           closeBtn.disabled = true;
+           closeBtn.textContent = 'Closing...';
+           const result = await window.api.killApp(app.name);
+           if (result.success) {
+               btnApps.click(); // Automatically re-check
+           } else {
+               closeBtn.textContent = 'Failed';
+               closeBtn.style.backgroundColor = '#6b7280';
+           }
+        };
+        
+        li.appendChild(text);
+        li.appendChild(closeBtn);
         list.appendChild(li);
       });
       setStatus('check-apps', 'fail', 'Unauthorized apps found.');

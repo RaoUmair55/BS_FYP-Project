@@ -48,6 +48,18 @@ const uploadMiddleware = (req, res, next) => {
     });
 };
 
+// GET /exam
+// Lists all created exams
+router.get('/', async (req, res) => {
+    try {
+        const exams = await Exam.find().sort({ createdAt: -1 });
+        res.json(exams);
+    } catch (err) {
+        console.error('Error fetching exams:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // POST /exam/:examId/paper
 router.post('/:examId/paper', uploadMiddleware, async (req, res) => {
     try {

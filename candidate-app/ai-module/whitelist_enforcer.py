@@ -18,6 +18,7 @@ class WhitelistEnforcer:
         self.running = False
         self.monitor_thread = None
         self.whitelist = set()
+        self.unkillable_pids = set()
         
         # Hardcoded list of processes that are strictly forbidden in exam mode,
         # overriding any accidental whitelisting.
@@ -172,7 +173,7 @@ class WhitelistEnforcer:
                     name_lower = name.lower()
                     
                     # 2. Protect the AI module and its dev environment dynamically
-                    if pid in self.protected_pids:
+                    if pid in self.protected_pids or pid in self.unkillable_pids:
                         continue
                         
                     # 3. Protect critical OS processes
@@ -213,9 +214,8 @@ class WhitelistEnforcer:
         # Calculate severity (base 3, +1 for each repeat, max 5)
         severity = min(5, 3 + (count - 1))
         
-        # Wait a moment to let the unauthorized app's UI actually render on screen
-        # otherwise the screenshot might be taken before the window is visible
-        time.sleep(1.5)
+        # Wait a very brief moment to let the UI render, but not long enough to hang the loop
+        time.sleep(0.5)
         
         # Capture screenshot BEFORE terminating the app, so we get the evidence
         screenshot_path = screenshot_capture.capture_screenshot(self.session_id, "unauthorized_app")
@@ -230,6 +230,7 @@ class WhitelistEnforcer:
                 proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
             print(f"[WhitelistEnforcer] Could not terminate {name_lower}: {e}")
+            self.unkillable_pids.add(pid) # Don't try to kill it again
             return # If we couldn't kill it, maybe we don't send the violation yet.
         
         # Format payload matching CONTRACT.md
@@ -303,7 +304,7 @@ class WhitelistEnforcer:
                 
                 title = window_titles.get(pid)
                 display_name = f"{title} ({name})" if title else name
-                unauthorized_apps.append(display_name)
+                unauthorized_apps.append({"name": name, "display": display_name})
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
             except Exception as e:

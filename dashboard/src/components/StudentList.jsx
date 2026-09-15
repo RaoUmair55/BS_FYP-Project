@@ -7,7 +7,7 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+    const fetchSessions = () => {
         getActiveSessions()
             .then(res => {
                 setSessions(res.data);
@@ -17,6 +17,13 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                 console.error("Error fetching sessions:", err);
                 setLoading(false);
             });
+    };
+
+    useEffect(() => {
+        fetchSessions(); // Initial fetch
+        const intervalId = setInterval(fetchSessions, 5000); // Poll every 5s
+        
+        return () => clearInterval(intervalId); // Cleanup
     }, []);
 
     // Sort descending by calculated current score

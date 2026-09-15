@@ -2,7 +2,8 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
-const { checkPythonHealth, forwardViolationToServer } = require('./ipc/pythonBridge');
+const { checkPythonHealth, forwardViolationToServer, killApp } = require('./ipc/pythonBridge');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // --- Added for development: Handle EPIPE / Broken pipe errors ---
 // This prevents the Electron app from crashing if the parent process (like Antigravity IDE) 
@@ -17,6 +18,11 @@ process.on('uncaughtException', function (err) {
 // ----------------------------------------------------------------
 let mainWindow;
 let pythonProcess;
+let activeSessionInfo = {
+  sessionId: null,
+  examId: null,
+  serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
+};
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -25,11 +31,13 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      plugins: true,
       preload: path.join(__dirname, 'preload.js')
     }
   });
 
-  await mainWindow.loadFile(path.join(__dirname, '../renderer/selfCheck.html'));
+  await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
+  mainWindow.webContents.openDevTools();
 }
 
 async function waitForPythonReady() {
@@ -53,7 +61,7 @@ function spawnPythonProcess(mode) {
   console.log(`[Electron] Spawning Python process in ${mode} mode: python ${pythonScript}`);
   
   // Inject session ID to the Python environment
-  const pythonEnv = { ...process.env, EXAM_SESSION_ID: '661234567890abcdef123456', APP_MODE: mode };
+  const pythonEnv = { ...process.env, EXAM_SESSION_ID: activeSessionInfo.sessionId, APP_MODE: mode };
   const proc = spawn('python', [pythonScript], { env: pythonEnv });
 
   proc.stdout.on('data', (data) => {
@@ -84,23 +92,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  // STARTUP ORDER 2: Spawn Python Process in dev mode initially
-  pythonProcess = spawnPythonProcess('dev');
-
-  // STARTUP ORDER 3: Wait for Python to be ready
-  const isPythonReady = await waitForPythonReady();
-  if (!isPythonReady) {
-    dialog.showErrorBox('Initialization Error', 'The AI module failed to start within the expected time. Please check logs and restart the app.');
-    if (pythonProcess) {
-      pythonProcess.killedIntentional = true;
-      pythonProcess.kill();
-    }
-    stopReceiver();
-    app.quit();
-    return;
-  }
-
-  // STARTUP ORDER 4: Create the BrowserWindow
+  // STARTUP ORDER 2: Create the BrowserWindow directly (Python spawns after login)
   await createWindow();
 
   app.on('activate', () => {
@@ -143,6 +135,37 @@ ipcMain.handle('check-apps', async () => {
   }
 });
 
+// Kill App
+ipcMain.handle('kill-app', async (event, name) => {
+  return await killApp(name);
+});
+
+// Return session info to renderer
+ipcMain.handle('get-session-info', () => {
+  return activeSessionInfo;
+});
+
+// Handle Login
+ipcMain.handle('login', async (event, { sessionId, examId }) => {
+  console.log(`[Electron] Login successful. Session: ${sessionId}, Exam: ${examId}`);
+  activeSessionInfo.sessionId = sessionId;
+  activeSessionInfo.examId = examId;
+  
+  // Now spawn python in dev mode
+  pythonProcess = spawnPythonProcess('dev');
+  
+  const isPythonReady = await waitForPythonReady();
+  if (!isPythonReady) {
+    dialog.showErrorBox('Initialization Error', 'The AI module failed to start.');
+    return { success: false, error: 'AI module failed to start' };
+  }
+  
+  if (mainWindow) {
+    await mainWindow.loadFile(path.join(__dirname, '../renderer/selfCheck.html'));
+  }
+  return { success: true };
+});
+
 // Start Exam Mode
 ipcMain.handle('start-exam-mode', async () => {
   console.log('[Electron] Transitioning to Exam Mode...');
@@ -160,6 +183,7 @@ ipcMain.handle('start-exam-mode', async () => {
   if (isReady) {
     if (mainWindow) {
       await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
+      mainWindow.webContents.openDevTools();
     }
     return { success: true };
   } else {

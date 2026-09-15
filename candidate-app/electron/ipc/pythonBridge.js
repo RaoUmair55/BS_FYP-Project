@@ -64,7 +64,18 @@ async function forwardViolationToServer(violationPayload) {
   }
 }
 
+async function killApp(name) {
+  try {
+    const response = await axios.post(`http://127.0.0.1:${PYTHON_IPC_PORT}/kill-app`, { name }, { timeout: 3000 });
+    return response.data;
+  } catch (error) {
+    console.error(`[PythonBridge] Error killing app ${name}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   checkPythonHealth,
-  forwardViolationToServer
+  forwardViolationToServer,
+  killApp
 };

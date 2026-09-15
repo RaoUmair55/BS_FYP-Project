@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IntegrityFlow — Candidate Login</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f4f7f6;
+      color: #333;
+    }
+    .container {
+      background: white;
+      padding: 32px 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      width: 320px;
+      text-align: center;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      color: #1e293b;
+    }
+    p.subtitle {
+      margin: 0 0 24px 0;
+      color: #64748b;
+      font-size: 14px;
+    }
+    .form-group {
+      text-align: left;
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+      border-color: #3b82f6;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      margin-top: 10px;
+    }
+    button:hover:not(:disabled) {
+      background-color: #1d4ed8;
+    }
+    button:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+    }
+    .error {
+      color: #ef4444;
+      font-size: 13px;
+      margin-top: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>IntegrityFlow</h1>
+    <p class="subtitle">Secure Exam Environment</p>
+    
+    <div class="form-group">
+      <label for="examId">Exam ID</label>
+      <input type="text" id="examId" placeholder="e.g. EXAM-101" />
+    </div>
+    <div class="form-group">
+      <label for="studentId">Student ID / Full Name</label>
+      <input type="text" id="studentId" placeholder="e.g. John Doe" />
+    </div>
+    
+    <button id="loginBtn">Start Exam Session</button>
+    <div id="errorMsg" class="error"></div>
+  </div>
+
+  <script src="dist/login.js"></script>
+</body>
+</html>

@@ -12,5 +12,6 @@ export const uploadPaper = (examId, file) => {
     return api.post(`/exam/${examId}/paper`, formData);
 };
 export const getRiskScore = (sessionId) => api.get(`/risk-score/${sessionId}`);
+export const getExams = () => api.get('/exam');
 
 export default api;
