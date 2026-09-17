@@ -90,13 +90,21 @@ router.get('/:examId/paper', async (req, res) => {
     try {
         const examId = req.params.examId;
 
-        // IMPORTANT: Security check - must have at least one active session
-        const activeSession = await Session.findOne({ examId, status: "active" });
+        // IMPORTANT: Security check - must have at least one active session for this exam
+        const activeSession = await Session.findOne({ 
+            examId: new RegExp('^' + examId + '$', 'i'), 
+            status: "active" 
+        });
         if (!activeSession) {
-            return res.status(403).json({ error: 'Exam paper only available once exam session is active' });
+            return res.status(403).json({ error: 'Exam paper only available once candidate exam session is active.' });
         }
 
-        const exam = await Exam.findOne({ examId });
+        const exam = await Exam.findOne({ 
+            $or: [
+                { examCode: new RegExp('^' + examId + '$', 'i') },
+                { examId: new RegExp('^' + examId + '$', 'i') }
+            ]
+        });
         if (!exam || !exam.paperPath) {
             return res.status(404).json({ error: 'Exam paper not found' });
         }

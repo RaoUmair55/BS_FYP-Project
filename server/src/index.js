@@ -14,6 +14,7 @@ const server = http.createServer(app);
 // CORS for Express API
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Serve static uploads (for screenshots)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -29,7 +30,9 @@ connectDB();
 app.use('/', require('./routes/violations'));
 app.use('/sessions', require('./routes/sessions'));
 app.use('/exam', require('./routes/examPaper'));
+app.use('/exams', require('./routes/exams'));
 app.use('/risk-score', require('./routes/riskScore'));
+app.use('/submissions', require('./routes/submissions'));
 
 // Test Route: /health
 app.get('/health', (req, res) => {

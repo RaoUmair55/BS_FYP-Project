@@ -37,8 +37,12 @@ async function handleLogin() {
     const data = await response.json();
     const sessionId = data._id; // MongoDB creates an _id
     
+    const sessionInfoObj = { sessionId, examId, studentId };
+    sessionStorage.setItem('sessionInfo', JSON.stringify(sessionInfoObj));
+    localStorage.setItem('sessionInfo', JSON.stringify(sessionInfoObj));
+
     // Tell Electron main process to log us in
-    const result = await window.api.login({ sessionId, examId });
+    const result = await window.api.login({ sessionId, examId, studentId });
     if (!result.success) {
       throw new Error(result.error || 'Internal app error');
     }

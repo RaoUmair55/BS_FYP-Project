@@ -35,6 +35,14 @@
     "language_server_windows_x64.exe",
     "esbuild.exe",
     "useroobebroker.exe",
-    "filecoauth.exe"
+    "filecoauth.exe",
+    "comppkgsrv.exe",
+    "msedgewebview2.exe",
+    "tiworker.exe",
+    "trustedinstaller.exe",
+    "systemsettings.exe",
+    "chrome-native-host.exe",
+    "antigravitysetup-stable-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.exe",
+    "antigravitysetup-stable-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.tmp"
   ]
 }

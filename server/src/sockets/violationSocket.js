@@ -37,8 +37,15 @@ function broadcastRiskScoreUpdate(io, sessionId, riskScore) {
     }
 }
 
+function broadcastViolationReview(io, reviewData) {
+    if (io) {
+        io.emit('violationReviewed', reviewData);
+    }
+}
+
 module.exports = {
     initSocket,
     broadcastViolation,
-    broadcastRiskScoreUpdate
+    broadcastRiskScoreUpdate,
+    broadcastViolationReview
 };

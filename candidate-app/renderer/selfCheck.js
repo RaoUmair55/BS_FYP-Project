@@ -11,6 +11,42 @@ function updateBeginButton() {
   btnBegin.disabled = !(cameraPassed && micPassed && appsPassed);
 }
 
+async function uploadCameraVerificationSnapshot(video) {
+  try {
+    let sessionInfo = null;
+    try {
+      sessionInfo = await window.api.getSessionInfo();
+    } catch (e) {}
+    
+    if (!sessionInfo || !sessionInfo.sessionId) {
+      try {
+        sessionInfo = JSON.parse(sessionStorage.getItem('sessionInfo') || localStorage.getItem('sessionInfo') || '{}');
+      } catch (e) {}
+    }
+
+    if (!sessionInfo || !sessionInfo.sessionId) {
+      console.warn('[SelfCheck] Cannot upload camera verification photo: missing sessionId');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+
+    const res = await fetch(`http://localhost:5000/sessions/${sessionInfo.sessionId}/camera-verification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoBase64 })
+    });
+    console.log('[SelfCheck] Uploaded initial camera verification photo for session:', sessionInfo.sessionId, 'Status:', res.status);
+  } catch (err) {
+    console.error('[SelfCheck] Failed to upload camera verification photo:', err);
+  }
+}
+
 function setStatus(id, status, errorMsg = '') {
   const container = document.getElementById(id);
   const icon = container.querySelector('.status-icon');
@@ -33,26 +69,51 @@ function setStatus(id, status, errorMsg = '') {
   }
 }
 
+let activeCameraStream = null;
+
 btnCamera.addEventListener('click', async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    const video = document.getElementById('camera-preview');
-    video.srcObject = stream;
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch (firstErr) {
+      // Fallback with ideal resolution constraints if default video: true fails
+      stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: { ideal: 640 }, height: { ideal: 480 } } 
+      });
+    }
     
-    // Check if video is blank (placeholder for MediaPipe)
-    video.onloadedmetadata = () => {
-        // Just checking resolution or letting it play is enough for now
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
-            cameraPassed = true;
-            setStatus('check-camera', 'pass');
-            updateBeginButton();
-            btnCamera.disabled = true;
-            btnCamera.textContent = 'Camera OK';
-        } else {
-            setStatus('check-camera', 'fail', 'Camera feed appears blank.');
+    activeCameraStream = stream;
+    const video = document.getElementById('camera-preview');
+    if (video) {
+      video.srcObject = stream;
+    }
+    
+    // Check if video metadata is ready
+    const handleMetadata = () => {
+        cameraPassed = true;
+        setStatus('check-camera', 'pass');
+        updateBeginButton();
+        btnCamera.disabled = true;
+        btnCamera.textContent = 'Camera OK';
+
+        // Capture snapshot for teacher camera verification
+        if (video) {
+          uploadCameraVerificationSnapshot(video);
         }
     };
+
+    if (video) {
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        handleMetadata();
+      } else {
+        video.onloadedmetadata = handleMetadata;
+      }
+    } else {
+      handleMetadata();
+    }
   } catch (err) {
+    console.error('Camera Check Error:', err);
     setStatus('check-camera', 'fail', 'Camera access denied or not found.');
   }
 });
@@ -181,6 +242,10 @@ btnBegin.addEventListener('click', async () => {
     btnBegin.disabled = true;
     btnBegin.textContent = 'Starting Exam Mode...';
     try {
+        if (activeCameraStream) {
+            activeCameraStream.getTracks().forEach(track => track.stop());
+            activeCameraStream = null;
+        }
         const result = await window.api.startExamMode();
         if (!result.success) {
             alert('Failed to start exam mode: ' + result.error);

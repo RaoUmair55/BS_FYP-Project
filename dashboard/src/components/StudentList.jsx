@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { getActiveSessions } from '../services/api';
 import RiskScoreBadge from './RiskScoreBadge';
+import { Users, Search, AlertCircle, Clock } from 'lucide-react';
 import './Components.css';
 
-export default function StudentList({ riskScores, onSelectStudent, selectedSessionId }) {
+export default function StudentList({ riskScores, onSelectStudent, selectedSessionId, examFilter, violations = [] }) {
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const fetchSessions = () => {
         getActiveSessions()
@@ -20,69 +22,107 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
     };
 
     useEffect(() => {
-        fetchSessions(); // Initial fetch
-        const intervalId = setInterval(fetchSessions, 5000); // Poll every 5s
-        
-        return () => clearInterval(intervalId); // Cleanup
+        fetchSessions();
+        const intervalId = setInterval(fetchSessions, 5000);
+        return () => clearInterval(intervalId);
     }, []);
 
-    // Sort descending by calculated current score
-    const sortedSessions = [...sessions].sort((a, b) => {
+    // Count unreviewed violations per session
+    const unreviewedBySession = (violations || []).reduce((acc, v) => {
+        if (!v.reviewed && v.sessionId) {
+            acc[v.sessionId] = (acc[v.sessionId] || 0) + 1;
+        }
+        return acc;
+    }, {});
+
+    // Filter sessions by selected exam code (if specified) and search query
+    const filteredSessions = sessions.filter(s => {
+        if (examFilter && s.examId && s.examId.toUpperCase() !== examFilter.toUpperCase()) {
+            return false;
+        }
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            const sid = (s.studentId || '').toLowerCase();
+            const eid = (s.examId || '').toLowerCase();
+            return sid.includes(query) || eid.includes(query);
+        }
+        return true;
+    });
+
+    // Sort descending by calculated risk score
+    const sortedSessions = [...filteredSessions].sort((a, b) => {
         const scoreA = riskScores[a.sessionId || a._id] !== undefined ? riskScores[a.sessionId || a._id] : a.riskScore;
         const scoreB = riskScores[b.sessionId || b._id] !== undefined ? riskScores[b.sessionId || b._id] : b.riskScore;
         return scoreB - scoreA;
     });
 
-    if (loading) return (
-        <div className="student-list-container">
-            <div className="empty-state">
-                <p>Loading active sessions...</p>
-            </div>
-        </div>
-    );
-
     return (
-        <div className="student-list-container">
-            <div className="list-header-panel">
-                <h2>Active Sessions</h2>
-                <span className="student-count">{sessions.length} student{sessions.length !== 1 ? 's' : ''}</span>
+        <div className="md-card student-list-card">
+            <div className="student-list-header">
+                <div>
+                    <h3 style={{ margin: 0 }}>Active Candidates</h3>
+                    {examFilter && (
+                        <span className="md-badge status-completed" style={{ marginTop: '4px' }}>
+                            Exam: {examFilter}
+                        </span>
+                    )}
+                </div>
+                <span className="md-badge status-active">
+                    <Users size={12} />
+                    <span>{sortedSessions.length} Live</span>
+                </span>
+            </div>
+
+            <div style={{ padding: '8px 16px', borderBottom: '1px solid #dadce0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f3f4', padding: '6px 12px', borderRadius: '6px' }}>
+                    <Search size={16} style={{ color: '#5f6368' }} />
+                    <input 
+                        type="text" 
+                        placeholder="Search student or exam code..." 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '13px', width: '100%' }}
+                    />
+                </div>
             </div>
             
-            {sessions.length === 0 ? (
-                <div className="empty-state" style={{borderTop: 'none', borderRadius: 0, flex: 1}}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                    <p>No active sessions detected.</p>
+            {loading ? (
+                <div className="md-loading" style={{ padding: '24px' }}>Loading active sessions...</div>
+            ) : sortedSessions.length === 0 ? (
+                <div className="md-empty-card" style={{ border: 'none', background: 'transparent', flex: 1 }}>
+                    <Users size={36} className="md-empty-icon" />
+                    <p style={{ margin: 0 }}>No active student sessions found.</p>
                 </div>
             ) : (
-                <div className="student-table-wrapper">
-                    <table className="student-table">
-                        <thead>
-                            <tr>
-                                <th>Student ID</th>
-                                <th>Exam ID</th>
-                                <th style={{textAlign: 'right'}}>Risk Score</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sortedSessions.map(s => {
-                                const sid = s.sessionId || s._id;
-                                const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
-                                return (
-                                    <tr 
-                                        key={sid} 
-                                        onClick={() => onSelectStudent(sid)}
-                                        className={selectedSessionId === sid ? 'selected' : ''}
-                                    >
-                                        <td className="mono">{s.studentId}</td>
-                                        <td className="mono">{s.examId}</td>
-                                        <td style={{textAlign: 'right'}}>
-                                            <RiskScoreBadge score={currentScore} />
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                <div className="student-items">
+                    {sortedSessions.map(s => {
+                        const sid = s.sessionId || s._id;
+                        const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
+                        const isSelected = selectedSessionId === sid;
+                        const pendingAlerts = unreviewedBySession[sid] || 0;
+
+                        return (
+                            <div 
+                                key={sid}
+                                onClick={() => onSelectStudent(sid)}
+                                className={`student-item ${isSelected ? 'selected' : ''}`}
+                            >
+                                <div>
+                                    <div className="student-info-name">{s.studentId}</div>
+                                    <div className="student-info-sub">Code: {s.examId} • ID: {sid.substring(0, 8)}...</div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {pendingAlerts > 0 && (
+                                        <span className="md-badge status-draft" style={{ fontSize: '11px', padding: '2px 6px' }}>
+                                            <Clock size={10} />
+                                            <span>{pendingAlerts} New</span>
+                                        </span>
+                                    )}
+                                    <RiskScoreBadge score={currentScore} />
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>

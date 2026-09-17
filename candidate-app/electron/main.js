@@ -37,7 +37,7 @@ async function createWindow() {
   });
 
   await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 }
 
 async function waitForPythonReady() {
@@ -146,10 +146,11 @@ ipcMain.handle('get-session-info', () => {
 });
 
 // Handle Login
-ipcMain.handle('login', async (event, { sessionId, examId }) => {
-  console.log(`[Electron] Login successful. Session: ${sessionId}, Exam: ${examId}`);
+ipcMain.handle('login', async (event, { sessionId, examId, studentId }) => {
+  console.log(`[Electron] Login successful. Session: ${sessionId}, Exam: ${examId}, Student: ${studentId}`);
   activeSessionInfo.sessionId = sessionId;
   activeSessionInfo.examId = examId;
+  activeSessionInfo.studentId = studentId || 'Candidate';
   
   // Now spawn python in dev mode
   pythonProcess = spawnPythonProcess('dev');
@@ -183,7 +184,7 @@ ipcMain.handle('start-exam-mode', async () => {
   if (isReady) {
     if (mainWindow) {
       await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
-      mainWindow.webContents.openDevTools();
+      // mainWindow.webContents.openDevTools();
     }
     return { success: true };
   } else {

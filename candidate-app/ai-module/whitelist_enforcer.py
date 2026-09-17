@@ -75,7 +75,10 @@ class WhitelistEnforcer:
             "securityhealthservice.exe", "msmpeng.exe", "nissrv.exe",
             "smartscreen.exe", "aggregatorhost.exe", "compattelrunner.exe",
             "backgroundtaskhost.exe", "backgroundtransferhost.exe",
-            "dashost.exe", "sppsvc.exe", "wudfhost.exe"
+            "dashost.exe", "sppsvc.exe", "wudfhost.exe", "comppkgsrv.exe",
+            "msedgewebview2.exe", "tiworker.exe", "trustedinstaller.exe",
+            "lsaiso.exe", "systemsettings.exe", "intelcphservice.exe",
+            "igfxcuiservice.exe", "chrome-native-host.exe"
         }
         
         # Protect this exact AI module process instance
@@ -154,6 +157,11 @@ class WhitelistEnforcer:
 
     def _monitor_loop(self):
         while self.running:
+            # Only perform active process killing and violation reporting during actual EXAM mode
+            if self.mode != "exam":
+                time.sleep(2.0)
+                continue
+
             for proc in psutil.process_iter(['pid', 'name', 'username']):
                 if not self.running:
                     break
@@ -181,7 +189,7 @@ class WhitelistEnforcer:
                         continue
                         
                     # 3.5. Ignore known harmless background services and drivers
-                    if name_lower in self.KNOWN_BACKGROUND_SERVICES:
+                    if name_lower in self.KNOWN_BACKGROUND_SERVICES or name_lower.startswith("antigravitysetup"):
                         continue
                         
                     # 4. Exam Mode Hard Block

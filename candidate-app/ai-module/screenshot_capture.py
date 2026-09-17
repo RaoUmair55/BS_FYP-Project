@@ -34,7 +34,7 @@ def capture_screenshot(session_id, violation_type):
     try:
         _cleanup_old_screenshots()
         
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         filename = f"{session_id}_{violation_type}_{timestamp}.jpg"
         filepath = os.path.join(SCREENSHOT_DIR, filename)
 

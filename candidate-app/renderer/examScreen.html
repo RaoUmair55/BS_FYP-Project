@@ -3,55 +3,136 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IntegrityFlow — Exam in Progress</title>
+  <title>IntegrityFlow — Exam Workspace</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       display: flex;
       flex-direction: column;
       height: 100vh;
       margin: 0;
-      background-color: #f4f7f6;
-      color: #333;
+      background-color: #f8fafc;
+      color: #1e293b;
+      overflow: hidden;
     }
+
+    /* Header Bar */
     .top-bar {
-      background: white;
-      padding: 12px 24px;
+      background: #ffffff;
+      height: 60px;
+      padding: 0 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid #e2e8f0;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      z-index: 10;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      z-index: 100;
+      flex-shrink: 0;
     }
-    .top-bar h1 {
-      margin: 0;
-      font-size: 18px;
-      color: #1e293b;
-    }
-    .top-bar h2 {
-      margin: 0 0 0 12px;
-      font-size: 14px;
-      color: #64748b;
-      font-weight: 500;
-    }
-    .top-bar-left, .top-bar-right {
+    .top-bar-left {
       display: flex;
       align-items: center;
+      gap: 16px;
     }
-    .layout-wrapper {
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+    .badge {
+      background-color: #f1f5f9;
+      color: #475569;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .top-bar-center {
       display: flex;
-      flex-direction: column;
-      width: 100vw;
-      height: 100vh;
-      box-sizing: border-box;
+      align-items: center;
+      gap: 12px;
     }
-    .paper-section {
+    .monitoring-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background-color: #ecfdf5;
+      color: #047857;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid #a7f3d0;
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .timer-badge {
+      font-family: 'JetBrains Mono', monospace, sans-serif;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    /* Split Screen Layout */
+    .split-container {
+      display: flex;
       flex: 1;
+      height: calc(100vh - 60px);
+      overflow: hidden;
+    }
+    .left-panel {
+      width: 50%;
+      height: 100%;
+      border-right: 1px solid #cbd5e1;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      background: #ffffff;
       position: relative;
+    }
+    .right-panel {
+      width: 50%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+    }
+
+    /* Paper Viewer */
+    .paper-header {
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
     .paper-viewer {
       flex: 1;
@@ -59,102 +140,448 @@
       width: 100%;
       height: 100%;
     }
-    .pdf-controls {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 10px;
-      background: #f1f5f9;
-      border-bottom: 1px solid #e2e8f0;
-      gap: 15px;
-    }
-    .pdf-canvas-container {
-      display: flex;
-      justify-content: center;
-      padding-top: 20px;
-    }
-    .pdf-canvas-container canvas {
-      border: 1px solid #ccc;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
     .docx-container {
       font-family: 'Times New Roman', Times, serif;
       font-size: 16px;
       line-height: 1.6;
+      padding: 30px;
       max-width: 800px;
       margin: 0 auto;
     }
     .info-message, .error-message {
       text-align: center;
       padding: 40px;
-      font-size: 18px;
+      font-size: 16px;
       color: #64748b;
     }
     .error-message {
       color: #ef4444;
     }
-    .status {
-      padding: 6px 12px;
-      border-radius: 20px;
-      background-color: #dcfce7;
-      color: #166534;
+
+    /* Answer Panel */
+    .tabs-header {
+      display: flex;
+      background: #f1f5f9;
+      border-bottom: 1px solid #cbd5e1;
+      padding: 6px 12px 0 12px;
+      gap: 6px;
+    }
+    .tab-btn {
+      padding: 10px 18px;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+      background: transparent;
       font-size: 14px;
       font-weight: 500;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s;
     }
-    .status.error {
-      background-color: #fee2e2;
+    .tab-btn:hover {
+      color: #1e293b;
+      background: #e2e8f0;
+    }
+    .tab-btn.active {
+      background: #ffffff;
+      color: #2563eb;
+      font-weight: 600;
+      border-color: #cbd5e1;
+    }
+
+    .tab-content {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      padding: 16px;
+      overflow: auto;
+    }
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* Typed Text Tab */
+    .editor-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    textarea#answerText {
+      flex: 1;
+      width: 100%;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 15px;
+      line-height: 1.6;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    textarea#answerText:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    .editor-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #64748b;
+      padding: 4px 2px;
+    }
+
+    /* File Attach Tab */
+    .file-upload-box {
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      background: #f8fafc;
+      cursor: pointer;
+      transition: border-color 0.2s, background-color 0.2s;
+    }
+    .file-upload-box:hover {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+    .file-upload-icon {
+      font-size: 36px;
+      margin-bottom: 12px;
+    }
+    .file-upload-text {
+      font-size: 15px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .file-upload-subtext {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    #fileInput {
+      display: none;
+    }
+    .file-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 16px;
+    }
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .file-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .file-size {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .btn-remove-file {
+      background: #fee2e2;
       color: #991b1b;
-    }
-    #testViolationBtn {
-      background-color: #ef4444;
-      color: white;
       border: none;
-      padding: 8px 16px;
+      padding: 6px 12px;
       border-radius: 6px;
+      font-size: 13px;
       cursor: pointer;
       font-weight: 500;
-      transition: background-color 0.2s;
+    }
+    .btn-remove-file:hover {
+      background: #fca5a5;
+    }
+
+    /* Footer Action Area */
+    .answer-footer {
+      padding: 16px;
+      border-top: 1px solid #e2e8f0;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn-submit {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-submit:hover:not(:disabled) {
+      background-color: #1d4ed8;
+    }
+    .btn-submit:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    /* Test violation button */
+    #testViolationBtn {
+      background-color: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
     }
     #testViolationBtn:hover {
-      background-color: #dc2626;
+      background-color: #e2e8f0;
+    }
+
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      backdrop-filter: blur(2px);
+    }
+    .modal-card {
+      background: white;
+      width: 440px;
+      padding: 28px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      text-align: center;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 8px;
+    }
+    .modal-desc {
+      font-size: 14px;
+      color: #64748b;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .modal-summary {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      color: #334155;
+      text-align: left;
+      margin-bottom: 20px;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-danger {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Error Alert Banner */
+    .alert-banner {
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .btn-retry {
+      background: #b91c1c;
+      color: white;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Submission Success Overlay */
+    .success-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      text-align: center;
+      flex: 1;
+    }
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      background: #dcfce7;
+      color: #166534;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      margin-bottom: 16px;
     }
   </style>
 </head>
 <body>
-  <div class="layout-wrapper">
-    <div class="top-bar">
-      <div class="top-bar-left">
-        <h1>IntegrityFlow</h1>
-        <h2>Exam in Progress</h2>
-      </div>
-      <div class="top-bar-right" style="gap: 15px;">
-        <div id="statusIndicator" class="status">
-          System Active & Monitoring
-        </div>
-        <!-- Temporary button to test the pipeline -->
-        <button id="testViolationBtn">Send Test Violation</button>
+  <!-- Header Bar -->
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <div class="logo">IntegrityFlow</div>
+      <div id="studentBadge" class="badge">Student: Candidate</div>
+      <div id="examBadge" class="badge">Exam: EXAM-101</div>
+    </div>
+    <div class="top-bar-center">
+      <div id="monitoringBadge" class="monitoring-badge">
+        <span class="pulse-dot"></span>
+        <span>● Monitoring Active</span>
       </div>
     </div>
-    
-    <div class="paper-section">
+    <div class="top-bar-right">
+      <div id="timerDisplay" class="timer-badge">Elapsed: 00:00:00</div>
+      <button id="testViolationBtn">Test Alert</button>
+    </div>
+  </div>
+
+  <!-- Two-Panel Split Layout -->
+  <div class="split-container">
+    <!-- Left Panel: Question Paper Viewer -->
+    <div class="left-panel">
+      <div class="paper-header">
+        <span>📄 Question Paper</span>
+      </div>
       <div id="loadingMessage" class="info-message">Loading exam paper...</div>
       <div id="paperViewer" class="paper-viewer"></div>
+    </div>
+
+    <!-- Right Panel: Answer Area -->
+    <div class="right-panel">
+      <div class="tabs-header">
+        <button id="tabTextBtn" class="tab-btn active">✍️ Typed Answer</button>
+        <button id="tabFileBtn" class="tab-btn">📁 Attach Answer File</button>
+      </div>
+
+      <!-- Main Answer Area (Active during exam) -->
+      <div id="answerWorkspace" style="display:flex; flex-direction:column; flex:1; overflow:hidden;">
+        <!-- Tab 1: Typed Text -->
+        <div id="tabTextContent" class="tab-content active">
+          <div class="editor-wrapper">
+            <textarea id="answerText" placeholder="Type your exam answers here... Auto-saves automatically as you type."></textarea>
+            <div class="editor-meta">
+              <span id="saveStatus">Auto-saved to local draft</span>
+              <span id="wordCount">Word count: 0 words</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: File Upload -->
+        <div id="tabFileContent" class="tab-content">
+          <div class="file-upload-box" id="dropzone">
+            <div class="file-upload-icon">📤</div>
+            <div class="file-upload-text">Click or drag your completed answer file here</div>
+            <div class="file-upload-subtext">Accepted formats: .pdf, .docx, .doc, .txt, .py, .js, .cpp, .zip</div>
+            <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.txt,.py,.js,.cpp,.zip" />
+          </div>
+
+          <div id="fileCard" class="file-card" style="display: none;">
+            <div class="file-info">
+              <span>📄</span>
+              <div>
+                <div id="fileName" class="file-name">filename.pdf</div>
+                <div id="fileSize" class="file-size">0 KB</div>
+              </div>
+            </div>
+            <button id="removeFileBtn" class="btn-remove-file">Remove</button>
+          </div>
+        </div>
+
+        <!-- Submission Footer Area -->
+        <div class="answer-footer">
+          <div id="errorAlert" class="alert-banner">
+            <span id="errorAlertMsg">Submission failed.</span>
+            <button id="retryBtn" class="btn-retry">Retry</button>
+          </div>
+          <div style="flex:1;"></div>
+          <button id="submitExamBtn" class="btn-submit">
+            <span>Submit Exam</span>
+            <span>➔</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Success Screen (Shown after submitted) -->
+      <div id="successScreen" class="success-screen">
+        <div class="success-icon">✓</div>
+        <h2 style="margin: 0 0 8px 0; color: #0f172a;">Exam Submitted Successfully</h2>
+        <p style="color: #64748b; max-width: 360px; line-height: 1.5; margin-bottom: 24px;">
+          Your answers have been recorded and sent to the examiner. You may now close the window.
+        </p>
+        <div class="badge" style="background: #f1f5f9; color: #334155; padding: 8px 16px;">
+          Status: Session Completed
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Submit Your Exam?</div>
+      <div class="modal-desc">Please confirm that you are ready to submit. Once submitted, your exam will be finalized and you cannot make further edits.</div>
+      <div id="modalSummary" class="modal-summary">
+        <div><strong>Typed Answer:</strong> <span id="summaryWords">0 words</span></div>
+        <div style="margin-top: 4px;"><strong>Attached File:</strong> <span id="summaryFile">None</span></div>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelSubmitBtn" class="btn-secondary">Cancel</button>
+        <button id="confirmSubmitBtn" class="btn-danger">Yes, Submit Exam</button>
+      </div>
     </div>
   </div>
 
   <script src="dist/examScreen.js"></script>
-  <script>
-    // Listen for AI module crashes (keeping original inline logic for simplicity, though it could be in the bundle too)
-    window.api.onPythonCrash((info) => {
-      const statusEl = document.getElementById('statusIndicator');
-      statusEl.className = 'status error';
-      statusEl.innerText = `Critical Error: AI Module Stopped (Code: ${info.code})`;
-      
-      const btn = document.getElementById('testViolationBtn');
-      btn.disabled = true;
-      btn.style.backgroundColor = '#ccc';
-      btn.style.cursor = 'not-allowed';
-    });
-  </script>
 </body>
 </html>

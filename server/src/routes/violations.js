@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const Violation = require('../models/Violation');
 const Session = require('../models/Session');
-const { broadcastViolation, broadcastRiskScoreUpdate } = require('../sockets/violationSocket');
+const { broadcastViolation, broadcastRiskScoreUpdate, broadcastViolationReview } = require('../sockets/violationSocket');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const multer = require('multer');
 
@@ -28,14 +28,11 @@ const router = express.Router();
 // POST /violation
 router.post('/violation', upload.single('screenshot'), async (req, res) => {
     try {
-        // Handle multipart/form-data stringified fields
         let details = req.body.details;
         if (typeof details === 'string') {
             try {
                 details = JSON.parse(details);
-            } catch (e) {
-                // fallback
-            }
+            } catch (e) {}
         }
         
         let screenshotPath = req.body.screenshotPath;
@@ -44,22 +41,18 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
         }
         
         const severity = parseInt(req.body.severity, 10) || req.body.severity;
-        // Validation check for unknown sessionId
-        const sessionExists = await Session.exists({ _id: req.body.sessionId }).catch(() => null);
-        if (!sessionExists && mongoose.connection.readyState === 1) {
-            console.warn(`[WARNING] Violation received for unknown sessionId: ${req.body.sessionId}`);
-        }
-
+        
         const newViolation = new Violation({
             sessionId: req.body.sessionId,
             type: req.body.type,
             severity: severity,
-            timestamp: req.body.timestamp,
+            timestamp: req.body.timestamp || new Date(),
             details: details,
-            screenshotPath: screenshotPath
+            screenshotPath: screenshotPath,
+            reviewed: false,
+            decision: "pending"
         });
 
-        // Check if MongoDB is connected (readyState 1 = connected)
         if (mongoose.connection.readyState !== 1) {
             console.warn('[WARNING] MongoDB unreachable. Writing violation to local fallback.');
             const fallbackDir = path.join(__dirname, '../../uploads/failed-violations');
@@ -69,21 +62,15 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
             const fallbackPath = path.join(fallbackDir, `violation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`);
             fs.writeFileSync(fallbackPath, JSON.stringify(newViolation.toObject(), null, 2));
             
-            // Still broadcast if possible
             const io = req.app.locals.io;
             broadcastViolation(io, newViolation);
-            
-            // Return 200 so candidate app doesn't retry
             return res.status(200).json({ message: "Saved locally (MongoDB unreachable)", fallback: true });
         }
 
         const savedViolation = await newViolation.save();
-
-        // Broadcast the violation using the io instance stored in app.locals
         const io = req.app.locals.io;
         broadcastViolation(io, savedViolation);
 
-        // Calculate and broadcast updated risk score
         try {
             const scoreData = await calculateRiskScore(savedViolation.sessionId);
             broadcastRiskScoreUpdate(io, savedViolation.sessionId, scoreData.riskScore);
@@ -98,14 +85,90 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
     }
 });
 
-// GET /violations/:sessionId
-router.get('/violations/:sessionId', async (req, res) => {
+// GET /violations — Get all violations (optional ?reviewed=false filter)
+router.get('/violations', async (req, res) => {
     try {
-        const violations = await Violation.find({ sessionId: req.params.sessionId }).sort({ timestamp: -1 });
+        const query = {};
+        if (req.query.reviewed !== undefined) {
+            query.reviewed = req.query.reviewed === 'true';
+        }
+        const violations = await Violation.find(query).sort({ timestamp: -1 });
         res.json(violations);
     } catch (err) {
-        console.error('Error fetching violations:', err);
+        console.error('Error fetching all violations:', err);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// GET /violations/:sessionId — Get violations for specific session (optional ?reviewed=false filter)
+router.get('/violations/:sessionId', async (req, res) => {
+    try {
+        const query = { sessionId: req.params.sessionId };
+        if (req.query.reviewed !== undefined) {
+            query.reviewed = req.query.reviewed === 'true';
+        }
+        const violations = await Violation.find(query).sort({ timestamp: -1 });
+        res.json(violations);
+    } catch (err) {
+        console.error('Error fetching session violations:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// PATCH /violations/:violationId/review — Review a violation (confirm/dismiss)
+router.patch('/violations/:violationId/review', async (req, res) => {
+    try {
+        const { reviewed, reviewNote, decision } = req.body;
+        
+        if (!['confirmed', 'dismissed', 'pending'].includes(decision)) {
+            return res.status(400).json({ error: 'Invalid decision. Must be confirmed, dismissed, or pending.' });
+        }
+
+        const updateData = {
+            reviewed: reviewed !== undefined ? Boolean(reviewed) : true,
+            decision: decision,
+            reviewNote: reviewNote !== undefined ? String(reviewNote) : "",
+            reviewedAt: new Date()
+        };
+
+        const updatedViolation = await Violation.findByIdAndUpdate(
+            req.params.violationId,
+            updateData,
+            { new: true }
+        );
+
+        if (!updatedViolation) {
+            return res.status(404).json({ error: 'Violation not found' });
+        }
+
+        const io = req.app.locals.io;
+        
+        // Broadcast violation review event live over WebSockets
+        broadcastViolationReview(io, {
+            violationId: updatedViolation._id,
+            sessionId: updatedViolation.sessionId,
+            reviewed: updatedViolation.reviewed,
+            decision: updatedViolation.decision,
+            reviewNote: updatedViolation.reviewNote,
+            reviewedAt: updatedViolation.reviewedAt,
+            violationDoc: updatedViolation
+        });
+
+        // Recalculate & broadcast risk score
+        try {
+            const scoreData = await calculateRiskScore(updatedViolation.sessionId);
+            broadcastRiskScoreUpdate(io, updatedViolation.sessionId, scoreData.riskScore);
+        } catch (scoreErr) {
+            console.error('Failed to recalculate risk score:', scoreErr);
+        }
+
+        res.json({
+            message: 'Violation reviewed successfully',
+            violation: updatedViolation
+        });
+    } catch (err) {
+        console.error('Error reviewing violation:', err);
+        res.status(500).json({ error: 'Failed to review violation', details: err.message });
     }
 });
 

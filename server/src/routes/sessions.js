@@ -1,7 +1,11 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const Session = require('../models/Session');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const router = express.Router();
+
+const Exam = require('../models/Exam');
 
 // GET /sessions/active
 router.get('/active', async (req, res) => {
@@ -27,9 +31,40 @@ router.get('/active', async (req, res) => {
 // POST /sessions
 router.post('/', async (req, res) => {
     try {
+        const { studentId, examId } = req.body;
+        if (!studentId || !examId) {
+            return res.status(400).json({ error: 'Both Student ID and Exam Code are required.' });
+        }
+
+        const inputCode = examId.trim().toUpperCase();
+
+        // Validate against real Exam documents if any exist
+        const examCount = await Exam.countDocuments();
+        if (examCount > 0) {
+            const exam = await Exam.findOne({
+                $or: [
+                    { examCode: new RegExp('^' + inputCode + '$', 'i') },
+                    { examId: new RegExp('^' + inputCode + '$', 'i') }
+                ]
+            });
+
+            if (!exam) {
+                return res.status(400).json({ 
+                    error: `Exam code "${inputCode}" does not exist. Please check your code.` 
+                });
+            }
+
+            const currentStatus = (exam.status || 'active').toLowerCase();
+            if (currentStatus !== 'active') {
+                return res.status(400).json({ 
+                    error: `Exam "${exam.title || exam.examCode || exam.examId}" (${inputCode}) is currently ${currentStatus.toUpperCase()} and not accepting candidates.` 
+                });
+            }
+        }
+
         const newSession = new Session({
-            studentId: req.body.studentId,
-            examId: req.body.examId
+            studentId,
+            examId: inputCode
         });
         const savedSession = await newSession.save();
         res.status(201).json(savedSession);
@@ -54,6 +89,220 @@ router.patch('/:sessionId/end', async (req, res) => {
     } catch (err) {
         console.error('Error ending session:', err);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /sessions/:sessionId/camera-verification — Upload initial camera verification photo
+router.post('/:sessionId/camera-verification', async (req, res) => {
+    try {
+        const { photoBase64 } = req.body;
+        if (!photoBase64) {
+            return res.status(400).json({ error: 'photoBase64 is required' });
+        }
+
+        const verificationDir = path.join(__dirname, '../../uploads/verification');
+        if (!fs.existsSync(verificationDir)) {
+            fs.mkdirSync(verificationDir, { recursive: true });
+        }
+
+        // Clean base64 string
+        const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        const filename = `${req.params.sessionId}_camera_check_${Date.now()}.jpg`;
+        const filePath = path.join(verificationDir, filename);
+        fs.writeFileSync(filePath, buffer);
+
+        const photoUrl = `/uploads/verification/${filename}`;
+
+        const session = await Session.findByIdAndUpdate(
+            req.params.sessionId,
+            {
+                cameraVerificationPhoto: photoUrl,
+                cameraVerificationStatus: 'pending'
+            },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        const io = req.app.locals.io;
+        if (io) {
+            io.emit('cameraVerificationUpdated', {
+                sessionId: session._id.toString(),
+                cameraVerificationPhoto: photoUrl,
+                cameraVerificationStatus: 'pending'
+            });
+        }
+
+        res.json({ message: 'Camera verification photo uploaded successfully', session });
+    } catch (err) {
+        console.error('Error saving camera verification photo:', err);
+        res.status(500).json({ error: 'Failed to save camera verification photo' });
+    }
+});
+
+// PATCH /sessions/:sessionId/camera-verification — Teacher triage (verified vs flagged)
+router.patch('/:sessionId/camera-verification', async (req, res) => {
+    try {
+        const { status, note } = req.body;
+        if (!['verified', 'flagged'].includes(status)) {
+            return res.status(400).json({ error: 'Status must be verified or flagged' });
+        }
+
+        const session = await Session.findById(req.params.sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        session.cameraVerificationStatus = status;
+        if (note) session.cameraVerificationNote = note;
+        await session.save();
+
+        const io = req.app.locals.io;
+
+        // If flagged as issue, automatically convert to a violation record in student evidence timeline
+        if (status === 'flagged') {
+            const Violation = require('../models/Violation');
+            const violationData = {
+                sessionId: session._id.toString(),
+                type: 'camera_issue',
+                severity: 4,
+                timestamp: new Date(),
+                details: {
+                    reason: note || 'Camera verification issue reported by examiner (covered/invalid feed)'
+                },
+                screenshotPath: session.cameraVerificationPhoto,
+                reviewed: true,
+                decision: 'confirmed',
+                reviewNote: note || 'Teacher flagged initial camera check issue',
+                reviewedAt: new Date()
+            };
+
+            const newViolation = new Violation(violationData);
+            const savedViolation = await newViolation.save();
+
+            const scoreData = await calculateRiskScore(session._id);
+
+            if (io) {
+                const { broadcastViolation, broadcastRiskScoreUpdate } = require('../sockets/violationSocket');
+                broadcastViolation(io, savedViolation);
+                broadcastRiskScoreUpdate(io, session._id.toString(), scoreData.riskScore);
+            }
+        }
+
+        if (io) {
+            io.emit('cameraVerificationUpdated', {
+                sessionId: session._id.toString(),
+                cameraVerificationPhoto: session.cameraVerificationPhoto,
+                cameraVerificationStatus: status,
+                cameraVerificationNote: note
+            });
+        }
+
+        res.json({ message: `Camera verification status updated to ${status}`, session });
+    } catch (err) {
+        console.error('Error updating camera verification:', err);
+        res.status(500).json({ error: 'Failed to update camera verification' });
+    }
+});
+
+// GET /sessions/:sessionId/status — Candidate app status & warnings check
+router.get('/:sessionId/status', async (req, res) => {
+    try {
+        const session = await Session.findById(req.params.sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+        res.json({
+            sessionId: session._id,
+            studentId: session.studentId,
+            examId: session.examId,
+            status: session.status,
+            terminationReason: session.terminationReason,
+            warnings: session.warnings || [],
+            cameraVerificationStatus: session.cameraVerificationStatus
+        });
+    } catch (err) {
+        console.error('Error fetching session status:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// POST /sessions/:sessionId/warn — Send examiner warning message to candidate
+router.post('/:sessionId/warn', async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message || !message.trim()) {
+            return res.status(400).json({ error: 'Warning message is required' });
+        }
+
+        const session = await Session.findById(req.params.sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        const newWarning = {
+            message: message.trim(),
+            timestamp: new Date()
+        };
+
+        session.warnings.push(newWarning);
+        await session.save();
+
+        const io = req.app.locals.io;
+        if (io) {
+            io.emit('candidateWarning', {
+                sessionId: session._id.toString(),
+                studentId: session.studentId,
+                examId: session.examId,
+                warning: newWarning
+            });
+        }
+
+        res.json({ message: 'Warning sent to candidate successfully', session });
+    } catch (err) {
+        console.error('Error sending warning to candidate:', err);
+        res.status(500).json({ error: 'Failed to send warning' });
+    }
+});
+
+// POST /sessions/:sessionId/terminate — Examiner terminates candidate session
+router.post('/:sessionId/terminate', async (req, res) => {
+    try {
+        const { reason } = req.body;
+        const session = await Session.findById(req.params.sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        session.status = 'terminated';
+        session.endTime = new Date();
+        session.terminationReason = reason || 'Terminated by examiner for integrity violation';
+        await session.save();
+
+        const io = req.app.locals.io;
+        if (io) {
+            io.emit('candidateTerminated', {
+                sessionId: session._id.toString(),
+                studentId: session.studentId,
+                examId: session.examId,
+                reason: session.terminationReason
+            });
+
+            // Also broadcast risk update to refresh student list across dashboards
+            const { calculateRiskScore } = require('../scoring/severityEngine');
+            const { broadcastRiskScoreUpdate } = require('../sockets/violationSocket');
+            const scoreData = await calculateRiskScore(session._id);
+            broadcastRiskScoreUpdate(io, session._id.toString(), scoreData.riskScore);
+        }
+
+        res.json({ message: 'Candidate session terminated successfully', session });
+    } catch (err) {
+        console.error('Error terminating session:', err);
+        res.status(500).json({ error: 'Failed to terminate session' });
     }
 });
 

@@ -9,7 +9,19 @@ const sessionSchema = new mongoose.Schema({
         type: String, 
         enum: ["active", "completed", "terminated"], 
         default: "active" 
-    }
+    },
+    cameraVerificationPhoto: { type: String, default: null },
+    cameraVerificationStatus: { 
+        type: String, 
+        enum: ["pending", "verified", "flagged", "none"], 
+        default: "none" 
+    },
+    cameraVerificationNote: { type: String, default: null },
+    terminationReason: { type: String, default: null },
+    warnings: [{
+        message: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now }
+    }]
 });
 
 module.exports = mongoose.model('Session', sessionSchema);

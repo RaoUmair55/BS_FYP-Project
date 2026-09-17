@@ -5,6 +5,7 @@ export default function useSocket() {
     const [connected, setConnected] = useState(false);
     const [violations, setViolations] = useState([]);
     const [riskScores, setRiskScores] = useState({});
+    const [cameraVerifications, setCameraVerifications] = useState({});
     
     // Use a ref to hold the socket instance across re-renders
     const socketRef = useRef(null);
@@ -28,17 +29,41 @@ export default function useSocket() {
 
         socket.on('violation', (newViolation) => {
             setViolations((prev) => {
-                // Keep the last 50, newest first
                 const updated = [newViolation, ...prev];
                 return updated.slice(0, 50);
             });
         });
 
+        socket.on('violationReviewed', (reviewData) => {
+            setViolations((prev) => 
+                prev.map((v) => {
+                    const id = String(v._id || v.id);
+                    const targetId = String(reviewData.violationId);
+                    if (id === targetId) {
+                        return {
+                            ...v,
+                            reviewed: reviewData.reviewed,
+                            decision: reviewData.decision,
+                            reviewNote: reviewData.reviewNote,
+                            reviewedAt: reviewData.reviewedAt
+                        };
+                    }
+                    return v;
+                })
+            );
+        });
+
         socket.on('riskScoreUpdate', (data) => {
-            // data format: { sessionId, riskScore }
             setRiskScores((prev) => ({
                 ...prev,
                 [data.sessionId]: data.riskScore
+            }));
+        });
+
+        socket.on('cameraVerificationUpdated', (data) => {
+            setCameraVerifications((prev) => ({
+                ...prev,
+                [data.sessionId]: data
             }));
         });
 
@@ -50,5 +75,5 @@ export default function useSocket() {
         };
     }, []);
 
-    return { connected, violations, riskScores };
+    return { connected, violations, setViolations, riskScores, cameraVerifications };
 }

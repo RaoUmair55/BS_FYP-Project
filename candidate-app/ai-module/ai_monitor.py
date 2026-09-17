@@ -32,54 +32,91 @@ class AIMonitor:
     Emits violations that match the standard team schema.
     """
 
-    def __init__(self, session_id: str, on_violation: Optional[Callable] = None):
+    def __init__(self, session_id: str, on_violation: Optional[Callable] = None, on_violation_callback: Optional[Callable] = None):
         """
         Initializes the AIMonitor with session details, configuration, and ML models.
-        
-        Args:
-            session_id: The ID of the current exam session.
-            on_violation: Callback function invoked when a violation is detected.
-                          Called with a completed violation dict.
         """
         self.session_id = session_id
-        self.on_violation = on_violation
-        
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Load configuration (yaw_threshold_degrees, sustained_seconds, object_detection_confidence)
-        config_path = os.path.join(base_dir, "config", "thresholds.json")
-        with open(config_path, "r") as f:
-            self.thresholds = json.load(f)
-            
-        # Setup MediaPipe Face Mesh
-        # max_num_faces=3 allows us to detect multiple people without wasting too much compute.
-        self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
-            max_num_faces=3,#self._check_head_pose(frame)
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        
-        # Load ONNX model for object detection
-        # Note: Using FP32 YOLO26 model on CPU for now. INT8 calibration comes later
-        # once we have a proper calibration set.
-        model_path = os.path.join(base_dir, "yolo26n.onnx")
-        self.ort_session = ort.InferenceSession(
-            model_path,
-            providers=["CPUExecutionProvider"]
-        )
-        
-        # State variables
+        self.on_violation = on_violation or on_violation_callback
+        self.is_active = False
+        self.running = False
         self.frame_count = 0
         self.head_turn_start = None
         self.no_face_start = None
         self.second_person_counter = 0
-        self.running = False
+        self.mp_face_mesh = None
+        self.ort_session = None
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         
+        try:
+            # Load configuration
+            config_path = os.path.join(base_dir, "config", "thresholds.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    self.thresholds = json.load(f)
+            else:
+                self.thresholds = {
+                    "yaw_threshold_degrees": 25,
+                    "sustained_seconds": 3,
+                    "object_detection_confidence": 0.5
+                }
+                
+            # Setup MediaPipe Face Mesh if available
+            try:
+                import mediapipe.python.solutions.face_mesh as mp_fm
+                self.mp_face_mesh = mp_fm.FaceMesh(
+                    max_num_faces=3,
+                    refine_landmarks=True,
+                    min_detection_confidence=0.5,
+                    min_tracking_confidence=0.5
+                )
+            except Exception:
+                if hasattr(mp, 'solutions') and hasattr(mp.solutions, 'face_mesh'):
+                    self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
+                        max_num_faces=3,
+                        refine_landmarks=True,
+                        min_detection_confidence=0.5,
+                        min_tracking_confidence=0.5
+                    )
+                else:
+                    print("[AIMonitor Warning] MediaPipe face mesh solution unavailable.")
+
+            # Setup OpenCV Haar Cascade Face detector (works natively on Python 3.14)
+            try:
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+                if self.face_cascade.empty():
+                    self.face_cascade = None
+                else:
+                    print("[AIMonitor] OpenCV Haar Cascade face detector loaded successfully.")
+            except Exception as e:
+                print(f"[AIMonitor Warning] Failed to load OpenCV Haar Cascade: {e}")
+                self.face_cascade = None
+
+            # Load ONNX model for object detection if present
+            model_path = os.path.join(base_dir, "yolo26n.onnx")
+            if os.path.exists(model_path):
+                try:
+                    self.ort_session = ort.InferenceSession(
+                        model_path,
+                        providers=["CPUExecutionProvider"]
+                    )
+                    print("[AIMonitor] ONNX YOLO object detector loaded successfully.")
+                except Exception as e:
+                    print(f"[AIMonitor Warning] Failed to load ONNX model: {e}")
+
+            enable_camera = os.environ.get("ENABLE_CAMERA_MONITOR", "true").lower() == "true"
+            self.is_active = enable_camera and (self.mp_face_mesh is not None or self.face_cascade is not None or self.ort_session is not None)
+            if self.is_active:
+                print("[AIMonitor] AI camera monitoring initialized successfully.")
+            else:
+                print("[AIMonitor] Camera monitor disabled.")
+        except Exception as e:
+            print(f"[AIMonitor Warning] Could not initialize AI monitor: {e}")
+            self.is_active = False
+
         # 3D face model points for PnP solve used in yaw estimation
-        # We use a standard 3D face model mapped to MediaPipe landmarks:
-        # Nose tip (1), Chin (152), Left eye corner (263), Right eye corner (33),
-        # Left mouth corner (287), Right mouth corner (57)
         self.face_3d = np.array([
             (0.0, 0.0, 0.0),            # Nose tip
             (0.0, -330.0, -65.0),       # Chin
@@ -91,39 +128,155 @@ class AIMonitor:
 
     def start(self, camera_index=0):
         """
-        Starts the monitoring loop reading from the webcam.
-        
-        Args:
-            camera_index: The index of the webcam to use. Defaults to 0.
+        Starts the monitoring loop reading from the webcam in a non-blocking background thread.
         """
-        self.running = True
-        cap = cv2.VideoCapture(camera_index)
-        
-        while self.running:
-            ret, frame = cap.read()
-            if not ret:
-                continue
-                
-            self.frame_count += 1
-            
-            # Check head pose every frame for immediate and accurate continuous tracking
-            self._check_head_pose(frame)
-            cv2.imshow("DEBUG - AI Monitor", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                self.running = False
+        if not getattr(self, "is_active", False):
+            print("[AIMonitor] AI camera monitor inactive. Skipping camera loop.")
+            return
 
-            # Check face count every 10 frames (saving compute, as additional people
-            # entering the frame don't need per-frame tracking to be caught)
-            if self.frame_count % 10 == 0:
-                self._check_face_count(frame)
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            thread = threading.Thread(target=self._run_loop, args=(camera_index,), daemon=True)
+            thread.start()
+        else:
+            self._run_loop(camera_index)
+
+    def _run_loop(self, camera_index=0):
+        self.running = True
+        cap = None
+        
+        # Retry camera initialization up to 10 attempts (5 seconds total)
+        for attempt in range(1, 11):
+            if not self.running:
+                return
+            
+            print(f"[AIMonitor] Opening camera (attempt {attempt}/10)...")
+            
+            # Try standard backend first
+            cap = cv2.VideoCapture(camera_index)
+            if not cap.isOpened():
+                cap.release()
+                # On Windows, try CAP_DSHOW or CAP_MSMF
+                if os.name == 'nt':
+                    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+                    if not cap.isOpened():
+                        cap.release()
+                        cap = cv2.VideoCapture(camera_index, cv2.CAP_MSMF)
+            
+            if cap and cap.isOpened():
+                # Verify we can actually read a valid frame
+                ret, test_frame = cap.read()
+                if ret and test_frame is not None:
+                    print(f"[AIMonitor] Camera monitoring active on device index {camera_index}.")
+                    break
+                else:
+                    cap.release()
+                    cap = None
+            
+            time.sleep(0.5)
+
+        if not cap or not cap.isOpened():
+            print("[AIMonitor Warning] Could not open camera device after retries. AI camera monitoring disabled.")
+            return
+
+        consecutive_read_failures = 0
+        try:
+            while self.running:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    consecutive_read_failures += 1
+                    time.sleep(0.1)
+                    
+                    # If camera stream drops during exam, attempt to reconnect
+                    if consecutive_read_failures > 50:
+                        print("[AIMonitor Warning] Lost camera stream. Re-initializing camera capture...")
+                        cap.release()
+                        time.sleep(1.0)
+                        cap = cv2.VideoCapture(camera_index)
+                        consecutive_read_failures = 0
+                    continue
+                    
+                consecutive_read_failures = 0
+                self.frame_count += 1
                 
-            # Check for objects every 90 frames (approx. every 3 seconds at 30fps)
-            # Object detection is heavy, and phones/books don't disappear in 3 seconds.
-            if self.frame_count % 90 == 0:
-                self._check_objects(frame)
-                
-        cap.release()
-        cv2.destroyAllWindows()
+                if self.mp_face_mesh:
+                    try:
+                        self._check_head_pose(frame)
+                        if self.frame_count % 10 == 0:
+                            self._check_face_count(frame)
+                    except Exception:
+                        pass
+                elif self.face_cascade:
+                    try:
+                        self._check_faces_opencv(frame)
+                    except Exception:
+                        pass
+                    
+                if self.frame_count % 15 == 0 and self.ort_session:
+                    try:
+                        self._check_objects(frame)
+                    except Exception:
+                        pass
+                        
+                time.sleep(0.03)
+        except Exception as e:
+            print(f"[AIMonitor Error] Camera monitoring loop crashed: {e}")
+        finally:
+            if 'cap' in locals() and cap and cap.isOpened():
+                cap.release()
+
+    def _check_faces_opencv(self, frame):
+        """Fallback face detection using OpenCV Haar Cascades."""
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = self.face_cascade.detectMultiScale(
+            gray, 
+            scaleFactor=1.1, 
+            minNeighbors=5, 
+            minSize=(60, 60)
+        )
+        
+        num_faces = len(faces)
+        
+        # 1. Missing Face Check
+        if num_faces == 0:
+            if self.no_face_start is None:
+                self.no_face_start = time.time()
+            elif time.time() - self.no_face_start >= 10.0:
+                self._emit_violation("no_face_detected", severity=3, details={})
+                self.no_face_start = None
+            return
+            
+        self.no_face_start = None
+
+        # 2. Second Person Check
+        if num_faces > 1:
+            self.second_person_counter += 1
+            if self.second_person_counter >= 3:
+                self._emit_violation("second_person_detected", severity=4, details={"face_count": num_faces})
+                self.second_person_counter = 0
+        else:
+            self.second_person_counter = 0
+
+        # 3. Head Turn / Off-Center Check
+        (x, y, w, h) = faces[0]
+        face_center_x = x + w / 2
+        frame_center_x = frame.shape[1] / 2
+        offset_ratio = abs(face_center_x - frame_center_x) / frame_center_x
+
+        if offset_ratio > 0.45:
+            if self.head_turn_start is None:
+                self.head_turn_start = time.time()
+            else:
+                elapsed = time.time() - self.head_turn_start
+                if elapsed >= self.thresholds.get("sustained_seconds", 3):
+                    self._emit_violation(
+                        "head_turn_away", 
+                        severity=2, 
+                        details={"duration": elapsed, "offset_ratio": round(offset_ratio, 2)}
+                    )
+                    self.head_turn_start = None
+        else:
+            self.head_turn_start = None
 
     def stop(self):
         """Stops the monitoring loop cleanly by breaking the while loop condition."""
@@ -225,13 +378,13 @@ class AIMonitor:
 
     def _check_objects(self, frame):
         """
-        Runs YOLO26 object detection model to find unauthorized items.
+        Runs YOLO object detection model to find unauthorized items.
         Filters for 'cell phone' (class 67) and 'book' (class 73).
-        
-        Reasoning for no NMS: The model output is already post-NMS natively from
-        its ONNX export graph, resulting in exactly (1, 300, 6) shape. We just need 
-        to threshold by confidence, which removes the need for extra processing.
         """
+        now = time.time()
+        if hasattr(self, 'last_object_violation_at') and (now - self.last_object_violation_at < 3.0):
+            return
+
         # Preprocess: resize -> RGB -> CHW -> normalize -> batch dim -> float32
         resized = cv2.resize(frame, (640, 640))
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
@@ -242,44 +395,67 @@ class AIMonitor:
         # Run ONNX inference
         input_name = self.ort_session.get_inputs()[0].name
         outputs = self.ort_session.run(None, {input_name: batch_input})
-        
-        # Output shape is (1, 300, 6) -> 300 rows of [x1, y1, x2, y2, conf, class_id]
-        predictions = outputs[0][0]
-        
-        # Note: box coordinates [x1, y1, x2, y2] are in 640x640 space and would need 
-        # scaling back to the original frame's width/height only if drawing debug 
-        # boxes later — not needed for violation emission itself.
-        for pred in predictions:
-            confidence = float(pred[4])
-            if confidence < self.thresholds["object_detection_confidence"]:
-                continue
+        output_tensor = outputs[0]
+
+        if len(output_tensor.shape) == 3:
+            output_tensor = output_tensor[0]
+
+        conf_thresh = self.thresholds.get("object_detection_confidence", 0.35)
+
+        # Format A: Shape (300, 6) -> [x1, y1, x2, y2, conf, class_id]
+        if output_tensor.shape[-1] == 6 or (len(output_tensor.shape) == 2 and output_tensor.shape[1] == 6):
+            for pred in output_tensor:
+                confidence = float(pred[4])
+                if confidence < conf_thresh:
+                    continue
+                    
+                class_id = int(pred[5])
+                if class_id == 67 or class_id == 73: # Cell phone or book
+                    class_name = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "cell phone"
+                    self.last_object_violation_at = now
+                    self._emit_violation(
+                        "unauthorized_object",
+                        severity=3,
+                        details={"confidence": round(confidence, 2), "object_class": class_name}
+                    )
+                    break
+        # Format B: Shape (84, 8400) -> Standard YOLO ONNX output
+        elif len(output_tensor.shape) == 2 and output_tensor.shape[0] == 84:
+            boxes_scores = output_tensor.T # (8400, 84)
+            for pred in boxes_scores:
+                class_scores = pred[4:]
+                class_id = int(np.argmax(class_scores))
+                confidence = float(class_scores[class_id])
                 
-            class_id = int(pred[5])
-            if class_id < 0 or class_id >= len(COCO_CLASSES):
-                continue
-                
-            class_name = COCO_CLASSES[class_id]
-            
-            # Only act on cell phone (67) and book (73)
-            if class_id == 67 or class_id == 73:
-                self._emit_violation(
-                    "unauthorized_object",
-                    severity=3,
-                    details={"confidence": confidence, "object_class": class_name}
-                )
+                if confidence >= conf_thresh:
+                    if class_id == 67 or class_id == 73: # Cell phone or book
+                        class_name = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "cell phone"
+                        self.last_object_violation_at = now
+                        self._emit_violation(
+                            "unauthorized_object",
+                            severity=3,
+                            details={"confidence": round(confidence, 2), "object_class": class_name}
+                        )
+                        break
 
     def _emit_violation(self, violation_type, severity, details):
         """
-        Constructs the violation event matching the standard schema and emits it.
-        Calls the on_violation callback if set, otherwise prints to stdout.
+        Constructs the violation event matching the standard schema and emits it with screenshot evidence.
         """
+        screenshot_path = None
+        try:
+            import screenshot_capture
+            screenshot_path = screenshot_capture.capture_screenshot(self.session_id, violation_type)
+        except Exception as e:
+            print(f"[AIMonitor Warning] Could not capture screenshot for {violation_type}: {e}")
+
         event = {
             "sessionId": self.session_id,
             "type": violation_type,
             "severity": severity,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "details": details,
-            "screenshotPath": None  # Always null here, filled in later by screenshot_capture.py
+            "screenshotPath": screenshot_path
         }
         
         if self.on_violation:
