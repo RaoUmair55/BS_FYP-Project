@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const path = require('path');
 require('dotenv').config();
 
@@ -11,12 +13,19 @@ const { initSocket } = require('./sockets/violationSocket');
 const app = express();
 const server = http.createServer(app);
 
-// CORS for Express API
-app.use(cors());
+// Global Security & Parser Middleware
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+app.use(cookieParser());
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static uploads (for screenshots)
+// Serve static uploads (for screenshots, papers, verification photos)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Initialize Socket.io
@@ -27,6 +36,7 @@ app.locals.io = io; // Make io accessible in routes
 connectDB();
 
 // Mount Routes
+app.use('/auth', require('./routes/auth'));
 app.use('/', require('./routes/violations'));
 app.use('/sessions', require('./routes/sessions'));
 app.use('/exam', require('./routes/examPaper'));

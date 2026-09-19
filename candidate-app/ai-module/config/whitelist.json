@@ -5,7 +5,8 @@
     "python.exe",
     "code.exe",
     "antigravity ide.exe",
-    "msedge.exe"
+    "msedge.exe",
+    "chrome.exe"
   ],
   "dev_whitelist": [
     "electron.exe",

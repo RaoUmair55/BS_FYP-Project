@@ -2,11 +2,13 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>System Self-Check</title>
+  <title>IntegrityFlow — System Self-Check</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 2rem; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
-    h1 { margin-top: 0; font-size: 1.5rem; text-align: center; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1f2937; margin: 0; padding: 2rem; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { background: white; padding: 2rem 2.5rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); width: 100%; max-width: 600px; }
+    .brand-header { display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem; text-align: center; }
+    .brand-header img { width: 48px; height: 48px; border-radius: 12px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25); }
+    h1 { margin-top: 0; margin-bottom: 4px; font-size: 1.5rem; text-align: center; color: #0f172a; }
     .check-item { margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #e5e7eb; }
     .check-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; font-weight: bold; }
     .status-icon { font-size: 1.25rem; }
@@ -19,17 +21,20 @@
     .mic-meter { height: 100%; background: #10b981; width: 0%; transition: width 0.1s; }
     .app-list { list-style-type: none; padding: 0; margin: 0; color: #ef4444; }
     .app-list li { margin-bottom: 0.25rem; }
-    button { background: #3b82f6; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; font-size: 1rem; cursor: pointer; width: 100%; font-weight: bold; }
+    button { background: #1a73e8; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; width: 100%; font-weight: bold; transition: background-color 0.2s; }
     button:disabled { background: #9ca3af; cursor: not-allowed; }
-    button:hover:not(:disabled) { background: #2563eb; }
-    .secondary-button { background: #e5e7eb; color: #374151; margin-top: 0.5rem; }
-    .secondary-button:hover:not(:disabled) { background: #d1d5db; }
+    button:hover:not(:disabled) { background: #1557d0; }
+    .secondary-button { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; margin-top: 0.5rem; }
+    .secondary-button:hover:not(:disabled) { background: #e2e8f0; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>System Self-Check</h1>
-    <p style="text-align: center; color: #6b7280; margin-bottom: 2rem;">Please complete the following checks before starting your exam.</p>
+    <div class="brand-header">
+      <img src="assets/icon.png" alt="IntegrityFlow">
+      <h1>System Self-Check</h1>
+      <p style="color: #64748b; font-size: 14px; margin: 0;">Verify your hardware and environment before starting the exam.</p>
+    </div>
 
     <div class="check-item" id="check-camera">
       <div class="check-header">

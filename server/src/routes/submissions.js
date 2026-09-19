@@ -2,25 +2,15 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const Submission = require('../models/Submission');
 const Session = require('../models/Session');
+const storageService = require('../services/storage');
 
-const uploadDir = path.join(__dirname, '../../uploads/submissions');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        const name = `${req.body.sessionId || 'session'}_${Date.now()}${ext}`;
-        cb(null, name);
-    }
+// Use memory storage so file is passed to storageService
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 } // 15MB
 });
-
-const upload = multer({ storage });
 
 // Wrapper middleware to support both JSON body and multipart form data
 function handleUpload(req, res, next) {
@@ -52,14 +42,19 @@ router.post('/', handleUpload, async (req, res) => {
         if (hasFile && hasText) submissionType = 'both';
         else if (hasFile) submissionType = 'file';
 
-        const relativePath = req.file ? `/uploads/submissions/${path.basename(req.file.path)}` : null;
+        let savedFile = null;
+        if (req.file) {
+            const ext = path.extname(req.file.originalname);
+            const filename = `${sessionId}_${Date.now()}${ext}`;
+            savedFile = await storageService.save(req.file.buffer, filename, 'submissions');
+        }
 
         const submission = new Submission({
             sessionId,
             submissionType,
             answerText: answerText || '',
             filename: req.file ? req.file.originalname : null,
-            filePath: relativePath || (req.file ? req.file.path : null),
+            filePath: savedFile ? savedFile.url : null,
             fileSize: req.file ? req.file.size : 0,
             uploadedAt: new Date()
         });

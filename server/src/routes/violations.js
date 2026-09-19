@@ -6,6 +6,8 @@ const Violation = require('../models/Violation');
 const Session = require('../models/Session');
 const { broadcastViolation, broadcastRiskScoreUpdate, broadcastViolationReview } = require('../sockets/violationSocket');
 const { calculateRiskScore } = require('../scoring/severityEngine');
+const { requireAuth } = require('../middleware/authMiddleware');
+const storageService = require('../services/storage');
 const multer = require('multer');
 
 // Configure multer for screenshot uploads
@@ -25,7 +27,7 @@ const upload = multer({ storage });
 
 const router = express.Router();
 
-// POST /violation
+// POST /violation — Machine-to-machine (Candidate App -> Server, intentionally open)
 router.post('/violation', upload.single('screenshot'), async (req, res) => {
     try {
         let details = req.body.details;
@@ -55,12 +57,8 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
 
         if (mongoose.connection.readyState !== 1) {
             console.warn('[WARNING] MongoDB unreachable. Writing violation to local fallback.');
-            const fallbackDir = path.join(__dirname, '../../uploads/failed-violations');
-            if (!fs.existsSync(fallbackDir)) {
-                fs.mkdirSync(fallbackDir, { recursive: true });
-            }
-            const fallbackPath = path.join(fallbackDir, `violation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`);
-            fs.writeFileSync(fallbackPath, JSON.stringify(newViolation.toObject(), null, 2));
+            const fallbackFilename = `violation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`;
+            await storageService.save(JSON.stringify(newViolation.toObject(), null, 2), fallbackFilename, 'failed-violations');
             
             const io = req.app.locals.io;
             broadcastViolation(io, newViolation);
@@ -85,8 +83,8 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
     }
 });
 
-// GET /violations — Get all violations (optional ?reviewed=false filter)
-router.get('/violations', async (req, res) => {
+// GET /violations — Get all violations (Teacher-facing, protected)
+router.get('/violations', requireAuth, async (req, res) => {
     try {
         const query = {};
         if (req.query.reviewed !== undefined) {
@@ -100,8 +98,8 @@ router.get('/violations', async (req, res) => {
     }
 });
 
-// GET /violations/:sessionId — Get violations for specific session (optional ?reviewed=false filter)
-router.get('/violations/:sessionId', async (req, res) => {
+// GET /violations/:sessionId — Get violations for specific session (Teacher-facing, protected)
+router.get('/violations/:sessionId', requireAuth, async (req, res) => {
     try {
         const query = { sessionId: req.params.sessionId };
         if (req.query.reviewed !== undefined) {
@@ -115,8 +113,8 @@ router.get('/violations/:sessionId', async (req, res) => {
     }
 });
 
-// PATCH /violations/:violationId/review — Review a violation (confirm/dismiss)
-router.patch('/violations/:violationId/review', async (req, res) => {
+// PATCH /violations/:violationId/review — Review a violation (Teacher-facing, protected)
+router.patch('/violations/:violationId/review', requireAuth, async (req, res) => {
     try {
         const { reviewed, reviewNote, decision } = req.body;
         

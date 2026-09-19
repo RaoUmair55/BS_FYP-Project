@@ -25,7 +25,13 @@ let activeSessionInfo = {
 };
 
 async function createWindow() {
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, 'assets', 'icon.ico')
+    : path.join(__dirname, 'assets', 'icon.png');
+
   mainWindow = new BrowserWindow({
+    title: 'IntegrityFlow',
+    icon: iconPath,
     width: 1024,
     height: 768,
     webPreferences: {
@@ -56,12 +62,17 @@ async function waitForPythonReady() {
   return false;
 }
 
-function spawnPythonProcess(mode) {
+function spawnPythonProcess(mode, isSelfCheck = false) {
   const pythonScript = path.join(__dirname, '..', 'ai-module', 'main.py');
-  console.log(`[Electron] Spawning Python process in ${mode} mode: python ${pythonScript}`);
+  console.log(`[Electron] Spawning Python process in ${mode} mode (isSelfCheck=${isSelfCheck}): python ${pythonScript}`);
   
   // Inject session ID to the Python environment
-  const pythonEnv = { ...process.env, EXAM_SESSION_ID: activeSessionInfo.sessionId, APP_MODE: mode };
+  const pythonEnv = { 
+    ...process.env, 
+    EXAM_SESSION_ID: activeSessionInfo.sessionId, 
+    APP_MODE: mode,
+    IS_SELF_CHECK: isSelfCheck ? 'true' : 'false'
+  };
   const proc = spawn('python', [pythonScript], { env: pythonEnv });
 
   proc.stdout.on('data', (data) => {
@@ -152,18 +163,48 @@ ipcMain.handle('login', async (event, { sessionId, examId, studentId }) => {
   activeSessionInfo.examId = examId;
   activeSessionInfo.studentId = studentId || 'Candidate';
   
-  // Now spawn python in dev mode
-  pythonProcess = spawnPythonProcess('dev');
+  // 1. Show splash/loading screen immediately while Python spawns and health-checks
+  if (mainWindow) {
+    await mainWindow.loadFile(path.join(__dirname, '../renderer/splash.html'));
+  }
+
+  // 2. Spawn python in dev mode for self-check
+  pythonProcess = spawnPythonProcess('dev', true);
   
   const isPythonReady = await waitForPythonReady();
   if (!isPythonReady) {
     dialog.showErrorBox('Initialization Error', 'The AI module failed to start.');
+    if (mainWindow) {
+      await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
+    }
     return { success: false, error: 'AI module failed to start' };
   }
   
+  // 3. Python is ready -> proceed to consent screen
+  if (mainWindow) {
+    await mainWindow.loadFile(path.join(__dirname, '../renderer/consent.html'));
+  }
+  return { success: true };
+});
+
+// Handle Transition from Consent Screen to Self-Check
+ipcMain.handle('proceed-to-self-check', async () => {
+  console.log('[Electron] Consent granted. Proceeding to Self-Check...');
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/selfCheck.html'));
   }
+  return { success: true };
+});
+
+// Handle Decline from Consent Screen
+ipcMain.handle('decline-consent', async () => {
+  console.log('[Electron] Candidate declined monitoring consent. Gracefully quitting...');
+  if (pythonProcess) {
+    pythonProcess.killedIntentional = true;
+    pythonProcess.kill('SIGTERM');
+  }
+  stopReceiver();
+  app.quit();
   return { success: true };
 });
 
@@ -176,9 +217,8 @@ ipcMain.handle('start-exam-mode', async () => {
   }
   
   // Small delay to ensure port is freed
-  await new Promise(r => setTimeout(r, 1000));
-  
-  pythonProcess = spawnPythonProcess('exam');
+  const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
+  pythonProcess = spawnPythonProcess(targetMode, false);
   const isReady = await waitForPythonReady();
   
   if (isReady) {

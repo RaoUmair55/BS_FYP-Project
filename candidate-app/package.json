@@ -1,5 +1,6 @@
 {
   "name": "candidate-app",
+  "productName": "IntegrityFlow",
   "version": "1.0.0",
   "scripts": {
     "start": "cd electron && npm start",

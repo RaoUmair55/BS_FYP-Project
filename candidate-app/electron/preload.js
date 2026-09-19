@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('api', {
   checkApps: () => ipcRenderer.invoke('check-apps'),
   killApp: (name) => ipcRenderer.invoke('kill-app', name),
   login: (sessionData) => ipcRenderer.invoke('login', sessionData),
+  proceedToSelfCheck: async () => ipcRenderer.invoke('proceed-to-self-check'),
+  declineConsent: async () => ipcRenderer.invoke('decline-consent'),
   startExamMode: async () => ipcRenderer.invoke('start-exam-mode'),
   getSessionInfo: async () => ipcRenderer.invoke('get-session-info')
 });

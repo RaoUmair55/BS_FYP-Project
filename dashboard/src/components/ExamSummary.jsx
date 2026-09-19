@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import { 
     ArrowLeft, Users, AlertTriangle, Activity, CheckCircle, 
     XCircle, Clock, FileText, ExternalLink, RefreshCw,
@@ -25,7 +25,7 @@ const ExamSummary = ({ examId, onBack }) => {
         setLoading(true);
         setError(null);
         try {
-            const res = await axios.get(`${API_BASE}/exams/${examId}/summary`);
+            const res = await api.get(`/exams/${examId}/summary`);
             setSummary(res.data);
         } catch (err) {
             console.error('Failed to fetch exam summary:', err);

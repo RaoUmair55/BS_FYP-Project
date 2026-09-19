@@ -35,16 +35,33 @@ body {
   gap: 12px;
 }
 
-.brand-icon {
-  color: #1a73e8;
+.brand-logo-img {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.25);
+  flex-shrink: 0;
+}
+
+.brand-text-container {
+  display: flex;
+  flex-direction: column;
 }
 
 .brand-title {
-  font-size: 20px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   color: #202124;
   margin: 0;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.brand-subtitle-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: #5f6368;
+  letter-spacing: 0.1px;
 }
 
 .header-controls {

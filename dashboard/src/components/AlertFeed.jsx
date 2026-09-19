@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Check, X, MessageSquare, AlertCircle, CheckCircle, XCircle, Clock, Filter, Eye } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, CheckCircle, ExternalLink, MessageSquare, Check, X, ShieldAlert, Sparkles, Filter, Video, Users, Smartphone, Eye, Globe } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './Components.css';
 
 const API_BASE = 'http://localhost:5000';
@@ -18,7 +19,8 @@ function timeAgo(dateString) {
     return `${Math.floor(minutes / 60)}h ago`;
 }
 
-export default function AlertFeed({ violations, onReviewViolation }) {
+export default function AlertFeed({ violations, onSelectViolation, onReviewViolation }) {
+    const { authFetch } = useAuth();
     const [filter, setFilter] = useState('all'); // 'all', 'unreviewed', 'reviewed'
     const [selectedViolationForNote, setSelectedViolationForNote] = useState(null);
     const [noteText, setNoteText] = useState('');
@@ -30,7 +32,7 @@ export default function AlertFeed({ violations, onReviewViolation }) {
         if (!id) return;
 
         try {
-            const res = await fetch(`${API_BASE}/violations/${id}/review`, {
+            const res = await authFetch(`${API_BASE}/violations/${id}/review`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -62,15 +64,16 @@ export default function AlertFeed({ violations, onReviewViolation }) {
         setNoteText('');
     };
 
-    // Filter violations
+    // Filter violations (exclude dismissed from active live feed)
     const filteredViolations = (violations || []).filter(v => {
         const isReviewed = Boolean(v.reviewed);
-        if (filter === 'unreviewed') return !isReviewed;
+        const isDismissed = v.decision === 'dismissed';
+        if (filter === 'unreviewed') return !isReviewed && !isDismissed;
         if (filter === 'reviewed') return isReviewed;
-        return true;
+        return !isDismissed;
     });
 
-    const unreviewedCount = (violations || []).filter(v => !v.reviewed).length;
+    const unreviewedCount = (violations || []).filter(v => !v.reviewed && v.decision !== 'dismissed').length;
 
     return (
         <div className="md-card alert-feed-card">

@@ -1,7 +1,16 @@
 {
   "name": "candidate-app-electron",
+  "productName": "IntegrityFlow",
   "version": "1.0.0",
+  "description": "IntegrityFlow Candidate Exam Application",
   "main": "main.js",
+  "build": {
+    "appId": "com.integrityflow.candidate",
+    "productName": "IntegrityFlow",
+    "win": {
+      "icon": "assets/icon.ico"
+    }
+  },
   "scripts": {
     "prestart": "npm run build:renderer",
     "start": "electron .",

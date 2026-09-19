@@ -7,27 +7,11 @@ const Exam = require('../models/Exam');
 const Session = require('../models/Session');
 const Submission = require('../models/Submission');
 const { calculateRiskScore } = require('../scoring/severityEngine');
-
-// Ensure uploads/papers directory exists
-const uploadDir = path.join(__dirname, '../../uploads/papers');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Multer configuration for exam paper uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const code = req.body.examCode || 'exam';
-        cb(null, `${code.replace(/[^a-zA-Z0-9-]/g, '')}-${uniqueSuffix}${path.extname(file.originalname)}`);
-    }
-});
+const { requireAuth } = require('../middleware/authMiddleware');
+const storageService = require('../services/storage');
 
 const upload = multer({
-    storage: storage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
         if (file.mimetype === 'application/pdf' || 
@@ -58,8 +42,8 @@ function generateRandomExamCode() {
     return `EXAM-${code}`;
 }
 
-// POST /exams — Create a new exam
-router.post('/', handleUpload, async (req, res) => {
+// POST /exams — Create a new exam (Teacher-facing)
+router.post('/', requireAuth, handleUpload, async (req, res) => {
     try {
         const { title, status, durationMinutes, rules } = req.body;
         let examCode = req.body.examCode ? req.body.examCode.trim().toUpperCase() : null;
@@ -87,10 +71,24 @@ router.post('/', handleUpload, async (req, res) => {
             }
         }
 
+        let paperPath = null;
+        let paperFilename = null;
+        if (req.file) {
+            const uniqueFilename = `${examCode.replace(/[^a-zA-Z0-9-]/g, '')}-${Date.now()}${path.extname(req.file.originalname)}`;
+            const saved = await storageService.save(req.file.buffer, uniqueFilename, 'papers');
+            paperPath = saved.path;
+            paperFilename = req.file.originalname;
+        }
+
+        const teacherId = req.teacher?.teacherId || null;
+        const teacherName = req.teacher?.name || req.teacher?.email || 'Examiner';
+
         const examData = {
             title: title.trim(),
             examCode,
             examId: examCode,
+            createdBy: teacherId,
+            createdByName: teacherName,
             status: status || 'draft',
             durationMinutes: durationMinutes ? Number(durationMinutes) : 60,
             rules: {
@@ -100,8 +98,8 @@ router.post('/', handleUpload, async (req, res) => {
                 detectLookingAway: parsedRules.detectLookingAway !== undefined ? Boolean(parsedRules.detectLookingAway) : true,
                 autoTerminateRiskScore: parsedRules.autoTerminateRiskScore !== undefined ? Number(parsedRules.autoTerminateRiskScore) : 80
             },
-            paperPath: req.file ? req.file.path : null,
-            paperFilename: req.file ? req.file.originalname : null,
+            paperPath,
+            paperFilename,
             createdAt: new Date()
         };
 
@@ -118,29 +116,37 @@ router.post('/', handleUpload, async (req, res) => {
     }
 });
 
-// GET /exams — List exams sorted newest first (optional ?status=completed / ?status=active filter)
-router.get('/', async (req, res) => {
+// GET /exams — List exams sorted newest first (Teacher-facing)
+router.get('/', requireAuth, async (req, res) => {
     try {
         const filter = {};
         if (req.query.status) {
             filter.status = req.query.status.toLowerCase();
         }
+        if (req.query.scope === 'my' && req.teacher?.teacherId) {
+            filter.createdBy = req.teacher.teacherId;
+        }
 
         const exams = await Exam.find(filter).sort({ createdAt: -1 });
         
         // Enrich exams with active student count and fallback title/code
+        const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
+
         const enrichedExams = await Promise.all(exams.map(async (exam) => {
             const code = exam.examCode || exam.examId || 'EXAM';
             const activeStudents = await Session.countDocuments({ 
                 examId: new RegExp('^' + code + '$', 'i'), 
                 status: 'active' 
             });
+            const isMine = currentTeacherId && exam.createdBy ? String(exam.createdBy) === currentTeacherId : false;
+
             return {
                 ...exam.toObject(),
                 examCode: code,
                 title: exam.title || `Exam Session (${code})`,
                 status: exam.status || 'draft',
-                activeStudents
+                activeStudents,
+                isMine
             };
         }));
 
@@ -165,8 +171,8 @@ router.get('/code/:code', async (req, res) => {
     }
 });
 
-// GET /exams/:examId/summary — Aggregated analytics & session list for completed/any exam
-router.get('/:examId/summary', async (req, res) => {
+// GET /exams/:examId/summary — Aggregated analytics & session list for completed/any exam (Teacher-facing)
+router.get('/:examId/summary', requireAuth, async (req, res) => {
     try {
         const examIdentifier = req.params.examId;
         let exam = null;
@@ -255,8 +261,8 @@ router.get('/:examId/summary', async (req, res) => {
     }
 });
 
-// GET /exams/:examId — Get single exam details
-router.get('/:examId', async (req, res) => {
+// GET /exams/:examId — Get single exam details (Teacher-facing)
+router.get('/:examId', requireAuth, async (req, res) => {
     try {
         const exam = await Exam.findById(req.params.examId);
         if (!exam) {
@@ -268,8 +274,8 @@ router.get('/:examId', async (req, res) => {
     }
 });
 
-// PATCH /exams/:examId/status — Update status (draft -> active -> completed)
-router.patch('/:examId/status', async (req, res) => {
+// PATCH /exams/:examId/status — Update status (Teacher-facing)
+router.patch('/:examId/status', requireAuth, async (req, res) => {
     try {
         const { status } = req.body;
         if (!['draft', 'active', 'completed'].includes(status)) {
@@ -308,25 +314,29 @@ router.patch('/:examId/status', async (req, res) => {
     }
 });
 
-// POST /exams/:examId/paper — Attach / update question paper
-router.post('/:examId/paper', handleUpload, async (req, res) => {
+// POST /exams/:examId/paper — Attach / update question paper (Teacher-facing)
+router.post('/:examId/paper', requireAuth, handleUpload, async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No paper file uploaded.' });
         }
 
-        const exam = await Exam.findByIdAndUpdate(
-            req.params.examId,
-            {
-                paperPath: req.file.path,
-                paperFilename: req.file.originalname
-            },
-            { new: true }
-        );
-
+        const exam = await Exam.findById(req.params.examId);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }
+
+        // Delete previous paper if exists
+        if (exam.paperPath) {
+            await storageService.delete(exam.paperPath);
+        }
+
+        const uniqueFilename = `${(exam.examCode || req.params.examId).replace(/[^a-zA-Z0-9-]/g, '')}-${Date.now()}${path.extname(req.file.originalname)}`;
+        const saved = await storageService.save(req.file.buffer, uniqueFilename, 'papers');
+
+        exam.paperPath = saved.path;
+        exam.paperFilename = req.file.originalname;
+        await exam.save();
 
         res.json({ message: 'Question paper updated successfully', exam });
     } catch (err) {
@@ -334,21 +344,17 @@ router.post('/:examId/paper', handleUpload, async (req, res) => {
     }
 });
 
-// DELETE /exams/:examId — Delete an exam and clean up paper file if present
-router.delete('/:examId', async (req, res) => {
+// DELETE /exams/:examId — Delete an exam (Teacher-facing)
+router.delete('/:examId', requireAuth, async (req, res) => {
     try {
         const exam = await Exam.findByIdAndDelete(req.params.examId);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }
 
-        // Delete paper file from filesystem if exists
-        if (exam.paperPath && fs.existsSync(exam.paperPath)) {
-            try {
-                fs.unlinkSync(exam.paperPath);
-            } catch (unlinkErr) {
-                console.error('Failed to delete paper file:', unlinkErr);
-            }
+        // Delete paper file from storage if exists
+        if (exam.paperPath) {
+            await storageService.delete(exam.paperPath);
         }
 
         res.json({ message: 'Exam deleted successfully', examId: req.params.examId });

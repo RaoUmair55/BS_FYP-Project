@@ -4,11 +4,18 @@ The Candidate App is the desktop application run by students during an exam. It 
 
 ## What This Does
 
-This module implements the full end-to-end exam experience, AI monitoring pipeline, **Module 1: Whitelist Enforcement**, **Module 2: AI Monitoring**, and **Module 7: File & Typed Text Submissions**:
+This module implements the full end-to-end exam experience, AI monitoring pipeline, **Module 1: Whitelist Enforcement**, **Module 2: AI Monitoring**, **Module 7: File & Typed Text Submissions**, and **Section 10.4 of the Scope Document (Data Ethics & Informed Consent)**:
 1. **Startup**: The Electron main process boots up and immediately starts a local Express receiver on `ELECTRON_RECEIVER_PORT` (e.g., 8766).
-2. **Dynamic Login & Session Injection**: Candidate logs in with Student ID, Name, and Exam ID. Electron injects the active exam's `EXAM_SESSION_ID` into the Python process's environment variables.
-3. **AI Module Spawning**: Electron spawns `ai-module/main.py` as a child process and polls `/health` until ready.
-4. **Self-Check Flow (Mode Transition)**: The app loads `selfCheck.html`, verifying hardware access and scanning background apps. "Begin Exam" gracefully restarts Python in strict `exam` mode and opens `examScreen.html`.
+2. **Dynamic Login & Session Initialization**: Candidate logs in with Student ID, Name, and Exam Code. Electron creates the session on the central server.
+3. **Informed Consent Screen (Section 10.4 Data Ethics)**:
+   - Before any self-check or monitoring begins, the student is presented with `consent.html` ("Before You Begin").
+   - Explains in plain, student-friendly language what is monitored (camera orientation/multi-face, process whitelist, screenshots **only** on violations).
+   - Prominently clarifies our privacy commitments: **continuous video is NEVER recorded or stored in files/databases** (in-memory frame analysis only), and **no biometric facial profiling databases are created**.
+   - Requires explicit checkbox agreement: *"I understand and consent to this monitoring for the duration of this exam."*
+   - "Continue" remains disabled until consent is checked.
+   - Provides an explicit "Decline & Exit" option that explains declining prevents proceeding and gracefully exits the application.
+   - Records the consent decision directly to the backend (`POST /sessions/:sessionId/consent` updating `consentGiven: true` and `consentTimestamp` on the MongoDB `Session` document).
+4. **AI Module Spawning & Self-Check Flow**: Upon granting consent, the app spawns `ai-module/main.py` in dev mode, verifies hardware access and background apps on `selfCheck.html`. "Begin Exam" restarts Python in strict `exam` mode and transitions to `examScreen.html`.
 5. **Whitelist & AI Monitoring**: `WhitelistEnforcer` scans processes every 2.5s while `AIMonitor` tracks head pose, missing faces, multi-person events, and unauthorized physical objects.
 6. **Two-Panel Exam Workspace (Module 7B & Module 7)**:
    - **Left Panel**: In-app paper viewer (rendering PDF/DOCX inside Electron without external viewers).
@@ -17,15 +24,58 @@ This module implements the full end-to-end exam experience, AI monitoring pipeli
    - **Submission Flow**: Prominent "Submit Exam" button with confirmation modal, retryable network failure handling, and MongoDB persistence.
 7. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server.
 
+---
+
+## Architecture — Modular Design (Dependency Inversion Principle)
+
+The Candidate App's AI monitoring engine applies the **Dependency Inversion Principle (DIP)** from SOLID principles for evidence capture and violation logging:
+- **`CaptureProvider` (Abstract Base Class)**: Defines the required `capture(session_id, violation_type) -> Optional[str]` contract using Python's `abc.ABC`.
+- **`MssCaptureProvider` (Concrete Implementation)**: Implements fast, multi-monitor desktop capture via the `mss` library, dynamically downsampling JPEG quality to guarantee lightweight payloads (<200KB) with microsecond timestamp collision prevention.
+- **`WebcamCaptureProvider` (Concrete Implementation)**: Encodes and captures active webcam video frames with annotated bounding boxes for camera violations (unauthorized cell phone, head turn, second person).
+- **Single Swap Point (`ai-module/services/capture/__init__.py`)**: Exports the active provider instances and convenience helpers (`capture_screenshot`, `capture_webcam_frame`).
+
+---
+
+## Branding & Visual Identity
+
+The Candidate App features unified **IntegrityFlow** branding engineered for an industry-grade, secure desktop experience:
+
+* **Icon & Motif Rationale**:
+  - **Shield Motif**: Reflects the integrity, proctoring security, and trustworthy academic evaluation theme of the project.
+  - **Integrated Checkmark / Flow**: Represents verification, seamless workflow, and authorized progress.
+  - **Color Palette**: Google Material Blue (`#1A73E8` primary, `#1557D0` dark, `#E8F0FE` subtle tint) ensuring 100% visual parity with the Examiner Dashboard without clashing accent colors.
+
+* **Asset Locations**:
+  - `candidate-app/electron/assets/icon.ico`: Multi-resolution Windows application icon (16px to 256px).
+  - `candidate-app/electron/assets/icon.png`: High-resolution 512x512 master PNG icon.
+  - `candidate-app/electron/build/icon.ico`: `electron-builder` packaging resource for Windows installers and taskbar icons.
+  - `candidate-app/renderer/assets/icon.png` & `logo.svg`: Web/renderer vector and bitmap logos used in screens.
+  - `scripts/generate_branding_assets.py`: Automated asset generator script to regenerate all icons and favicons across the repository.
+
+* **Desktop Application Shell Configurations**:
+  - **Explicit Window Title**: `BrowserWindow` title explicitly set to `"IntegrityFlow"` in `electron/main.js`.
+  - **Product Name**: `productName: "IntegrityFlow"` set in `package.json` and `electron/package.json` (displays in Task Manager and OS process list).
+  - **Splash / Loading Screen (`renderer/splash.html`)**: Displayed immediately upon candidate login while the Python AI background daemon spawns and health-checks (`/health`), preventing blank window delays and displaying an animated status indicator (*"Starting exam environment..."*).
+
+---
+
 ## Files Changed/Added
 
+- `renderer/splash.html` (NEW): Startup splash screen with pulsing IntegrityFlow shield logo and progress bar displayed during Python initialization.
+- `electron/assets/icon.ico` & `icon.png` (NEW): Application taskbar, title bar, and installer icon assets.
+- `electron/main.js`: Configured explicit window title `"IntegrityFlow"`, custom icon path, and splash screen transition on `login`.
+- `electron/package.json` & `package.json`: Configured `productName: "IntegrityFlow"` and electron-builder icon paths.
+- `renderer/consent.html` & `renderer/login.html` & `renderer/selfCheck.html` & `renderer/examScreen.html`: Updated with brand icon and consistent Material Blue palette.
+- `renderer/consent.html`: Plain-language informed consent screen with clear monitoring rules, privacy guarantees (no continuous recording, no biometric profiling), required checkbox, and decline confirmation modal.
+- `renderer/consent.js`: Logic handling checkbox validation, server consent persistence (`POST /sessions/:sessionId/consent`), transition to self-check, and graceful application exit on decline.
+- `electron/preload.js`: Exposed `proceedToSelfCheck()` and `declineConsent()` to the renderer world.
+- `server/src/models/Session.js`: Added `consentGiven` (Boolean) and `consentTimestamp` (Date) fields to schema.
+- `server/src/routes/sessions.js`: Added `POST /sessions/:sessionId/consent` endpoint to persist candidate consent decisions.
 - `renderer/selfCheck.html` & `renderer/selfCheck.js`: Initial self-check UI and client-side logic.
 - `ai-module/whitelist_enforcer.py`: Process whitelist enforcement daemon.
-- `ai-module/ai_monitor.py`: OpenCV Haar Cascade & ONNX YOLO camera monitoring daemon.
-- `ai-module/main.py`: Main Python entrypoint running both enforcement daemons and CPU logger.
-- `renderer/examScreen.html` & `renderer/examScreen.js`: Two-panel split exam workspace, running timer, reassuring monitoring indicator, auto-saving text answer editor, file attachment dropzone, confirmation modal, and retryable submission handler.
-- `server/src/models/Submission.js` & `server/src/routes/submissions.js`: Backend MongoDB schema and POST `/submissions` route supporting typed text, file attachments, or both.
-- `electron/main.js` & `electron/preload.js`: Updated to store `studentId` in `activeSessionInfo` and expose IPC methods.
+- `ai-module/ai_monitor.py`: OpenCV Haar Cascade & ONNX YOLO camera monitoring daemon with webcam evidence capture.
+- `renderer/examScreen.html` & `renderer/examScreen.js`: Two-panel split exam workspace.
+- `CANDIDATE.md`: Updated with branding specifications, informed consent flow, Section 10.4 Data Ethics details, and verification steps.
 
 ## Safety List
 
@@ -52,6 +102,8 @@ Why?
 ## Architecture Note: App Check Filtering
 During the self-check phase, listing raw running processes surfaced OS services, drivers, and antivirus components that students cannot and should not attempt to close. We enforce strict filtering by ignoring system accounts (`NT AUTHORITY\SYSTEM`, `LOCAL SERVICE`, etc.), enforcing that the process belongs to the logged-in user, and ignoring a `KNOWN_BACKGROUND_SERVICES` list for common false positives (e.g., `msmpeng.exe`, `securityhealthservice.exe`). This is a best-effort list, not exhaustive, and may need additions as more false positives are found during testing.
 
+---
+
 ## How to Run
 
 > **Note:** The backend server and dashboard must be running separately to see real results.
@@ -70,81 +122,26 @@ During the self-check phase, listing raw running processes surfaced OS services,
    npm start
    ```
 
+---
+
 ## Testing This Step
 
-To verify the end-to-end integration, self-check flow, split-screen workspace, and submission pipeline:
+To verify the Section 10.4 Consent Screen and end-to-end flow:
 1. Start the **backend server** (`npm run dev` in `IntegrityFlow/server`).
 2. Start the **dashboard** (`npm run dev` in `IntegrityFlow/dashboard`).
-3. Start the **Electron app** (`npm start` in `IntegrityFlow/candidate-app/electron`). Log in with Student ID, Name, and Exam ID.
-4. **Hardware & App Self-Check**: Pass camera/mic checks and clear unauthorized background processes in `selfCheck.html`.
-5. **Mode Transition & Exam Workspace**: Click "Begin Exam". Confirm `examScreen.html` opens with:
-   - **Header Bar**: Displays Student ID, Exam Code, Reassuring `● Monitoring Active` badge, and running `HH:MM:SS` timer.
-   - **Left Panel**: Renders question paper PDF/DOCX in-app.
-   - **Right Panel**: Answer area with "Typed Answer" and "Attach Answer File" tabs.
-6. **Auto-Saving**: Type an answer in the text area. Switch tabs or trigger a re-render. Confirm text is automatically saved to `localStorage` and restored without work loss.
-7. **File Attachment**: Drag & drop or select an answer file (.pdf, .docx, .py, .zip). Confirm file card shows name, size, and remove button.
-8. **Submission Confirmation & MongoDB Persistence**: Click "Submit Exam". Confirm confirmation modal appears with word count and file summary. Click "Yes, Submit Exam". Confirm success banner displays and submission record appears in MongoDB (`submissions` collection) linked to the `sessionId`.
-9. **Submission Failure & Retry Handling**: Stop the backend server mid-submission or disconnect network. Click "Submit Exam" — confirm a prominent red error banner displays with a **Retry** option rather than failing silently.
-
----
-
-### Module Status: Module 7 (File & Text Submission) — **COMPLETE**
-
-Module 7 (File Submission & Typed Answer Submission) is fully verified and complete end-to-end.
-
-## Joint Integration Test — 2026-09-15
-
-### 1. Integration Risk Audits & Mitigations
-
-* **Shared Session ID**:
-  * **Verified**: Both `WhitelistEnforcer` and `AIMonitor` are instantiated in `ai-module/main.py` using `exam_session_id = os.environ.get("EXAM_SESSION_ID", "unknown-session")`.
-  * **Result**: Both modules guaranteed to share the exact same session ID value injected by Electron, preventing session drift across mode restarts.
-
-* **Concurrent Screenshot Capture & Thread Safety**:
-  * **Verified**: `capture_screenshot()` in `screenshot_capture.py` uses `with mss.mss() as sct:` which instantiates a fresh, thread-local `mss` instance per function call.
-  * **Collision Prevention**: Filename pattern updated to include microsecond-precision timestamps (`{session_id}_{violation_type}_%Y%m%dT%H%M%S%fZ.jpg`), guaranteeing unique screenshot paths even during simultaneous multi-threaded violations.
-
-* **IPC Receiver Concurrency**:
-  * **Verified**: `electron/ipc/violationForwarder.js` runs Express on port 8766.
-  * **Result**: It immediately responds to Python with HTTP `202 Accepted` before asynchronously forwarding payloads to the central backend. Handled near-simultaneous POSTs from `WhitelistEnforcer` and `AIMonitor` without dropping or blocking events.
-
-* **Camera Resource Contention**:
-  * **Verified**: `WhitelistEnforcer` uses `psutil` process iteration exclusively and does **not** touch `cv2` or camera hardware.
-  * **Result**: Only `AIMonitor` opens a single `cv2.VideoCapture` instance in a non-blocking background thread. Added OpenCV Haar Cascade (`haarcascade_frontalface_default.xml`) fallback for Python 3.14 compatibility to ensure zero native MediaPipe import crashes.
-
-* **CPU Budget Evaluation**:
-  * **Verified**: Added `monitor_cpu_budget()` daemon thread in `ai-module/main.py` reporting process and overall system CPU via `psutil` every 30 seconds.
-  * **Observed Metrics**:
-    * Idle / Whitelist Scanning: **1.2% - 2.8%** Process CPU
-    * Active AI Monitoring (Webcam + Haar Cascade + YOLO ONNX): **3.8% - 6.4%** Process CPU
-    * Overall System CPU: **~12.5%**
-    * **Evaluation**: Well within the target average CPU threshold of **<35%**.
-
----
-
-### 2. Test Sequence & Results
-
-1. **Solo Smoke Tests**:
-   - `WhitelistEnforcer`: Passed process enumeration and dev/exam whitelist checks.
-   - `AIMonitor`: Passed OpenCV Haar Cascade face tracking and ONNX object detection initialization.
-2. **Combined Boot Test**:
-   - `python main.py` booted cleanly with `WhitelistEnforcer`, `AIMonitor`, `uvicorn`, and CPU logger running concurrently.
-3. **One-Violation-Type-At-A-Time Test**:
-   - Whitelist violation (`calc.exe`): Captured screenshot, returned HTTP 201 from backend.
-   - Head-pose / Off-center: Detected yaw/offset shift after sustained 3s, screenshot captured.
-   - Two-person detection: Detected multiple faces, screenshot captured.
-   - Object detection: ONNX model scanned frame, screenshot captured on unauthorized item.
-4. **Simultaneous Violation Test**:
-   - Triggered process violation while off-center face detected. Both screenshots generated with distinct microsecond filenames, both payloads accepted by IPC receiver (HTTP 202) and successfully forwarded to backend (HTTP 201).
-5. **Full Realistic Run**:
-   - `selfCheck.html` hardware check -> Mode transition to `exam` mode -> In-app PDF paper rendering -> Real violation events emitted -> Exam submission complete.
-
----
-
-## Known Limitation
-- The face detection in `selfCheck.js` is currently a basic placeholder (verifying only that the video stream is active/not blank).
-- OpenCV Haar Cascade serves as the high-compatibility face tracking backend on Python 3.14 environments where legacy MediaPipe `solutions` package is unavailable.
-
-## Next Steps
-
-All modules (1, 2, and 7B) are fully integrated in `ai-module/main.py` and ready for live exam monitoring.
+3. Start the **Electron app** (`npm start` in `IntegrityFlow/candidate-app/electron`).
+4. **Login**: Enter an active Exam Code and Student ID -> click **Start Exam Session**.
+5. **Verify Consent Screen (`consent.html`)**:
+   - Confirm the app navigates immediately to the **"Before You Begin"** screen before hardware check starts.
+   - Confirm clear monitoring explanations (camera orientation, application whitelist) and privacy commitments (no continuous recording, no biometric templates, screenshots only on violations).
+   - Confirm **"I Agree & Continue to System Check"** button is **disabled by default**.
+6. **Test Decline Flow**:
+   - Click **"Decline & Exit Exam"**.
+   - Confirm the confirmation dialog modal appears (*"Declining consent means you cannot proceed with this online examination on IntegrityFlow. The application will close..."*).
+   - Click **"Confirm & Exit"** -> verify the app cleanly terminates without proceeding to self-check.
+7. **Test Accept Flow & MongoDB Persistence**:
+   - Re-open app, log in, check the consent checkbox (*"I understand and consent to this automated monitoring for the duration of this exam."*).
+   - Confirm the "Continue" button becomes enabled.
+   - Click **"I Agree & Continue to System Check"**.
+   - Confirm the app transitions cleanly to `selfCheck.html`.
+   - Inspect MongoDB (`Session` document in database): confirm `consentGiven: true` and `consentTimestamp` are recorded with the exact timestamp.

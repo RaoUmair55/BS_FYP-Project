@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IntegrityFlow — Privacy & Monitoring Consent</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --primary-hover: #1557d0;
+      --primary-subtle: #e8f0fe;
+      --surface: #ffffff;
+      --bg: #f8fafc;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --border: #e2e8f0;
+      --green: #10b981;
+      --green-subtle: #ecfdf5;
+      --red: #ef4444;
+      --red-subtle: #fef2f2;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background-color: var(--bg);
+      color: var(--text-main);
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .consent-card {
+      background: var(--surface);
+      width: 100%;
+      max-width: 620px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+      padding: 32px 36px;
+      box-sizing: border-box;
+    }
+
+    .header-section {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .shield-icon-badge {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      color: white;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 6px 0;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    .info-intro {
+      background-color: var(--primary-subtle);
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #1e40af;
+      margin-bottom: 20px;
+    }
+
+    .section-block {
+      margin-bottom: 18px;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-title.monitored {
+      color: #1e40af;
+    }
+
+    .section-title.protected {
+      color: #065f46;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .feature-item.highlight {
+      background: var(--green-subtle);
+      border-color: #a7f3d0;
+    }
+
+    .feature-icon {
+      font-size: 16px;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    .feature-text h4 {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 2px 0;
+      color: var(--text-main);
+    }
+
+    .feature-text p {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    .consent-checkbox-container {
+      margin: 24px 0 18px 0;
+      padding: 14px 16px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease;
+    }
+
+    .consent-checkbox-container:hover {
+      background: #e2e8f0;
+    }
+
+    .consent-checkbox-container input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--primary);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .consent-label {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-continue {
+      width: 100%;
+      padding: 13px;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.15s ease, opacity 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-continue:hover:not(:disabled) {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-continue:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .btn-decline {
+      background: transparent;
+      color: #64748b;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px;
+      cursor: pointer;
+      text-decoration: underline;
+      transition: color 0.15s ease;
+      align-self: center;
+    }
+
+    .btn-decline:hover {
+      color: var(--red);
+    }
+
+    /* Decline Modal Overlay */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+      text-align: center;
+    }
+
+    .modal-content h3 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      color: #991b1b;
+    }
+
+    .modal-content p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin: 0 0 20px 0;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .modal-btn-cancel {
+      flex: 1;
+      padding: 10px;
+      background: #f1f5f9;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .modal-btn-confirm {
+      flex: 1;
+      padding: 10px;
+      background: var(--red);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .error-banner {
+      display: none;
+      background-color: var(--red-subtle);
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      padding: 10px;
+      color: #b91c1c;
+      font-size: 12.5px;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="consent-card">
+    <div class="header-section">
+      <img src="assets/icon.png" alt="IntegrityFlow" style="width: 52px; height: 52px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);">
+      <h1>Before You Begin</h1>
+      <p class="subtitle">IntegrityFlow Monitoring & Privacy Notice (Section 10.4)</p>
+    </div>
+
+    <div class="info-intro">
+      Please review the automated monitoring guidelines below. We believe in transparent, privacy-first proctoring so you know exactly what is and is not monitored during your examination.
+    </div>
+
+    <!-- What IS Monitored -->
+    <div class="section-block">
+      <div class="section-title monitored">
+        <span>👁️ What is Monitored During Your Exam</span>
+      </div>
+      <div class="feature-grid">
+        <div class="feature-item">
+          <span class="feature-icon">👤</span>
+          <div class="feature-text">
+            <h4>Camera & Visual Orientation</h4>
+            <p>Monitors head orientation (sustained looking away) and checks for multiple faces or unauthorized objects (such as mobile devices) in view.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🖥️</span>
+          <div class="feature-text">
+            <h4>Screen & Application Environment</h4>
+            <p>Enforces the exam process whitelist to ensure prohibited background applications and communication tools are closed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- What is NOT Done (Privacy Protections) -->
+    <div class="section-block">
+      <div class="section-title protected">
+        <span>🔒 Our Privacy & Data Protection Commitments</span>
+      </div>
+      <div class="feature-grid">
+        <div class="feature-item highlight">
+          <span class="feature-icon">🚫</span>
+          <div class="feature-text">
+            <h4>Continuous Video is NEVER Recorded or Stored</h4>
+            <p>Camera frames are processed in-memory in real time and instantly discarded. No raw continuous video stream is saved or uploaded.</p>
+          </div>
+        </div>
+        <div class="feature-item highlight">
+          <span class="feature-icon">📸</span>
+          <div class="feature-text">
+            <h4>Evidence Screenshots ONLY on Violations</h4>
+            <p>A single still screenshot is captured strictly if a potential integrity violation is triggered for human examiner review.</p>
+          </div>
+        </div>
+        <div class="feature-item highlight">
+          <span class="feature-icon">🛡️</span>
+          <div class="feature-text">
+            <h4>No Biometric Face Profiling</h4>
+            <p>No facial recognition databases or permanent biometric templates are stored or shared.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="error-banner" id="errorBanner"></div>
+
+    <!-- Consent Checkbox -->
+    <label class="consent-checkbox-container" for="consentCheckbox">
+      <input type="checkbox" id="consentCheckbox" />
+      <span class="consent-label">
+        I understand and consent to this automated monitoring for the duration of this exam.
+      </span>
+    </label>
+
+    <!-- Action Buttons -->
+    <div class="button-group">
+      <button id="btnContinue" class="btn-continue" disabled>
+        <span>I Agree & Continue to System Check</span>
+        <span>➔</span>
+      </button>
+      <button id="btnDecline" class="btn-decline">
+        Decline & Exit Exam
+      </button>
+    </div>
+  </div>
+
+  <!-- Decline Confirmation Dialog Modal -->
+  <div class="modal-overlay" id="declineModal">
+    <div class="modal-content">
+      <h3>Decline Exam Monitoring?</h3>
+      <p>
+        Declining consent means you cannot proceed with this online examination on IntegrityFlow. The application will close and you will need to contact your instructor or exam coordinator.
+      </p>
+      <div class="modal-actions">
+        <button class="modal-btn-cancel" id="btnCancelDecline">Go Back</button>
+        <button class="modal-btn-confirm" id="btnConfirmDecline">Confirm & Exit</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./consent.js"></script>
+</body>
+</html>

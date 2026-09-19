@@ -4,6 +4,15 @@ const examSchema = new mongoose.Schema({
     title: { type: String, required: true },
     examCode: { type: String, required: true, unique: true },
     examId: { type: String },
+    createdBy: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Teacher',
+        default: null 
+    },
+    createdByName: { 
+        type: String, 
+        default: 'Examiner' 
+    },
     paperPath: { type: String, default: null },
     paperFilename: { type: String, default: null },
     status: { type: String, enum: ['draft', 'active', 'completed'], default: 'draft' },

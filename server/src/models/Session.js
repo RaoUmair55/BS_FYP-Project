@@ -18,6 +18,8 @@ const sessionSchema = new mongoose.Schema({
     },
     cameraVerificationNote: { type: String, default: null },
     terminationReason: { type: String, default: null },
+    consentGiven: { type: Boolean, default: false },
+    consentTimestamp: { type: Date, default: null },
     warnings: [{
         message: { type: String, required: true },
         timestamp: { type: Date, default: Date.now }

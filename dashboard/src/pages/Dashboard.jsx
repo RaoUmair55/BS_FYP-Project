@@ -6,7 +6,9 @@ import StudentList from '../components/StudentList';
 import AlertFeed from '../components/AlertFeed';
 import EvidenceViewer from '../components/EvidenceViewer';
 import CandidateGrid from '../components/CandidateGrid';
-import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid } from 'lucide-react';
+import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import AuthModal from '../components/AuthModal';
 import './Dashboard.css';
 
 const API_BASE = 'http://localhost:5000';
@@ -54,6 +56,7 @@ function playAlertChime() {
 
 export default function Dashboard() {
     const { connected, violations, riskScores } = useSocket();
+    const { teacher, showAuthModal, setShowAuthModal, logout, demoLogin, authFetch } = useAuth();
     const [selectedSessionId, setSelectedSessionId] = useState(null);
     const [activeTab, setActiveTab] = useState('exams'); // 'exams' or 'monitoring'
     const [rightPanelView, setRightPanelView] = useState('feed'); // 'feed' or 'evidence'
@@ -98,10 +101,10 @@ export default function Dashboard() {
         if (!selectedExamFilter) return;
         try {
             // Find exam by code
-            const res = await fetch(`${API_BASE}/exams/code/${selectedExamFilter}`);
+            const res = await authFetch(`${API_BASE}/exams/code/${selectedExamFilter}`);
             if (res.ok) {
                 const exam = await res.json();
-                await fetch(`${API_BASE}/exams/${exam._id}/status`, {
+                await authFetch(`${API_BASE}/exams/${exam._id}/status`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'completed' })
@@ -121,8 +124,11 @@ export default function Dashboard() {
             {/* Header Bar */}
             <header className="dashboard-header">
                 <div className="header-brand">
-                    <Shield className="brand-icon" size={24} />
-                    <h1 className="brand-title">IntegrityFlow</h1>
+                    <img src="/logo.svg" alt="IntegrityFlow Logo" className="brand-logo-img" />
+                    <div className="brand-text-container">
+                        <h1 className="brand-title">IntegrityFlow</h1>
+                        <span className="brand-subtitle-tag">Examiner Dashboard</span>
+                    </div>
                 </div>
 
                 <div className="header-controls">
@@ -162,6 +168,110 @@ export default function Dashboard() {
                         <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
                         <span>{connected ? 'System Online' : 'Connecting...'}</span>
                     </div>
+
+                    {/* Teacher Auth Controls */}
+                    {teacher ? (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            background: 'var(--surface-color)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '4px 10px'
+                        }}>
+                            <div style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, var(--brand-primary), #7c3aed)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#fff',
+                                fontSize: 12,
+                                fontWeight: 700
+                            }}>
+                                {teacher.name ? teacher.name.charAt(0).toUpperCase() : 'T'}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                                    {teacher.name}
+                                </span>
+                                <span style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
+                                    {teacher.role || 'Teacher'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={logout}
+                                title="Sign Out"
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    borderRadius: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    marginLeft: 4
+                                }}
+                            >
+                                <LogOut size={14} />
+                            </button>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                                type="button"
+                                onClick={() => demoLogin()}
+                                title="1-Click Quick Demo Sign-in"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '6px 14px',
+                                    backgroundColor: '#ffffff',
+                                    border: '1px solid #dadce0',
+                                    borderRadius: '4px',
+                                    color: '#1a73e8',
+                                    fontSize: '13px',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                    transition: 'background-color 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(26, 115, 232, 0.04)'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
+                            >
+                                <Sparkles size={14} color="#1a73e8" />
+                                <span>Demo Sign-in</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowAuthModal(true)}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    padding: '6px 16px',
+                                    backgroundColor: '#1a73e8',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    color: '#ffffff',
+                                    fontSize: '13px',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 1px 2px rgba(60,64,67,0.3)',
+                                    transition: 'background-color 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1557d0'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#1a73e8'}
+                            >
+                                <Lock size={14} color="#ffffff" />
+                                <span>Sign In</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -294,6 +404,8 @@ export default function Dashboard() {
                     </div>
                 </div>
             )}
+            {/* Examiner Auth Modal */}
+            <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
         </div>
     );
 }

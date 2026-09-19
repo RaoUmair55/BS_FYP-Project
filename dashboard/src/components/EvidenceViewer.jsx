@@ -5,6 +5,7 @@ import {
     ShieldCheck, FileText, Download, Paperclip, AlertOctagon, MessageSquare, 
     Send, UserX, AlertCircle 
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './Components.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -15,11 +16,13 @@ function formatType(typeStr) {
 }
 
 export default function EvidenceViewer({ sessionId }) {
+    const { authFetch } = useAuth();
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
     const [sessionData, setSessionData] = useState(null);
     const [submissions, setSubmissions] = useState([]);
     const [cameraActionLoading, setCameraActionLoading] = useState(false);
+    const [showDismissedLogs, setShowDismissedLogs] = useState(false);
 
     // Live Candidate Action States
     const [showWarnModal, setShowWarnModal] = useState(false);
@@ -46,13 +49,13 @@ export default function EvidenceViewer({ sessionId }) {
 
     const fetchSessionData = () => {
         if (!sessionId) return;
-        fetch(`${API_BASE_URL}/sessions/status/${sessionId}`)
+        authFetch(`${API_BASE_URL}/sessions/status/${sessionId}`)
             .then(res => {
                 if (res.ok) return res.json();
                 // Fallback to active sessions
-                return fetch(`${API_BASE_URL}/sessions/active`)
+                return authFetch(`${API_BASE_URL}/sessions/active`)
                     .then(r => r.json())
-                    .then(data => data.find(item => String(item._id || item.sessionId) === String(sessionId)));
+                    .then(data => Array.isArray(data) ? data.find(item => String(item._id || item.sessionId) === String(sessionId)) : null);
             })
             .then(s => {
                 if (s) setSessionData(s);
@@ -62,7 +65,7 @@ export default function EvidenceViewer({ sessionId }) {
 
     const fetchSubmissions = () => {
         if (!sessionId) return;
-        fetch(`${API_BASE_URL}/submissions/${sessionId}`)
+        authFetch(`${API_BASE_URL}/submissions/${sessionId}`)
             .then(res => res.json())
             .then(data => {
                 if (Array.isArray(data)) {
@@ -84,7 +87,7 @@ export default function EvidenceViewer({ sessionId }) {
 
         setActionSubmitting(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/sessions/${sessionId}/warn`, {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/warn`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: warnMessage.trim() })
@@ -112,7 +115,7 @@ export default function EvidenceViewer({ sessionId }) {
 
         setActionSubmitting(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/sessions/${sessionId}/terminate`, {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/terminate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -134,8 +137,21 @@ export default function EvidenceViewer({ sessionId }) {
     };
 
     const handleReviewAction = async (violationId, decision) => {
+        // Optimistically update local history immediately
+        setHistory(prev => prev.map(v => {
+            if (v._id === violationId) {
+                return {
+                    ...v,
+                    reviewed: true,
+                    decision: decision,
+                    reviewedAt: new Date().toISOString()
+                };
+            }
+            return v;
+        }));
+
         try {
-            const res = await fetch(`${API_BASE_URL}/violations/${violationId}/review`, {
+            const res = await authFetch(`${API_BASE_URL}/violations/${violationId}/review`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -155,8 +171,12 @@ export default function EvidenceViewer({ sessionId }) {
     const handleCameraVerificationAction = async (status, note = '') => {
         if (!sessionId) return;
         setCameraActionLoading(true);
+
+        // Optimistically update session camera verification status
+        setSessionData(prev => prev ? ({ ...prev, cameraVerificationStatus: status }) : prev);
+
         try {
-            const res = await fetch(`${API_BASE_URL}/sessions/${sessionId}/camera-verification`, {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/camera-verification`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status, note })
@@ -313,24 +333,20 @@ export default function EvidenceViewer({ sessionId }) {
                     </div>
                 )}
 
-                {/* Candidate Camera Start Verification Photo Card */}
-                {cameraPhotoUrl && (
+                {/* Candidate Camera Start Verification Photo Card (disappears completely once verified) */}
+                {cameraPhotoUrl && cameraStatus !== 'verified' && (
                     <div className="alert-item" style={{ background: '#f8f9fa', border: '1px solid #dadce0', borderRadius: '8px', padding: '16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Camera size={18} style={{ color: '#1a73e8' }} />
                                 <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
-                                    Initial Camera Check Photo
+                                    Initial Camera Check Photo (Pending Identity Confirmation)
                                 </span>
                             </div>
 
-                            <span className={`md-badge ${cameraStatus === 'verified' ? 'status-active' : cameraStatus === 'flagged' ? 'status-draft' : 'status-completed'}`}>
-                                {cameraStatus === 'verified' && <ShieldCheck size={12} />}
-                                {cameraStatus === 'verified' && <span>Camera OK</span>}
-                                {cameraStatus === 'flagged' && <AlertTriangle size={12} />}
-                                {cameraStatus === 'flagged' && <span>Flagged Issue</span>}
-                                {cameraStatus === 'pending' && <Clock size={12} />}
-                                {cameraStatus === 'pending' && <span>Pending Teacher Check</span>}
+                            <span className="md-badge status-draft">
+                                <Clock size={12} />
+                                <span>Self-Check Snapshot</span>
                             </span>
                         </div>
 
@@ -345,7 +361,7 @@ export default function EvidenceViewer({ sessionId }) {
                         {/* Teacher Camera Verification Action Controls */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid #e8eaed', paddingTop: '10px' }}>
                             <span style={{ fontSize: '12px', color: '#5f6368' }}>
-                                Verify that student camera feed is clear and unobstructed.
+                                Confirm student identity to verify candidate and clear photo from screen.
                             </span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button 
@@ -355,7 +371,7 @@ export default function EvidenceViewer({ sessionId }) {
                                     disabled={cameraActionLoading}
                                 >
                                     <Check size={14} />
-                                    <span>OK / Camera Verified</span>
+                                    <span>{cameraActionLoading ? 'Verifying...' : 'Confirm Identity & Camera'}</span>
                                 </button>
                                 <button 
                                     className="md-btn md-btn-sm"
@@ -371,107 +387,165 @@ export default function EvidenceViewer({ sessionId }) {
                     </div>
                 )}
 
-                {history.length === 0 ? (
-                    <div className="md-empty-card" style={{ border: 'none', background: 'transparent' }}>
-                        <CheckCircle size={36} style={{ color: '#188038', marginBottom: '12px' }} />
-                        <h3 style={{ margin: 0 }}>No Violations Recorded</h3>
-                        <p style={{ margin: '4px 0 0 0', color: '#5f6368', fontSize: '13px' }}>
-                            This candidate has maintained clean monitoring status.
-                        </p>
+                {/* If already verified, show a clean, compact confirmation banner */}
+                {cameraStatus === 'verified' && (
+                    <div style={{ background: '#e6f4ea', border: '1px solid #ceead6', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#137333', fontSize: '13px', fontWeight: 500 }}>
+                            <ShieldCheck size={18} />
+                            <span>Candidate Identity & Webcam Verified</span>
+                        </div>
+                        <span style={{ fontSize: '11px', color: '#137333', background: '#ffffff', padding: '2px 8px', borderRadius: '10px', border: '1px solid #ceead6' }}>
+                            Verified Active
+                        </span>
                     </div>
-                ) : (
-                    history.map(v => {
-                        const isReviewed = Boolean(v.reviewed);
-                        const decision = v.decision || 'pending';
-                        const imageSrc = v.screenshotPath 
-                            ? `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`
-                            : null;
-
-                        return (
-                            <div 
-                                key={v._id} 
-                                className={`alert-item alert-severity-${v.severity}`}
-                                style={{
-                                    background: isReviewed ? '#f8f9fa' : '#ffffff',
-                                    border: isReviewed ? '1px solid #dadce0' : '1px solid #1a73e8'
-                                }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                    <div>
-                                        <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
-                                            {formatType(v.type)}
-                                        </span>
-                                        <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', marginLeft: '8px' }}>
-                                            Severity {v.severity}
-                                        </span>
-                                    </div>
-
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '12px', color: '#70757a' }}>
-                                            {new Date(v.timestamp).toLocaleTimeString()}
-                                        </span>
-                                        {isReviewed ? (
-                                            <span className={`md-badge ${decision === 'confirmed' ? 'status-active' : 'status-completed'}`}>
-                                                {decision === 'confirmed' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                                                <span style={{ textTransform: 'capitalize' }}>{decision}</span>
-                                            </span>
-                                        ) : (
-                                            <span className="md-badge status-draft">
-                                                <Clock size={12} />
-                                                <span>Needs Review</span>
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {v.details && (
-                                    <div style={{ fontSize: '12px', color: '#5f6368', fontFamily: 'monospace', marginBottom: '10px' }}>
-                                        {v.details.confidence && <span>Confidence: {Math.round(v.details.confidence * 100)}% • </span>}
-                                        {v.details.duration && <span>Duration: {v.details.duration.toFixed(1)}s • </span>}
-                                        {v.details.object_class && <span>Target: {v.details.object_class} • </span>}
-                                        {v.details.reason && <span>Details: {v.details.reason}</span>}
-                                    </div>
-                                )}
-
-                                {v.reviewNote && (
-                                    <div style={{ fontSize: '12px', color: '#3c4043', background: '#f1f3f4', padding: '6px 10px', borderRadius: '4px', marginBottom: '10px', fontStyle: 'italic' }}>
-                                        Review Note: "{v.reviewNote}"
-                                    </div>
-                                )}
-
-                                {imageSrc && (
-                                    <div style={{ marginTop: '8px', marginBottom: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #dadce0', background: '#000' }}>
-                                        <img 
-                                            src={imageSrc} 
-                                            alt="Violation Evidence Screenshot" 
-                                            style={{ width: '100%', maxHeight: '320px', objectFit: 'contain', display: 'block' }} 
-                                        />
-                                    </div>
-                                )}
-
-                                 {/* Triage controls inside timeline */}
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '8px' }}>
-                                    <button 
-                                        className="md-btn md-btn-sm" 
-                                        style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0' }}
-                                        onClick={() => handleReviewAction(v._id, 'confirmed')}
-                                    >
-                                        <Check size={14} />
-                                        <span>Confirm Violation</span>
-                                    </button>
-                                    <button 
-                                        className="md-btn md-btn-sm" 
-                                        style={{ background: decision === 'dismissed' ? '#e8f0fe' : '#f1f3f4', color: decision === 'dismissed' ? '#1a73e8' : '#5f6368', border: '1px solid #dadce0' }}
-                                        onClick={() => handleReviewAction(v._id, 'dismissed')}
-                                    >
-                                        <X size={14} />
-                                        <span>Dismiss Alert</span>
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })
                 )}
+
+                {/* Active Violations Timeline (excludes dismissed violations from active view) */}
+                {(() => {
+                    const activeViolations = history.filter(v => v.decision !== 'dismissed');
+                    const dismissedViolations = history.filter(v => v.decision === 'dismissed');
+
+                    return (
+                        <>
+                            {activeViolations.length === 0 ? (
+                                <div className="md-empty-card" style={{ border: 'none', background: 'transparent' }}>
+                                    <CheckCircle size={36} style={{ color: '#188038', marginBottom: '12px' }} />
+                                    <h3 style={{ margin: 0 }}>No Active Violations</h3>
+                                    <p style={{ margin: '4px 0 0 0', color: '#5f6368', fontSize: '13px' }}>
+                                        {dismissedViolations.length > 0 
+                                            ? `${dismissedViolations.length} alert(s) were dismissed as false positives.` 
+                                            : 'This candidate has maintained clean monitoring status.'}
+                                    </p>
+                                </div>
+                            ) : (
+                                activeViolations.map(v => {
+                                    const isReviewed = Boolean(v.reviewed);
+                                    const decision = v.decision || 'pending';
+                                    const imageSrc = v.screenshotPath 
+                                        ? `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`
+                                        : null;
+
+                                    return (
+                                        <div 
+                                            key={v._id} 
+                                            className={`alert-item alert-severity-${v.severity}`}
+                                            style={{
+                                                background: isReviewed ? '#f8f9fa' : '#ffffff',
+                                                border: isReviewed ? '1px solid #dadce0' : '1px solid #1a73e8'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                                <div>
+                                                    <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
+                                                        {formatType(v.type)}
+                                                    </span>
+                                                    <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', marginLeft: '8px' }}>
+                                                        Severity {v.severity}
+                                                    </span>
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontSize: '12px', color: '#70757a' }}>
+                                                        {new Date(v.timestamp).toLocaleTimeString()}
+                                                    </span>
+                                                    {isReviewed ? (
+                                                        <span className={`md-badge ${decision === 'confirmed' ? 'status-active' : 'status-completed'}`}>
+                                                            {decision === 'confirmed' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                                                            <span style={{ textTransform: 'capitalize' }}>{decision}</span>
+                                                        </span>
+                                                    ) : (
+                                                        <span className="md-badge status-draft">
+                                                            <Clock size={12} />
+                                                            <span>Needs Review</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {v.details && (
+                                                <div style={{ fontSize: '12px', color: '#5f6368', fontFamily: 'monospace', marginBottom: '10px' }}>
+                                                    {v.details.confidence && <span>Confidence: {Math.round(v.details.confidence * 100)}% • </span>}
+                                                    {v.details.duration && <span>Duration: {v.details.duration.toFixed(1)}s • </span>}
+                                                    {v.details.object_class && <span>Target: {v.details.object_class} • </span>}
+                                                    {v.details.reason && <span>Details: {v.details.reason}</span>}
+                                                </div>
+                                            )}
+
+                                            {v.reviewNote && (
+                                                <div style={{ fontSize: '12px', color: '#3c4043', background: '#f1f3f4', padding: '6px 10px', borderRadius: '4px', marginBottom: '10px', fontStyle: 'italic' }}>
+                                                    Review Note: "{v.reviewNote}"
+                                                </div>
+                                            )}
+
+                                            {imageSrc && (
+                                                <div style={{ marginTop: '8px', marginBottom: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #dadce0', background: '#000' }}>
+                                                    <img 
+                                                        src={imageSrc} 
+                                                        alt="Violation Evidence Screenshot" 
+                                                        style={{ width: '100%', maxHeight: '320px', objectFit: 'contain', display: 'block' }} 
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Triage controls inside timeline */}
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '8px' }}>
+                                                <button 
+                                                    className="md-btn md-btn-sm" 
+                                                    style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0' }}
+                                                    onClick={() => handleReviewAction(v._id, 'confirmed')}
+                                                    title="Confirm that this alert is a valid violation"
+                                                >
+                                                    <Check size={14} />
+                                                    <span>Confirm Violation</span>
+                                                </button>
+                                                <button 
+                                                    className="md-btn md-btn-sm" 
+                                                    style={{ background: '#ffffff', color: '#d93025', border: '1px solid #fad2cf' }}
+                                                    onClick={() => handleReviewAction(v._id, 'dismissed')}
+                                                    title="Dismiss this alert as false positive and reduce candidate risk score"
+                                                >
+                                                    <X size={14} />
+                                                    <span>Dismiss Alert (Reduce Score)</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+
+                            {/* Dismissed / False Positive Audit Logs */}
+                            {dismissedViolations.length > 0 && (
+                                <div style={{ marginTop: '16px', borderTop: '1px solid #e8eaed', paddingTop: '12px' }}>
+                                    <button 
+                                        type="button"
+                                        className="md-btn md-btn-sm md-btn-text"
+                                        onClick={() => setShowDismissedLogs(!showDismissedLogs)}
+                                        style={{ color: '#5f6368', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', cursor: 'pointer' }}
+                                    >
+                                        <Clock size={13} />
+                                        <span>{showDismissedLogs ? 'Hide' : 'View'} Dismissed / False Positive Logs ({dismissedViolations.length})</span>
+                                    </button>
+
+                                    {showDismissedLogs && (
+                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            {dismissedViolations.map(dv => (
+                                                <div key={dv._id} style={{ background: '#f8f9fa', border: '1px dashed #dadce0', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#5f6368', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                    <div>
+                                                        <strong>{formatType(dv.type)}</strong> (Severity {dv.severity}) • {new Date(dv.timestamp).toLocaleTimeString()}
+                                                        {dv.details?.object_class && ` • Target: ${dv.details.object_class}`}
+                                                    </div>
+                                                    <span className="md-badge" style={{ background: '#e8eaed', color: '#5f6368', fontSize: '10px' }}>
+                                                        Dismissed by Examiner
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    );
+                })()}
             </div>
 
             {/* Send Warning Modal */}

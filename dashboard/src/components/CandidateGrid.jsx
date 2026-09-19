@@ -3,15 +3,18 @@ import { getActiveSessions } from '../services/api';
 import RiskScoreBadge from './RiskScoreBadge';
 import { 
     Users, Camera, Eye, MessageSquare, UserX, AlertTriangle, 
-    ShieldCheck, Clock, RefreshCw, Grid 
+    ShieldCheck, Clock, RefreshCw, Grid, Check 
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './Components.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function CandidateGrid({ riskScores = {}, violations = [], onSelectCandidate, examFilter }) {
+    const { authFetch } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [verifyingMap, setVerifyingMap] = useState({});
 
     const fetchSessions = () => {
         getActiveSessions()
@@ -31,6 +34,47 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         return () => clearInterval(interval);
     }, []);
 
+    const handleConfirmIdentity = async (sid, e) => {
+        if (e) e.stopPropagation();
+        if (!sid) return;
+
+        // Optimistically mark verified
+        setSessions(prev => prev.map(s => {
+            const currentId = s.sessionId || s._id;
+            if (currentId === sid) {
+                return { ...s, cameraVerificationStatus: 'verified' };
+            }
+            return s;
+        }));
+
+        setVerifyingMap(prev => ({ ...prev, [sid]: true }));
+
+        try {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sid}/camera-verification`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'verified' })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.session) {
+                    setSessions(prev => prev.map(s => {
+                        const currentId = s.sessionId || s._id;
+                        if (currentId === sid) {
+                            return { ...s, ...data.session };
+                        }
+                        return s;
+                    }));
+                }
+            }
+        } catch (err) {
+            console.error('Failed to verify identity:', err);
+        } finally {
+            setVerifyingMap(prev => ({ ...prev, [sid]: false }));
+        }
+    };
+
     // Filter sessions by examFilter if selected
     const filteredSessions = sessions.filter(s => {
         if (examFilter && s.examId && s.examId.toUpperCase() !== examFilter.toUpperCase()) {
@@ -41,7 +85,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
     // Count unreviewed violations per candidate
     const unreviewedBySession = (violations || []).reduce((acc, v) => {
-        if (!v.reviewed && v.sessionId) {
+        if (!v.reviewed && v.sessionId && v.decision !== 'dismissed') {
             acc[v.sessionId] = (acc[v.sessionId] || 0) + 1;
         }
         return acc;
@@ -84,10 +128,12 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                         const sid = s.sessionId || s._id;
                         const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
                         const pendingAlerts = unreviewedBySession[sid] || 0;
+                        const cameraStatus = s.cameraVerificationStatus || 'none';
+                        const isVerified = cameraStatus === 'verified';
                         const photoUrl = s.cameraVerificationPhoto 
                             ? `${API_BASE_URL.replace(/\/$/, '')}/${s.cameraVerificationPhoto.replace(/^\//, '')}`
                             : null;
-                        const cameraStatus = s.cameraVerificationStatus || 'none';
+                        const isVerifying = verifyingMap[sid] || false;
 
                         return (
                             <div 
@@ -124,14 +170,22 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                     </div>
                                 </div>
 
-                                {/* Webcam Image Snapshot Area */}
+                                {/* Webcam / Verification Area */}
                                 <div style={{ height: '160px', background: '#0f172a', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {photoUrl ? (
+                                    {/* If NOT verified yet and photo exists, show the self-check photo for verification */}
+                                    {!isVerified && photoUrl ? (
                                         <img 
                                             src={photoUrl} 
-                                            alt={`Camera feed ${s.studentId}`} 
+                                            alt={`Self-check photo ${s.studentId}`} 
                                             style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                                         />
+                                    ) : isVerified ? (
+                                        /* Once verified, photo disappears cleanly and displays active live monitoring feed */
+                                        <div style={{ textAlign: 'center', color: '#10b981', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                            <ShieldCheck size={36} style={{ color: '#10b981' }} />
+                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0' }}>Identity Verified</div>
+                                            <div style={{ fontSize: '10px', color: '#94a3b8' }}>Camera Active ● Live</div>
+                                        </div>
                                     ) : (
                                         <div style={{ textAlign: 'center', color: '#64748b' }}>
                                             <Camera size={32} style={{ marginBottom: '4px', opacity: 0.6 }} />
@@ -140,17 +194,30 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                     )}
 
                                     {/* Verification Badge Overlay */}
-                                    <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '12px', color: '#fff', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        {cameraStatus === 'verified' ? <ShieldCheck size={11} style={{ color: '#34d399' }} /> : <Clock size={11} style={{ color: '#fbbf24' }} />}
-                                        <span style={{ textTransform: 'capitalize' }}>{cameraStatus === 'verified' ? 'Verified Feed' : 'Self-Check Feed'}</span>
+                                    <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '12px', color: '#fff', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {isVerified ? <ShieldCheck size={11} style={{ color: '#34d399' }} /> : <Clock size={11} style={{ color: '#fbbf24' }} />}
+                                        <span style={{ textTransform: 'capitalize' }}>{isVerified ? 'Identity Confirmed' : 'Self-Check Check Required'}</span>
                                     </div>
                                 </div>
 
                                 {/* Action Buttons Footer */}
                                 <div style={{ padding: '8px 12px', background: '#ffffff', borderTop: '1px solid #e8eaed', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                    {!isVerified && photoUrl && (
+                                        <button 
+                                            className="md-btn md-btn-sm"
+                                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: '#e6f4ea', color: '#137333', border: '1px solid #ceead6' }}
+                                            onClick={(e) => handleConfirmIdentity(sid, e)}
+                                            disabled={isVerifying}
+                                            title="Confirm student identity and clear self-check photo"
+                                        >
+                                            <Check size={12} />
+                                            <span>{isVerifying ? 'Confirming...' : 'Confirm Identity'}</span>
+                                        </button>
+                                    )}
+
                                     <button 
                                         className="md-btn md-btn-sm md-btn-outlined"
-                                        style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
+                                        style={{ flex: !isVerified && photoUrl ? 'unset' : 1, fontSize: '11px', padding: '4px 8px' }}
                                         onClick={() => onSelectCandidate && onSelectCandidate(sid)}
                                         title="View full evidence timeline & screenshots"
                                     >
@@ -166,3 +233,4 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         </div>
     );
 }
+

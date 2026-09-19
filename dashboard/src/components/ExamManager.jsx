@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Play, CheckCircle, Clock, Users, X, AlertCircle, Eye, BarChart2, Radio, Trash2 } from 'lucide-react';
+import { FileText, Plus, Play, CheckCircle, Clock, Users, X, AlertCircle, Eye, BarChart2, Radio, Trash2, Lock, Sparkles } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './Components.css';
 
 const API_BASE = 'http://localhost:5000';
 
 export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSummary }) {
+    const { authFetch, teacher, accessToken, setShowAuthModal, demoLogin } = useAuth();
     const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState('active'); // 'active' | 'completed'
+    const [scopeFilter, setScopeFilter] = useState('all'); // 'all' | 'mine'
 
     // Confirmation dialog state for ending an exam
     const [endExamModalData, setEndExamModalData] = useState(null); // { id, title }
@@ -35,11 +38,23 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
         fetchExams();
         const interval = setInterval(fetchExams, 5000); // Polling every 5s
         return () => clearInterval(interval);
-    }, []);
+    }, [teacher, accessToken]);
 
     const fetchExams = async () => {
+        if (!teacher && !accessToken) {
+            setError('Examiner authentication required to view and manage exams.');
+            setExams([]);
+            setLoading(false);
+            return;
+        }
+
         try {
-            const res = await fetch(`${API_BASE}/exams`);
+            const res = await authFetch(`${API_BASE}/exams`);
+            if (res.status === 401) {
+                setError('Examiner authentication required to view and manage exams.');
+                setExams([]);
+                return;
+            }
             if (!res.ok) throw new Error('Failed to load exams');
             const data = await res.json();
             setExams(data);
@@ -82,7 +97,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                 formData.append('paper', paperFile);
             }
 
-            const res = await fetch(`${API_BASE}/exams`, {
+            const res = await authFetch(`${API_BASE}/exams`, {
                 method: 'POST',
                 body: formData
             });
@@ -108,7 +123,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
     const handleUpdateStatus = async (examId, newStatus) => {
         try {
-            const res = await fetch(`${API_BASE}/exams/${examId}/status`, {
+            const res = await authFetch(`${API_BASE}/exams/${examId}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })
@@ -125,7 +140,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
     const handleDeleteExam = async (examId) => {
         try {
-            const res = await fetch(`${API_BASE}/exams/${examId}`, {
+            const res = await authFetch(`${API_BASE}/exams/${examId}`, {
                 method: 'DELETE'
             });
             if (res.ok) {
@@ -143,7 +158,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
     const activeExams = exams.filter(e => e.status === 'active' || e.status === 'draft');
     const completedExams = exams.filter(e => e.status === 'completed');
-    const displayedExams = activeTab === 'active' ? activeExams : completedExams;
+    const baseExams = activeTab === 'active' ? activeExams : completedExams;
+    const displayedExams = scopeFilter === 'mine' ? baseExams.filter(e => e.isMine) : baseExams;
+    const myExamsCount = baseExams.filter(e => e.isMine).length;
 
     return (
         <div className="exam-manager-container">
@@ -158,30 +175,104 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                 </button>
             </div>
 
-            {/* Material Design Tab Filter */}
-            <div className="exam-tabs-bar">
-                <button 
-                    className={`exam-tab-btn ${activeTab === 'active' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('active')}
-                >
-                    <Radio size={16} />
-                    <span>Active & Draft Exams</span>
-                    <span className="tab-count-pill">{activeExams.length}</span>
-                </button>
-                <button 
-                    className={`exam-tab-btn ${activeTab === 'completed' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('completed')}
-                >
-                    <CheckCircle size={16} />
-                    <span>Completed & Historical Exams</span>
-                    <span className="tab-count-pill">{completedExams.length}</span>
-                </button>
+            {/* Material Design Tab Filter & Scope Switcher */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                <div className="exam-tabs-bar" style={{ margin: 0 }}>
+                    <button 
+                        className={`exam-tab-btn ${activeTab === 'active' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('active')}
+                    >
+                        <Radio size={16} />
+                        <span>Active & Draft Exams</span>
+                        <span className="tab-count-pill">{activeExams.length}</span>
+                    </button>
+                    <button 
+                        className={`exam-tab-btn ${activeTab === 'completed' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('completed')}
+                    >
+                        <CheckCircle size={16} />
+                        <span>Completed & Historical Exams</span>
+                        <span className="tab-count-pill">{completedExams.length}</span>
+                    </button>
+                </div>
+
+                {/* Scope Filter: All vs Created By Me */}
+                {teacher && (
+                    <div style={{
+                        display: 'flex',
+                        background: 'var(--bg-base, #f1f3f4)',
+                        padding: '3px',
+                        borderRadius: '20px',
+                        border: '1px solid var(--border-color, #dadce0)'
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => setScopeFilter('all')}
+                            style={{
+                                padding: '5px 12px',
+                                borderRadius: '16px',
+                                border: 'none',
+                                background: scopeFilter === 'all' ? '#ffffff' : 'transparent',
+                                color: scopeFilter === 'all' ? '#1a73e8' : '#5f6368',
+                                fontWeight: scopeFilter === 'all' ? 600 : 400,
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                boxShadow: scopeFilter === 'all' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            All Department Exams ({baseExams.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setScopeFilter('mine')}
+                            style={{
+                                padding: '5px 12px',
+                                borderRadius: '16px',
+                                border: 'none',
+                                background: scopeFilter === 'mine' ? '#ffffff' : 'transparent',
+                                color: scopeFilter === 'mine' ? '#1a73e8' : '#5f6368',
+                                fontWeight: scopeFilter === 'mine' ? 600 : 400,
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                boxShadow: scopeFilter === 'mine' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            Created by Me ({myExamsCount})
+                        </button>
+                    </div>
+                )}
             </div>
 
             {error && (
-                <div className="md-alert md-alert-error">
-                    <AlertCircle size={18} />
-                    <span>{error}</span>
+                <div className="md-alert md-alert-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <AlertCircle size={18} />
+                        <span>{error}</span>
+                    </div>
+                    {!teacher && (
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                                type="button"
+                                className="md-btn md-btn-sm md-btn-primary"
+                                onClick={() => demoLogin().then(fetchExams)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                <Sparkles size={14} />
+                                <span>⚡ Quick Demo Login</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="md-btn md-btn-sm md-btn-outlined"
+                                onClick={() => setShowAuthModal(true)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                <Lock size={14} />
+                                <span>Sign In</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -215,7 +306,18 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                 className={`md-card exam-card ${isCompleted ? 'completed-card' : ''}`}
                             >
                                 <div className="exam-card-top">
-                                    <div className="exam-code-badge">{exam.examCode}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <div className="exam-code-badge">{exam.examCode}</div>
+                                        {exam.isMine ? (
+                                            <span className="md-badge" style={{ background: '#e8f0fe', color: '#1a73e8', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
+                                                Created by You
+                                            </span>
+                                        ) : exam.createdByName ? (
+                                            <span style={{ fontSize: '11px', color: '#5f6368' }}>
+                                                By: {exam.createdByName}
+                                            </span>
+                                        ) : null}
+                                    </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span className={`md-badge ${isLive ? 'status-active live-pulse' : isCompleted ? 'status-completed' : 'status-draft'}`}>
                                             {isLive && <span className="live-dot" />}

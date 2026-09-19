@@ -6,9 +6,11 @@ const { calculateRiskScore } = require('../scoring/severityEngine');
 const router = express.Router();
 
 const Exam = require('../models/Exam');
+const { requireAuth } = require('../middleware/authMiddleware');
+const storageService = require('../services/storage');
 
-// GET /sessions/active
-router.get('/active', async (req, res) => {
+// GET /sessions/active (Teacher-facing)
+router.get('/active', requireAuth, async (req, res) => {
     try {
         const activeSessions = await Session.find({ status: "active" });
         
@@ -92,6 +94,34 @@ router.patch('/:sessionId/end', async (req, res) => {
     }
 });
 
+// POST /sessions/:sessionId/consent — Record candidate consent decision (Data Ethics Section 10.4)
+router.post('/:sessionId/consent', async (req, res) => {
+    try {
+        const { consentGiven } = req.body;
+        const session = await Session.findByIdAndUpdate(
+            req.params.sessionId,
+            {
+                consentGiven: consentGiven === true || consentGiven === 'true',
+                consentTimestamp: new Date()
+            },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        res.json({
+            message: 'Consent recorded successfully',
+            consentGiven: session.consentGiven,
+            consentTimestamp: session.consentTimestamp
+        });
+    } catch (err) {
+        console.error('Error recording consent:', err);
+        res.status(500).json({ error: 'Failed to record consent', details: err.message });
+    }
+});
+
 // POST /sessions/:sessionId/camera-verification — Upload initial camera verification photo
 router.post('/:sessionId/camera-verification', async (req, res) => {
     try {
@@ -100,20 +130,9 @@ router.post('/:sessionId/camera-verification', async (req, res) => {
             return res.status(400).json({ error: 'photoBase64 is required' });
         }
 
-        const verificationDir = path.join(__dirname, '../../uploads/verification');
-        if (!fs.existsSync(verificationDir)) {
-            fs.mkdirSync(verificationDir, { recursive: true });
-        }
-
-        // Clean base64 string
-        const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
-        const buffer = Buffer.from(base64Data, 'base64');
-        
         const filename = `${req.params.sessionId}_camera_check_${Date.now()}.jpg`;
-        const filePath = path.join(verificationDir, filename);
-        fs.writeFileSync(filePath, buffer);
-
-        const photoUrl = `/uploads/verification/${filename}`;
+        const saved = await storageService.save(photoBase64, filename, 'verification');
+        const photoUrl = saved.url;
 
         const session = await Session.findByIdAndUpdate(
             req.params.sessionId,
@@ -145,7 +164,7 @@ router.post('/:sessionId/camera-verification', async (req, res) => {
 });
 
 // PATCH /sessions/:sessionId/camera-verification — Teacher triage (verified vs flagged)
-router.patch('/:sessionId/camera-verification', async (req, res) => {
+router.patch('/:sessionId/camera-verification', requireAuth, async (req, res) => {
     try {
         const { status, note } = req.body;
         if (!['verified', 'flagged'].includes(status)) {
@@ -231,8 +250,8 @@ router.get('/:sessionId/status', async (req, res) => {
     }
 });
 
-// POST /sessions/:sessionId/warn — Send examiner warning message to candidate
-router.post('/:sessionId/warn', async (req, res) => {
+// POST /sessions/:sessionId/warn — Send examiner warning message to candidate (Teacher-facing)
+router.post('/:sessionId/warn', requireAuth, async (req, res) => {
     try {
         const { message } = req.body;
         if (!message || !message.trim()) {
@@ -269,8 +288,8 @@ router.post('/:sessionId/warn', async (req, res) => {
     }
 });
 
-// POST /sessions/:sessionId/terminate — Examiner terminates candidate session
-router.post('/:sessionId/terminate', async (req, res) => {
+// POST /sessions/:sessionId/terminate — Examiner terminates candidate session (Teacher-facing)
+router.post('/:sessionId/terminate', requireAuth, async (req, res) => {
     try {
         const { reason } = req.body;
         const session = await Session.findById(req.params.sessionId);

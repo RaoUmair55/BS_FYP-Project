@@ -242,7 +242,7 @@ class AIMonitor:
             if self.no_face_start is None:
                 self.no_face_start = time.time()
             elif time.time() - self.no_face_start >= 10.0:
-                self._emit_violation("no_face_detected", severity=3, details={})
+                self._emit_violation("no_face_detected", severity=3, details={}, frame=frame)
                 self.no_face_start = None
             return
             
@@ -252,7 +252,12 @@ class AIMonitor:
         if num_faces > 1:
             self.second_person_counter += 1
             if self.second_person_counter >= 3:
-                self._emit_violation("second_person_detected", severity=4, details={"face_count": num_faces})
+                # Annotate faces on evidence frame
+                annotated = frame.copy()
+                for (fx, fy, fw, fh) in faces:
+                    cv2.rectangle(annotated, (fx, fy), (fx + fw, fy + fh), (0, 165, 255), 2)
+                    cv2.putText(annotated, "PERSON", (fx, max(20, fy - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+                self._emit_violation("second_person_detected", severity=4, details={"face_count": num_faces}, frame=annotated)
                 self.second_person_counter = 0
         else:
             self.second_person_counter = 0
@@ -272,7 +277,8 @@ class AIMonitor:
                     self._emit_violation(
                         "head_turn_away", 
                         severity=2, 
-                        details={"duration": elapsed, "offset_ratio": round(offset_ratio, 2)}
+                        details={"duration": elapsed, "offset_ratio": round(offset_ratio, 2)},
+                        frame=frame
                     )
                     self.head_turn_start = None
         else:
@@ -297,7 +303,7 @@ class AIMonitor:
             if self.no_face_start is None:
                 self.no_face_start = time.time()
             elif time.time() - self.no_face_start >= 10.0:
-                self._emit_violation("no_face_detected", severity=3, details={})
+                self._emit_violation("no_face_detected", severity=3, details={}, frame=frame)
                 # Reset to None so it requires another 10 seconds to fire again
                 self.no_face_start = None
             return
@@ -345,7 +351,8 @@ class AIMonitor:
                     self._emit_violation(
                         "head_turn_away", 
                         severity=2, 
-                        details={"duration": elapsed}
+                        details={"duration": elapsed},
+                        frame=frame
                     )
                     # Reset so it doesn't fire every frame while the head stays turned
                     self.head_turn_start = None
@@ -356,10 +363,6 @@ class AIMonitor:
         """
         Counts faces in the frame. Requires 3 consecutive over-threshold checks 
         to emit 'second_person_detected'.
-        
-        Reasoning: MediaPipe can occasionally hallucinate a face for a single frame.
-        Requiring 3-in-a-row (which is 30 actual frames, ~1 second) avoids these
-        false positives.
         """
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.mp_face_mesh.process(rgb_frame)
@@ -371,7 +374,7 @@ class AIMonitor:
         if count > 1:
             self.second_person_counter += 1
             if self.second_person_counter >= 3:
-                self._emit_violation("second_person_detected", severity=4, details={})
+                self._emit_violation("second_person_detected", severity=4, details={}, frame=frame)
                 self.second_person_counter = 0
         else:
             self.second_person_counter = 0
@@ -384,6 +387,8 @@ class AIMonitor:
         now = time.time()
         if hasattr(self, 'last_object_violation_at') and (now - self.last_object_violation_at < 3.0):
             return
+
+        h, w = frame.shape[:2]
 
         # Preprocess: resize -> RGB -> CHW -> normalize -> batch dim -> float32
         resized = cv2.resize(frame, (640, 640))
@@ -413,10 +418,22 @@ class AIMonitor:
                 if class_id == 67 or class_id == 73: # Cell phone or book
                     class_name = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "cell phone"
                     self.last_object_violation_at = now
+                    
+                    # Annotate frame with red detection box
+                    annotated = frame.copy()
+                    x1 = int(pred[0] * w / 640)
+                    y1 = int(pred[1] * h / 640)
+                    x2 = int(pred[2] * w / 640)
+                    y2 = int(pred[3] * h / 640)
+                    cv2.rectangle(annotated, (max(0, x1), max(0, y1)), (min(w, x2), min(h, y2)), (0, 0, 255), 2)
+                    label = f"{class_name.upper()}: {int(confidence * 100)}%"
+                    cv2.putText(annotated, label, (max(0, x1), max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
                     self._emit_violation(
                         "unauthorized_object",
                         severity=3,
-                        details={"confidence": round(confidence, 2), "object_class": class_name}
+                        details={"confidence": round(confidence, 2), "object_class": class_name},
+                        frame=annotated
                     )
                     break
         # Format B: Shape (84, 8400) -> Standard YOLO ONNX output
@@ -431,23 +448,40 @@ class AIMonitor:
                     if class_id == 67 or class_id == 73: # Cell phone or book
                         class_name = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "cell phone"
                         self.last_object_violation_at = now
+
+                        # Annotate frame with red detection box
+                        annotated = frame.copy()
+                        cx, cy, bw, bh = pred[0], pred[1], pred[2], pred[3]
+                        x1 = int((cx - bw / 2) * w / 640)
+                        y1 = int((cy - bh / 2) * h / 640)
+                        x2 = int((cx + bw / 2) * w / 640)
+                        y2 = int((cy + bh / 2) * h / 640)
+                        cv2.rectangle(annotated, (max(0, x1), max(0, y1)), (min(w, x2), min(h, y2)), (0, 0, 255), 2)
+                        label = f"{class_name.upper()}: {int(confidence * 100)}%"
+                        cv2.putText(annotated, label, (max(0, x1), max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
                         self._emit_violation(
                             "unauthorized_object",
                             severity=3,
-                            details={"confidence": round(confidence, 2), "object_class": class_name}
+                            details={"confidence": round(confidence, 2), "object_class": class_name},
+                            frame=annotated
                         )
                         break
 
-    def _emit_violation(self, violation_type, severity, details):
+    def _emit_violation(self, violation_type, severity, details, frame=None):
         """
-        Constructs the violation event matching the standard schema and emits it with screenshot evidence.
+        Constructs the violation event matching the standard schema and emits it with webcam evidence.
         """
         screenshot_path = None
         try:
-            import screenshot_capture
-            screenshot_path = screenshot_capture.capture_screenshot(self.session_id, violation_type)
+            if frame is not None:
+                from services.capture import capture_webcam_frame
+                screenshot_path = capture_webcam_frame(self.session_id, violation_type, frame=frame)
+            else:
+                from services.capture import capture_screenshot
+                screenshot_path = capture_screenshot(self.session_id, violation_type)
         except Exception as e:
-            print(f"[AIMonitor Warning] Could not capture screenshot for {violation_type}: {e}")
+            print(f"[AIMonitor Warning] Could not capture evidence for {violation_type}: {e}")
 
         event = {
             "sessionId": self.session_id,

@@ -51,7 +51,9 @@ if __name__ == "__main__":
     
     enforcer.start()
     
-    if app_mode == "exam":
+    is_self_check = os.environ.get("IS_SELF_CHECK", "false").lower() in ("true", "1")
+    
+    if not is_self_check:
         try:
             monitor = AIMonitor(
                 session_id=exam_session_id,

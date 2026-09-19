@@ -4,7 +4,7 @@ import time
 import json
 import os
 from datetime import datetime, timezone
-import screenshot_capture
+from services.capture import capture_screenshot
 
 class WhitelistEnforcer:
     """
@@ -35,6 +35,14 @@ class WhitelistEnforcer:
             "firefox.exe",
             "brave.exe"
         }
+
+        # If developer allows dev browsers for testing the dashboard or runs in dev mode,
+        # permit Edge and Chrome so the tester can monitor the dashboard simultaneously.
+        allow_dev_browsers = os.environ.get("ALLOW_DEV_BROWSERS", "false").lower() in ("true", "1")
+        app_mode = os.environ.get("APP_MODE", "").lower()
+        if allow_dev_browsers or app_mode == "dev":
+            self.EXAM_BLOCKED.discard("msedge.exe")
+            self.EXAM_BLOCKED.discard("chrome.exe")
 
         # Hardcoded OS safety list - never kill these processes to keep Windows stable.
         self.SAFETY_LIST = {
@@ -78,6 +86,7 @@ class WhitelistEnforcer:
             "dashost.exe", "sppsvc.exe", "wudfhost.exe", "comppkgsrv.exe",
             "msedgewebview2.exe", "tiworker.exe", "trustedinstaller.exe",
             "lsaiso.exe", "systemsettings.exe", "intelcphservice.exe",
+            "intelcphdcpsvc.exe", "intelcphecisvc.exe",
             "igfxcuiservice.exe", "chrome-native-host.exe"
         }
         
@@ -226,7 +235,7 @@ class WhitelistEnforcer:
         time.sleep(0.5)
         
         # Capture screenshot BEFORE terminating the app, so we get the evidence
-        screenshot_path = screenshot_capture.capture_screenshot(self.session_id, "unauthorized_app")
+        screenshot_path = capture_screenshot(self.session_id, "unauthorized_app")
         
         # Terminate gracefully, then force kill if needed
         try:
