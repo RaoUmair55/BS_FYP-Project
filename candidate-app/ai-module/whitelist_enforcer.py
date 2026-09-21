@@ -71,7 +71,27 @@ class WhitelistEnforcer:
             "openconsole.exe",
             "dllhost.exe",
             "wmiprvse.exe",
-            "audiodg.exe"
+            "audiodg.exe",
+            # Hardware drivers & platform services
+            "syntphelper.exe",
+            "syntpenh.exe",
+            "presentationfontcache.exe",
+            "securityhealthsystray.exe",
+            "securityhealthservice.exe",
+            "btwrsupportservice.exe",
+            "ibtsiva.exe",
+            "nvdisplay.container.exe",
+            "nvcontainer.exe",
+            "nvsphelper64.exe",
+            "memcompression",
+            "memory compression",
+            "igfxem.exe",
+            "igfxhk.exe",
+            "igfxtray.exe",
+            "onedrive.sync.service.exe",
+            "onedrive.exe",
+            "wlanext.exe",
+            "applemobiledeviceprocess.exe"
         }
         
         # Hardcoded list of common Windows services/drivers/telemetry to skip
@@ -79,15 +99,20 @@ class WhitelistEnforcer:
         self.KNOWN_BACKGROUND_SERVICES = {
             "searchindexer.exe", "searchprotocolhost.exe", "searchfilterhost.exe",
             "officeclicktorun.exe", "mousocoreworker.exe", "unsecapp.exe",
-            "wmiprvse.exe", "dllhost.exe", "registry", "memory compression",
-            "securityhealthservice.exe", "msmpeng.exe", "nissrv.exe",
+            "wmiprvse.exe", "dllhost.exe", "registry", "memory compression", "memcompression",
+            "securityhealthservice.exe", "securityhealthsystray.exe", "msmpeng.exe", "nissrv.exe",
             "smartscreen.exe", "aggregatorhost.exe", "compattelrunner.exe",
             "backgroundtaskhost.exe", "backgroundtransferhost.exe",
             "dashost.exe", "sppsvc.exe", "wudfhost.exe", "comppkgsrv.exe",
             "msedgewebview2.exe", "tiworker.exe", "trustedinstaller.exe",
             "lsaiso.exe", "systemsettings.exe", "intelcphservice.exe",
             "intelcphdcpsvc.exe", "intelcphecisvc.exe",
-            "igfxcuiservice.exe", "chrome-native-host.exe"
+            "igfxcuiservice.exe", "igfxem.exe", "igfxhk.exe", "igfxtray.exe",
+            "syntphelper.exe", "syntpenh.exe", "presentationfontcache.exe",
+            "btwrsupportservice.exe", "ibtsiva.exe",
+            "nvdisplay.container.exe", "nvcontainer.exe", "nvsphelper64.exe",
+            "onedrive.sync.service.exe", "onedrive.exe", "wlanext.exe",
+            "applemobiledeviceprocess.exe", "chrome-native-host.exe"
         }
         
         # Protect this exact AI module process instance

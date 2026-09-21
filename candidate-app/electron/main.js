@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
 const { checkPythonHealth, forwardViolationToServer, killApp } = require('./ipc/pythonBridge');
@@ -67,10 +68,45 @@ async function waitForPythonReady() {
   return false;
 }
 
+let lastPythonStderr = '';
+
+function getPythonExecutable() {
+  if (process.env.PYTHON_PATH) {
+    return process.env.PYTHON_PATH;
+  }
+
+  // Automatically check for local virtual environment folders (venv or .venv)
+  const aiDir = path.join(__dirname, '..', 'ai-module');
+  const candidateDir = path.join(__dirname, '..');
+  
+  const venvCandidates = [
+    path.join(aiDir, 'venv', 'Scripts', 'python.exe'),
+    path.join(aiDir, '.venv', 'Scripts', 'python.exe'),
+    path.join(candidateDir, 'venv', 'Scripts', 'python.exe'),
+    path.join(candidateDir, '.venv', 'Scripts', 'python.exe'),
+    path.join(aiDir, 'venv', 'bin', 'python'),
+    path.join(aiDir, '.venv', 'bin', 'python'),
+    path.join(candidateDir, 'venv', 'bin', 'python'),
+    path.join(candidateDir, '.venv', 'bin', 'python')
+  ];
+
+  for (const venvExe of venvCandidates) {
+    if (fs.existsSync(venvExe)) {
+      console.log(`[Electron] Auto-detected Python virtual environment at: ${venvExe}`);
+      return venvExe;
+    }
+  }
+
+  return 'python';
+}
+
 function spawnPythonProcess(mode, isSelfCheck = false) {
   const pythonScript = path.join(__dirname, '..', 'ai-module', 'main.py');
-  console.log(`[Electron] Spawning Python process in ${mode} mode (isSelfCheck=${isSelfCheck}): python ${pythonScript}`);
+  const pythonExe = getPythonExecutable();
+  console.log(`[Electron] Spawning Python process in ${mode} mode (isSelfCheck=${isSelfCheck}): ${pythonExe} ${pythonScript}`);
   
+  lastPythonStderr = '';
+
   // Inject session ID to the Python environment
   const pythonEnv = { 
     ...process.env, 
@@ -78,20 +114,35 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     APP_MODE: mode,
     IS_SELF_CHECK: isSelfCheck ? 'true' : 'false'
   };
-  const proc = spawn('python', [pythonScript], { env: pythonEnv });
+  
+  let proc;
+  try {
+    proc = spawn(pythonExe, [pythonScript], { env: pythonEnv });
+  } catch (err) {
+    lastPythonStderr = err.message;
+    console.error(`[Electron] Failed to spawn ${pythonExe}:`, err);
+    return null;
+  }
+
+  proc.on('error', (err) => {
+    lastPythonStderr = err.message;
+    console.error(`[Electron] Python spawn process error:`, err);
+  });
 
   proc.stdout.on('data', (data) => {
     console.log(`[Python] ${data.toString().trim()}`);
   });
 
   proc.stderr.on('data', (data) => {
-    console.error(`[Python Error] ${data.toString().trim()}`);
+    const msg = data.toString().trim();
+    lastPythonStderr = (lastPythonStderr + '\n' + msg).trim();
+    console.error(`[Python Error] ${msg}`);
   });
 
   proc.on('exit', (code, signal) => {
     console.log(`[Electron] Python process exited with code ${code} and signal ${signal}`);
     if (code !== 0 && mainWindow && !proc.killedIntentional) {
-      mainWindow.webContents.send('python-crashed', { code, signal });
+      mainWindow.webContents.send('python-crashed', { code, signal, error: lastPythonStderr });
     }
   });
   
@@ -179,7 +230,10 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   
   const isPythonReady = await waitForPythonReady();
   if (!isPythonReady) {
-    dialog.showErrorBox('Initialization Error', 'The AI module failed to start.');
+    const errorDetail = lastPythonStderr 
+      ? `The AI module failed to start.\n\nDiagnostics / Error:\n${lastPythonStderr}`
+      : 'The AI module failed to start.\n\nPlease verify that Python is in your system PATH and all dependencies are installed.';
+    dialog.showErrorBox('Initialization Error', errorDetail);
     if (mainWindow) {
       await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
     }
