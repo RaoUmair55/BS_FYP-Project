@@ -97,6 +97,27 @@ function getPythonExecutable() {
     }
   }
 
+  // Check standard Windows installation directories if python is not in PATH
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || '';
+    const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
+    const pyVersions = ['Python312', 'Python311', 'Python310', 'Python313', 'Python39', 'Python38'];
+    
+    for (const ver of pyVersions) {
+      const userPy = path.join(localAppData, 'Programs', 'Python', ver, 'python.exe');
+      if (fs.existsSync(userPy)) {
+        console.log(`[Electron] Auto-detected Windows Python at: ${userPy}`);
+        return userPy;
+      }
+      
+      const progPy = path.join(programFiles, ver, 'python.exe');
+      if (fs.existsSync(progPy)) {
+        console.log(`[Electron] Auto-detected Program Files Python at: ${progPy}`);
+        return progPy;
+      }
+    }
+  }
+
   return 'python';
 }
 
@@ -117,7 +138,10 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   
   let proc;
   try {
-    proc = spawn(pythonExe, [pythonScript], { env: pythonEnv });
+    proc = spawn(pythonExe, [pythonScript], { 
+      env: pythonEnv,
+      shell: process.platform === 'win32'
+    });
   } catch (err) {
     lastPythonStderr = err.message;
     console.error(`[Electron] Failed to spawn ${pythonExe}:`, err);
