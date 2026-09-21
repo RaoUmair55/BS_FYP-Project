@@ -82,17 +82,26 @@ class AIMonitor:
                 else:
                     print("[AIMonitor Warning] MediaPipe face mesh solution unavailable.")
 
-            # Setup OpenCV Haar Cascade Face detector (works natively on Python 3.14)
+            # Setup OpenCV Haar Cascade Face, Profile, and Eye detectors (works natively on all Python versions)
             try:
-                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+                self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                self.profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
+                self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+                
                 if self.face_cascade.empty():
                     self.face_cascade = None
-                else:
-                    print("[AIMonitor] OpenCV Haar Cascade face detector loaded successfully.")
+                if self.profile_cascade.empty():
+                    self.profile_cascade = None
+                if self.eye_cascade.empty():
+                    self.eye_cascade = None
+                    
+                if self.face_cascade is not None:
+                    print("[AIMonitor] OpenCV Frontal & Profile Face detectors loaded successfully.")
             except Exception as e:
-                print(f"[AIMonitor Warning] Failed to load OpenCV Haar Cascade: {e}")
+                print(f"[AIMonitor Warning] Failed to load OpenCV Cascades: {e}")
                 self.face_cascade = None
+                self.profile_cascade = None
+                self.eye_cascade = None
 
             # Load ONNX model for object detection if present
             model_path = os.path.join(base_dir, "yolo26n.onnx")
@@ -226,8 +235,10 @@ class AIMonitor:
                 cap.release()
 
     def _check_faces_opencv(self, frame):
-        """Fallback face detection using OpenCV Haar Cascades."""
+        """Robust multi-cascade face, profile, and head turn detection."""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # 1. Frontal faces
         faces = self.face_cascade.detectMultiScale(
             gray, 
             scaleFactor=1.1, 
@@ -235,24 +246,42 @@ class AIMonitor:
             minSize=(60, 60)
         )
         
+        # 2. Side profile faces (left and right)
+        left_profiles = ()
+        right_profiles = ()
+        if self.profile_cascade is not None:
+            left_profiles = self.profile_cascade.detectMultiScale(
+                gray, 
+                scaleFactor=1.1, 
+                minNeighbors=4, 
+                minSize=(50, 50)
+            )
+            flipped_gray = cv2.flip(gray, 1)
+            right_profiles = self.profile_cascade.detectMultiScale(
+                flipped_gray, 
+                scaleFactor=1.1, 
+                minNeighbors=4, 
+                minSize=(50, 50)
+            )
+
         num_faces = len(faces)
-        
+        num_profiles = len(left_profiles) + len(right_profiles)
+
         # 1. Missing Face Check
-        if num_faces == 0:
+        if num_faces == 0 and num_profiles == 0:
             if self.no_face_start is None:
                 self.no_face_start = time.time()
             elif time.time() - self.no_face_start >= 10.0:
-                self._emit_violation("no_face_detected", severity=3, details={}, frame=frame)
+                self._emit_violation("no_face_detected", severity=3, details={"reason": "Candidate not visible in camera view"}, frame=frame)
                 self.no_face_start = None
             return
             
         self.no_face_start = None
 
         # 2. Second Person Check
-        if num_faces > 1:
+        if num_faces > 1 or (num_profiles > 1 and num_faces > 0):
             self.second_person_counter += 1
             if self.second_person_counter >= 3:
-                # Annotate faces on evidence frame
                 annotated = frame.copy()
                 for (fx, fy, fw, fh) in faces:
                     cv2.rectangle(annotated, (fx, fy), (fx + fw, fy + fh), (0, 165, 255), 2)
@@ -262,23 +291,56 @@ class AIMonitor:
         else:
             self.second_person_counter = 0
 
-        # 3. Head Turn / Off-Center Check
-        (x, y, w, h) = faces[0]
-        face_center_x = x + w / 2
-        frame_center_x = frame.shape[1] / 2
-        offset_ratio = abs(face_center_x - frame_center_x) / frame_center_x
+        # 3. Head Turn / Gaze Away Check
+        is_head_turned = False
+        turn_reason = ""
 
-        if offset_ratio > 0.45:
+        if num_profiles > 0 and num_faces == 0:
+            # Candidate turned profile / sideways
+            is_head_turned = True
+            turn_reason = "Side head turn (profile view)"
+        elif num_faces == 1:
+            (x, y, w, h) = faces[0]
+            
+            # If profile also triggered alongside frontal
+            if num_profiles > 0:
+                is_head_turned = True
+                turn_reason = "Angled head turn"
+            elif self.eye_cascade is not None:
+                # Check eyes within upper face region
+                roi_gray = gray[y:y + int(h * 0.6), x:x + w]
+                eyes = self.eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=3, minSize=(15, 15))
+                
+                if len(eyes) == 1:
+                    ex, ey, ew, eh = eyes[0]
+                    rel_pos = (ex + ew / 2) / w
+                    if rel_pos < 0.25 or rel_pos > 0.75:
+                        is_head_turned = True
+                        turn_reason = "Lateral gaze shift (single eye visible)"
+                elif len(eyes) >= 2:
+                    sorted_eyes = sorted(eyes, key=lambda e: e[0])
+                    eye1_center = sorted_eyes[0][0] + sorted_eyes[0][2] / 2
+                    eye2_center = sorted_eyes[-1][0] + sorted_eyes[-1][2] / 2
+                    eye_mid = (eye1_center + eye2_center) / 2
+                    asymmetry = abs(eye_mid - (w / 2)) / (w / 2)
+                    if asymmetry > 0.32:
+                        is_head_turned = True
+                        turn_reason = f"Facial gaze asymmetry ({round(asymmetry, 2)})"
+
+        if is_head_turned:
             if self.head_turn_start is None:
                 self.head_turn_start = time.time()
             else:
                 elapsed = time.time() - self.head_turn_start
-                if elapsed >= self.thresholds.get("sustained_seconds", 3):
+                sustained_limit = self.thresholds.get("sustained_seconds", 2)
+                if elapsed >= sustained_limit:
+                    annotated = frame.copy()
+                    cv2.putText(annotated, "HEAD TURN DETECTED", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                     self._emit_violation(
                         "head_turn_away", 
                         severity=2, 
-                        details={"duration": elapsed, "offset_ratio": round(offset_ratio, 2)},
-                        frame=frame
+                        details={"duration": round(elapsed, 1), "reason": turn_reason},
+                        frame=annotated
                     )
                     self.head_turn_start = None
         else:

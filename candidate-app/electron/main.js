@@ -21,6 +21,11 @@ let pythonProcess;
 let activeSessionInfo = {
   sessionId: null,
   examId: null,
+  studentId: null,
+  studentName: null,
+  rollNumber: null,
+  consentGiven: false,
+  consentTimestamp: null,
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
 };
 
@@ -156,12 +161,13 @@ ipcMain.handle('get-session-info', () => {
   return activeSessionInfo;
 });
 
-// Handle Login
-ipcMain.handle('login', async (event, { sessionId, examId, studentId }) => {
-  console.log(`[Electron] Login successful. Session: ${sessionId}, Exam: ${examId}, Student: ${studentId}`);
-  activeSessionInfo.sessionId = sessionId;
+// Handle Login / Exam Code Entry
+ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber }) => {
+  console.log(`[Electron] Candidate entering exam. Exam: ${examId}`);
   activeSessionInfo.examId = examId;
-  activeSessionInfo.studentId = studentId || 'Candidate';
+  if (studentId) activeSessionInfo.studentId = studentId;
+  if (studentName) activeSessionInfo.studentName = studentName;
+  if (rollNumber) activeSessionInfo.rollNumber = rollNumber;
   
   // 1. Show splash/loading screen immediately while Python spawns and health-checks
   if (mainWindow) {
@@ -187,9 +193,29 @@ ipcMain.handle('login', async (event, { sessionId, examId, studentId }) => {
   return { success: true };
 });
 
-// Handle Transition from Consent Screen to Self-Check
-ipcMain.handle('proceed-to-self-check', async () => {
-  console.log('[Electron] Consent granted. Proceeding to Self-Check...');
+// Handle Transition from Consent Screen to Identity Screen
+ipcMain.handle('proceed-to-identity', async (event, consentData) => {
+  console.log('[Electron] Consent granted. Proceeding to Identity Capture...');
+  if (consentData) {
+    activeSessionInfo.consentGiven = true;
+    activeSessionInfo.consentTimestamp = consentData.consentTimestamp || new Date();
+  }
+  if (mainWindow) {
+    await mainWindow.loadFile(path.join(__dirname, '../renderer/identity.html'));
+  }
+  return { success: true };
+});
+
+// Handle Transition from Identity Screen to Self-Check
+ipcMain.handle('proceed-to-self-check', async (event, identityData) => {
+  console.log('[Electron] Identity captured. Proceeding to Self-Check...', identityData);
+  if (identityData) {
+    activeSessionInfo.sessionId = identityData.sessionId;
+    activeSessionInfo.studentName = identityData.studentName;
+    activeSessionInfo.rollNumber = identityData.rollNumber;
+    activeSessionInfo.studentId = identityData.studentId || identityData.rollNumber;
+    if (identityData.examId) activeSessionInfo.examId = identityData.examId;
+  }
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/selfCheck.html'));
   }

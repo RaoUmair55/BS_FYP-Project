@@ -12,17 +12,24 @@ This module implements the full end-to-end exam experience, AI monitoring pipeli
    - Explains in plain, student-friendly language what is monitored (camera orientation/multi-face, process whitelist, screenshots **only** on violations).
    - Prominently clarifies our privacy commitments: **continuous video is NEVER recorded or stored in files/databases** (in-memory frame analysis only), and **no biometric facial profiling databases are created**.
    - Requires explicit checkbox agreement: *"I understand and consent to this monitoring for the duration of this exam."*
-   - "Continue" remains disabled until consent is checked.
-   - Provides an explicit "Decline & Exit" option that explains declining prevents proceeding and gracefully exits the application.
-   - Records the consent decision directly to the backend (`POST /sessions/:sessionId/consent` updating `consentGiven: true` and `consentTimestamp` on the MongoDB `Session` document).
-4. **AI Module Spawning & Self-Check Flow**: Upon granting consent, the app spawns `ai-module/main.py` in dev mode, verifies hardware access and background apps on `selfCheck.html`. "Begin Exam" restarts Python in strict `exam` mode and transitions to `examScreen.html`.
-5. **Whitelist & AI Monitoring**: `WhitelistEnforcer` scans processes every 2.5s while `AIMonitor` tracks head pose, missing faces, multi-person events, and unauthorized physical objects.
-6. **Two-Panel Exam Workspace (Module 7B & Module 7)**:
+   - "Continue to Identification" remains disabled until consent is checked.
+   - Provides an explicit "Decline & Exit" option that gracefully exits the application.
+4. **Identity Capture & Session Creation (`identity.html`)**:
+   - Following consent, candidate provides **Full Name** (e.g., `Muhammad Ali`) and **Roll / Registration Number** (e.g., `FA20-BCS-042`).
+   - Validates input format (non-empty, minimum length, valid institutional alphanumeric characters).
+   - **Consolidated Session Creation**: Submits `POST /sessions` to create the MongoDB session with `studentName`, `rollNumber`, `studentId`, `examId`, and verified consent flags.
+5. **AI Module Spawning & Self-Check Flow (`selfCheck.html`)**:
+   - Displays candidate identification badge.
+   - Runs camera check, microphone check, and background process whitelist verification.
+   - Captures and uploads initial reference selfie to `POST /sessions/:sessionId/camera-verification`.
+   - "Begin Exam" switches Python daemon into strict `exam` mode and opens workspace.
+6. **Whitelist & AI Monitoring**: `WhitelistEnforcer` scans processes every 2.5s while `AIMonitor` tracks head pose, missing faces, multi-person events, and unauthorized physical objects.
+7. **Two-Panel Exam Workspace (Module 7B & Module 7)**:
+   - **Header Bar**: Displays `Student: [Full Name] ([Roll Number])`, `Exam: [Exam Code]`, Reassuring `● Monitoring Active` badge, running HH:MM:SS timer.
    - **Left Panel**: In-app paper viewer (rendering PDF/DOCX inside Electron without external viewers).
    - **Right Panel**: Answer area with tabs for (a) plain typed text with auto-saving to local storage, and (b) file attachment upload (.pdf, .docx, .py, .cpp, .zip).
-   - **Header Bar**: Student ID, Exam Code, Reassuring `● Monitoring Active` badge, running HH:MM:SS timer.
    - **Submission Flow**: Prominent "Submit Exam" button with confirmation modal, retryable network failure handling, and MongoDB persistence.
-7. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server.
+8. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server.
 
 ---
 
@@ -61,21 +68,17 @@ The Candidate App features unified **IntegrityFlow** branding engineered for an 
 
 ## Files Changed/Added
 
-- `renderer/splash.html` (NEW): Startup splash screen with pulsing IntegrityFlow shield logo and progress bar displayed during Python initialization.
-- `electron/assets/icon.ico` & `icon.png` (NEW): Application taskbar, title bar, and installer icon assets.
-- `electron/main.js`: Configured explicit window title `"IntegrityFlow"`, custom icon path, and splash screen transition on `login`.
-- `electron/package.json` & `package.json`: Configured `productName: "IntegrityFlow"` and electron-builder icon paths.
-- `renderer/consent.html` & `renderer/login.html` & `renderer/selfCheck.html` & `renderer/examScreen.html`: Updated with brand icon and consistent Material Blue palette.
-- `renderer/consent.html`: Plain-language informed consent screen with clear monitoring rules, privacy guarantees (no continuous recording, no biometric profiling), required checkbox, and decline confirmation modal.
-- `renderer/consent.js`: Logic handling checkbox validation, server consent persistence (`POST /sessions/:sessionId/consent`), transition to self-check, and graceful application exit on decline.
-- `electron/preload.js`: Exposed `proceedToSelfCheck()` and `declineConsent()` to the renderer world.
-- `server/src/models/Session.js`: Added `consentGiven` (Boolean) and `consentTimestamp` (Date) fields to schema.
-- `server/src/routes/sessions.js`: Added `POST /sessions/:sessionId/consent` endpoint to persist candidate consent decisions.
-- `renderer/selfCheck.html` & `renderer/selfCheck.js`: Initial self-check UI and client-side logic.
-- `ai-module/whitelist_enforcer.py`: Process whitelist enforcement daemon.
-- `ai-module/ai_monitor.py`: OpenCV Haar Cascade & ONNX YOLO camera monitoring daemon with webcam evidence capture.
-- `renderer/examScreen.html` & `renderer/examScreen.js`: Two-panel split exam workspace.
-- `CANDIDATE.md`: Updated with branding specifications, informed consent flow, Section 10.4 Data Ethics details, and verification steps.
+- `renderer/identity.html` & `renderer/identity.js` (NEW): Candidate identity capture interface requesting Full Name and Roll/Registration Number, client-side format validation, and consolidated `POST /sessions` creation.
+- `renderer/consent.html` & `renderer/consent.js`: Transition updated to route cleanly from informed consent to identity capture (`proceedToIdentity`).
+- `renderer/login.html` & `renderer/login.js`: Streamlined exam code entry and validation.
+- `renderer/selfCheck.html` & `renderer/selfCheck.js`: Candidate identification badge displaying name and roll number alongside verification checks.
+- `renderer/examScreen.html` & `renderer/examScreen.js`: Candidate identification header badge displaying `Student: [Name] ([Roll Number])`.
+- `electron/main.js`: Added `proceed-to-identity` and updated `proceed-to-self-check` IPC handlers with active session state tracking.
+- `electron/preload.js`: Exposed `proceedToIdentity()` and updated `proceedToSelfCheck(identityData)`.
+- `electron/package.json`: Added `identity.js` to esbuild `build:renderer` bundle script.
+- `renderer/splash.html`: Startup splash screen with pulsing IntegrityFlow shield logo and progress bar displayed during Python initialization.
+- `electron/assets/icon.ico` & `icon.png`: Application taskbar, title bar, and installer icon assets.
+- `CANDIDATE.md`: Updated with full 4-step sequence documentation (`consent → identity → self-check → exam`).
 
 ## Safety List
 
@@ -126,22 +129,26 @@ During the self-check phase, listing raw running processes surfaced OS services,
 
 ## Testing This Step
 
-To verify the Section 10.4 Consent Screen and end-to-end flow:
+To verify the complete 4-step sequence (`consent → identity → self-check → exam`):
 1. Start the **backend server** (`npm run dev` in `IntegrityFlow/server`).
 2. Start the **dashboard** (`npm run dev` in `IntegrityFlow/dashboard`).
 3. Start the **Electron app** (`npm start` in `IntegrityFlow/candidate-app/electron`).
-4. **Login**: Enter an active Exam Code and Student ID -> click **Start Exam Session**.
-5. **Verify Consent Screen (`consent.html`)**:
-   - Confirm the app navigates immediately to the **"Before You Begin"** screen before hardware check starts.
-   - Confirm clear monitoring explanations (camera orientation, application whitelist) and privacy commitments (no continuous recording, no biometric templates, screenshots only on violations).
-   - Confirm **"I Agree & Continue to System Check"** button is **disabled by default**.
-6. **Test Decline Flow**:
-   - Click **"Decline & Exit Exam"**.
-   - Confirm the confirmation dialog modal appears (*"Declining consent means you cannot proceed with this online examination on IntegrityFlow. The application will close..."*).
-   - Click **"Confirm & Exit"** -> verify the app cleanly terminates without proceeding to self-check.
-7. **Test Accept Flow & MongoDB Persistence**:
-   - Re-open app, log in, check the consent checkbox (*"I understand and consent to this automated monitoring for the duration of this exam."*).
-   - Confirm the "Continue" button becomes enabled.
-   - Click **"I Agree & Continue to System Check"**.
-   - Confirm the app transitions cleanly to `selfCheck.html`.
-   - Inspect MongoDB (`Session` document in database): confirm `consentGiven: true` and `consentTimestamp` are recorded with the exact timestamp.
+4. **Step 1 — Exam Code Entry (`login.html`)**:
+   - Enter an active Exam Code (e.g. `EXAM-101`) -> click **Enter Exam**.
+   - Verify brief splash loading screen (*"Starting exam environment..."*) while the AI monitoring daemon spawns.
+5. **Step 2 — Informed Consent Screen (`consent.html`)**:
+   - Verify clear monitoring explanations and privacy commitments.
+   - Check the required agreement checkbox -> click **"I Agree & Continue to Identification"**.
+6. **Step 3 — Identity Capture (`identity.html`)**:
+   - Enter **Full Name** (e.g., `Muhammad Ali`) and **Roll Number** (e.g., `FA20-BCS-042`).
+   - Test validation: empty inputs or invalid characters trigger clear inline error banners.
+   - Click **"Continue to System Check"**.
+   - Inspect MongoDB: confirm a new `Session` document is created with `studentName: "Muhammad Ali"`, `rollNumber: "FA20-BCS-042"`, `studentId: "FA20-BCS-042"`, and `consentGiven: true`.
+7. **Step 4 — System Self-Check (`selfCheck.html`)**:
+   - Confirm the header badge renders `Candidate: Muhammad Ali (FA20-BCS-042) • Exam: EXAM-101`.
+   - Run Camera, Mic, and App checks -> click **Begin Exam**.
+8. **Step 5 — Exam Workspace & Dashboard Verification**:
+   - In Candidate App: confirm the top bar displays `Student: Muhammad Ali (FA20-BCS-042)`.
+   - In Dashboard `StudentList`: confirm the active candidate displays with primary name **Muhammad Ali**, secondary text **Roll: FA20-BCS-042 &bull; Exam: EXAM-101**, and session ID available in subtle tag/tooltip.
+   - In Dashboard `EvidenceViewer`: confirm the header displays **Viewing: Muhammad Ali (FA20-BCS-042)**.
+   - In Dashboard `ExamSummary` (after exam ends): confirm the candidate roster table and CSV export display student name and roll number.

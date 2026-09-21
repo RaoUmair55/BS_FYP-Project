@@ -17,6 +17,7 @@
 | **2. Violation Review & Triage Workflow** | Backend `PATCH /violations/:violationId/review`, Socket.io `violationReviewed` broadcast, AlertFeed quick confirm/dismiss, notes modal, unreviewed badges. | **COMPLETE** ✅ |
 | **3. Historical Exam View & Analytics Summary** | Backend `GET /exams?status=completed` filter, `GET /exams/:examId/summary` analytics aggregator, ExamManager tabs, End Exam confirmation dialog, ExamSummary stat cards & candidate roster. | **COMPLETE** ✅ |
 | **4. Secure In-Memory Auth & Full Examiner Auth UI Flow** | `AuthContext` with strict in-memory tokens & silent refresh on mount, Axios 401 retry interceptor, Material `Login`, `Signup`, `ForgotPassword`, `ResetPassword`, and App route protection. | **COMPLETE** ✅ |
+| **5. Candidate Identity & Real Student Names** | Dashboard `StudentList` displays `studentName` (primary) and `rollNumber` (secondary), `EvidenceViewer` header displays `Viewing: [Student Name] ([Roll Number])`, `ExamSummary` candidate roster and CSV export include real student names. | **COMPLETE** ✅ |
 
 ---
 
@@ -73,7 +74,7 @@ The dashboard enforces a clean, accessible **Material Design** visual direction:
 
 ## What This Does
 
-The dashboard provides a complete exam management, real-time proctoring, human-in-the-loop violation triage, historical analytics, and secure examiner authentication suite:
+The dashboard provides a complete exam management, real-time proctoring, human-in-the-loop violation triage, historical analytics, candidate identity verification, and secure examiner authentication suite:
 
 1. **Teacher Authentication Flow (`Login.jsx`, `Signup.jsx`, `ForgotPassword.jsx`, `ResetPassword.jsx`)**:
    - **Login**: Clean Material Card with email/password fields, "Log In" button, generic inline error messaging ("Invalid email or password"), links to Signup and Forgot Password, and a 1-Click Demo Sign-in for fast FYP evaluation.
@@ -92,11 +93,15 @@ The dashboard provides a complete exam management, real-time proctoring, human-i
 3. **Historical Exam View & Summary Analytics (`ExamSummary.jsx`)**:
    - Clicking **"View Summary & Analytics"** on a completed exam opens an aggregated historical overview:
      - **3 Top Stat Cards**: Total Candidates, Total Violations, and Average Risk Score (with color coding).
-     - **Candidate Performance Roster Table**: Shows each student who took the exam, start time, total violation count, final risk score badge (`RiskScoreBadge`), and submission status badge (`Submitted` / `Not Submitted`).
+     - **Candidate Performance Roster Table**: Shows each student who took the exam with their **Full Name** (primary text), **Roll Number** (secondary text), start time, total violation count, final risk score badge (`RiskScoreBadge`), and submission status badge (`Submitted` / `Not Submitted`).
+     - **Export CSV & Print PDF**: Generates proctoring audit reports including Student Name and Roll Number columns.
      - **Evidence Review**: Clicking **"Review Evidence"** on any candidate row opens `<EvidenceViewer>` displaying their full screenshot and violation history.
 
-4. **Live Student Monitoring & Unreviewed Alert Summary (`StudentList.jsx`)**:
-   - Displays real-time active student sessions with live search filtering, candidate IDs, exam codes, color-coded `RiskScoreBadge` indicators, and a **"X New" unreviewed alerts badge** so a teacher can spot at a glance which students still need attention.
+4. **Live Student Monitoring & Candidate Identity (`StudentList.jsx` & `CandidateGrid.jsx`)**:
+   - Displays real-time active student sessions showing **Student Full Name** (`studentName`) as prominent primary text, with **Roll Number (`rollNumber`) & Exam Code** underneath instead of raw session IDs.
+   - Session ID remains accessible as a subtle tooltip/tag for technical debugging.
+   - Live search input filters instantly across student names, roll numbers, exam codes, and session IDs.
+   - Shows color-coded `RiskScoreBadge` indicators and a **"X New" unreviewed alerts badge** so a teacher can spot at a glance which students still need attention.
 
 5. **Real-Time Alert Triage Feed (`AlertFeed.jsx`)**:
    - Live WebSocket scrolling feed of incoming violations with **visual distinction between unreviewed alerts** (glowing primary blue border, background tint) and **reviewed alerts** (muted, settled style).
@@ -104,7 +109,23 @@ The dashboard provides a complete exam management, real-time proctoring, human-i
    - **Quick-Action Buttons**: Quick **"Confirm"** and **"Dismiss"** buttons, plus an **"Add Note"** modal for reviewer comments.
 
 6. **Evidence Timeline & Inline Review (`EvidenceViewer.jsx`)**:
+   - Control bar header displays **"Viewing: [Student Full Name] ([Roll Number])"** with active status, exam code, and subtle session ID.
    - Chronological timeline rendering violation evidence, severity tags, screenshot images, and **live review status badges** with reviewer notes. Works seamlessly for active and historical completed sessions.
+
+---
+
+## Candidate Identity & Flow Integration
+
+In IntegrityFlow, candidate sessions capture human identity right at the start of their examination lifecycle:
+```
+[Exam Code Check] → [Python AI Splash Check] → [Consent Agreement] → [Identity Capture: Full Name + Roll #] → [Hardware Self-Check] → [Active Exam Workspace]
+```
+
+### Dashboard Display Rules
+1. **StudentList**: Renders `student.studentName` as primary bold text (`14px font-weight: 500`), with `Roll: {student.rollNumber} • Exam: {student.examId}` underneath. Hover tooltip shows internal `Session ID: {student.sessionId}` for debugging.
+2. **CandidateGrid**: Card headers display `studentName` (or fallbacks) and `Roll: {rollNumber}` alongside real-time webcam feed/preview.
+3. **EvidenceViewer**: Header prominently reads `Viewing: {studentName} ({rollNumber})` with session badge and exam code.
+4. **ExamSummary**: Completed candidate roster displays `studentName` (primary text) and `rollNumber` (secondary text). CSV Export includes `Student Name` and `Roll Number` columns for academic record keeping.
 
 ---
 
@@ -137,49 +158,46 @@ Both `AuthContext.authFetch` and Axios `api.js` implement automatic response int
 
 ## Files Changed/Added
 
+- `dashboard/src/components/StudentList.jsx`: Updated candidate list items to render `studentName` as primary text and `rollNumber` as secondary subtitle. Retained `sessionId` in hover tooltip and updated search filtering to match name, roll number, exam code, and session ID.
+- `dashboard/src/components/EvidenceViewer.jsx`: Updated header title to `"Viewing: [studentName] ([rollNumber])"`, fixed endpoint URL in `fetchSessionData`, and retained debug metadata.
+- `dashboard/src/components/ExamSummary.jsx`: Updated historical exam summary candidate roster table to show `studentName` (primary) and `rollNumber` (secondary). Updated CSV export generation with `Student Name` and `Roll Number` columns.
+- `dashboard/src/components/CandidateGrid.jsx`: Updated card header to show `studentName` and `rollNumber`.
 - `dashboard/src/context/AuthContext.jsx`: Implemented secure in-memory access token storage, `currentTeacher`, `isLoading`, `login()`, `signup()`, `logout()`, `forgotPassword()`, `resetPassword()`, `demoLogin()`, silent refresh on mount, and automatic 401 retry fetch wrapper.
 - `dashboard/src/services/api.js`: Updated Axios client to attach in-memory tokens dynamically, enforce `withCredentials: true`, and automatically intercept 401s to perform silent refresh and request replay.
-- `dashboard/src/pages/Login.jsx` (NEW): Material Design centered login card with email/password authentication, generic error handling, and links to Signup/Forgot Password.
-- `dashboard/src/pages/Signup.jsx` (NEW): Material Design signup card with client-side password validation (min 8 chars, 1 number), confirmation matching, and immediate dashboard redirect.
-- `dashboard/src/pages/ForgotPassword.jsx` (NEW): Form consuming `POST /auth/forgot-password` with standard success feedback.
-- `dashboard/src/pages/ResetPassword.jsx` (NEW): Form consuming `POST /auth/reset-password` with query parameter token extraction (`?token=...`).
-- `dashboard/src/pages/Auth.css` (NEW): Material Design stylesheet for authentication views, input containers, error banners, and loading spinners.
+- `dashboard/src/pages/Login.jsx`: Material Design centered login card with email/password authentication, generic error handling, and links to Signup/Forgot Password.
+- `dashboard/src/pages/Signup.jsx`: Material Design signup card with client-side password validation (min 8 chars, 1 number), confirmation matching, and immediate dashboard redirect.
+- `dashboard/src/pages/ForgotPassword.jsx`: Form consuming `POST /auth/forgot-password` with standard success feedback.
+- `dashboard/src/pages/ResetPassword.jsx`: Form consuming `POST /auth/reset-password` with query parameter token extraction (`?token=...`).
+- `dashboard/src/pages/Auth.css`: Material Design stylesheet for authentication views, input containers, error banners, and loading spinners.
 - `dashboard/src/App.jsx`: Updated with route protection, silent refresh loading splash, unauthenticated view routing (`Login`, `Signup`, `ForgotPassword`, `ResetPassword`), and browser URL synchronization.
 - `dashboard/src/pages/Dashboard.jsx`: Integrated persistent header with logged-in examiner badge, name, role, and "Log Out" action.
-- `dashboard/DASHBOARD.md`: Updated with full authentication flow documentation, security architecture notes, file manifest, and end-to-end testing procedures.
+- `dashboard/DASHBOARD.md`: Updated with candidate identity flow notes, UI component specs, file manifest, and testing procedures.
 
 ---
 
 ## Testing This Step
 
-### 1. Signup New Teacher & Immediate Dashboard Access
-1. Open the dashboard at `http://localhost:5173`.
-2. Click **"Sign Up"** at the bottom of the Login card.
-3. Enter Full Name `"Dr. Alan Turing"`, Work Email `"turing@cambridge.edu"`, Password `"Enigma1940!"`, and confirm password.
-4. Click **Create Account**.
-5. Verify instant access to the Examiner Dashboard with `"Dr. Alan Turing"` displayed in the header.
+### 1. Full Candidate Lifecycle & Identity Verification
+1. Open the Candidate Electron app.
+2. Enter an active Exam Code (e.g. `CS401-MID`) and click **"Continue to Consent"**.
+3. Read the monitoring consent notice and click **"I Understand & Agree"**.
+4. On the new **Identity Verification** screen (`identity.html`), enter:
+   - **Full Name**: `"John Doe"`
+   - **Roll Number**: `"2022-CS-101"`
+5. Click **"Verify & Continue"** (which securely creates the session with `POST /sessions`).
+6. Complete the self-check tests (camera, audio, browser checks) and click **"Begin Exam"**.
+7. In the Examiner Dashboard:
+   - Check the **StudentList**: Verify `"John Doe"` is rendered in bold primary text, with `"Roll: 2022-CS-101 • Exam: CS401-MID"` below it.
+   - Click on the student item: Verify the **EvidenceViewer** header displays `"Viewing: John Doe (2022-CS-101)"`.
+   - Submit or complete the exam: Navigate to **Completed Exams** -> **View Summary & Analytics** in `ExamManager`. Verify `"John Doe"` and `"2022-CS-101"` appear in the candidate roster table and in the exported CSV report.
 
-### 2. Log Out & Log Back In
-1. Click the **Log Out** icon button in the top-right header.
-2. Verify you are redirected to the Login card.
-3. Enter `"turing@cambridge.edu"` and `"Enigma1940!"`.
-4. Click **Sign In**.
-5. Confirm successful login and dashboard access.
+### 2. Backend Validation Rejection Test
+1. Make a `POST /sessions` request omitting `studentName` or `rollNumber`:
+   ```bash
+   node -e "fetch('http://localhost:5000/sessions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({examId: 'CS401-MID'})}).then(r => r.json()).then(console.log)"
+   ```
+2. Verify HTTP `400 Bad Request` is returned with `{ error: "studentName and rollNumber are required to create a session." }`.
 
-### 3. Verify Silent Refresh Across Page Reloads (No `localStorage`)
-1. While logged in, press `F5` (or click Refresh in the browser).
-2. Confirm the loading spinner (*"Authenticating session..."*) briefly appears, followed immediately by the loaded Dashboard with `"Dr. Alan Turing"` still authenticated.
-3. Open Browser DevTools -> Application -> Local Storage. Confirm **no access token or password is stored in localStorage**.
-
-### 4. Test Forgot Password & Reset Password Flow
-1. Log out. On the Login screen, click **"Forgot password?"**.
-2. Enter `"turing@cambridge.edu"` and click **Send Reset Link**.
-3. Confirm the confirmation banner: *"If an account with that email exists, a password reset link has been sent."*
-4. Check the backend server terminal console to retrieve the generated reset token: `[AUTH] Password reset token generated for turing@cambridge.edu: <TOKEN>`.
-5. In the browser, navigate to `http://localhost:5173/reset-password?token=<TOKEN>`.
-6. Enter a new password `"NewPassword2026!"` and confirm. Click **Reset Password**.
-7. Confirm the success message, then log in using your new password.
-
-### 5. Verify Automatic 401 Token Refresh & Request Retry
-1. Trigger an API action (e.g. creating an exam or fetching candidates).
-2. If the in-memory access token expires, confirm the Axios/Fetch interceptor automatically invokes `POST /auth/refresh`, obtains a new token, and replays the original request seamlessly without user intervention.
+### 3. Examiner Authentication & Silent Refresh
+1. Open `http://localhost:5173`, log in or click **"1-Click Demo Login"**.
+2. Press `F5` to reload: confirm silent refresh restores the session in under 1 second without storing tokens in `localStorage`.

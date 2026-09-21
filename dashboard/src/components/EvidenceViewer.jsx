@@ -15,7 +15,7 @@ function formatType(typeStr) {
     return typeStr.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-export default function EvidenceViewer({ sessionId }) {
+export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const { authFetch } = useAuth();
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -49,7 +49,7 @@ export default function EvidenceViewer({ sessionId }) {
 
     const fetchSessionData = () => {
         if (!sessionId) return;
-        authFetch(`${API_BASE_URL}/sessions/status/${sessionId}`)
+        authFetch(`${API_BASE_URL}/sessions/${sessionId}/status`)
             .then(res => {
                 if (res.ok) return res.json();
                 // Fallback to active sessions
@@ -80,6 +80,36 @@ export default function EvidenceViewer({ sessionId }) {
         fetchSessionData();
         fetchSubmissions();
     }, [sessionId]);
+
+    // Real-time synchronization with live socket violations
+    useEffect(() => {
+        if (!liveViolations || liveViolations.length === 0 || !sessionId) return;
+
+        setHistory(prev => {
+            let updated = [...prev];
+            let hasChanges = false;
+
+            liveViolations.forEach(liveV => {
+                const liveSid = String(liveV.sessionId || liveV.session_id || '');
+                if (liveSid === String(sessionId)) {
+                    const liveId = String(liveV._id || liveV.id);
+                    const index = updated.findIndex(item => String(item._id || item.id) === liveId);
+
+                    if (index >= 0) {
+                        if (JSON.stringify(updated[index]) !== JSON.stringify(liveV)) {
+                            updated[index] = { ...updated[index], ...liveV };
+                            hasChanges = true;
+                        }
+                    } else {
+                        updated = [liveV, ...updated];
+                        hasChanges = true;
+                    }
+                }
+            });
+
+            return hasChanges ? updated : prev;
+        });
+    }, [liveViolations, sessionId]);
 
     const handleSendWarning = async (e) => {
         e.preventDefault();
@@ -217,6 +247,9 @@ export default function EvidenceViewer({ sessionId }) {
     const cameraStatus = sessionData?.cameraVerificationStatus || 'none';
     const isTerminated = sessionData?.status === 'terminated';
 
+    const studentDisplayName = sessionData?.studentName || sessionData?.studentId || 'Candidate';
+    const rollDisplay = sessionData?.rollNumber ? ` (${sessionData.rollNumber})` : (sessionData?.studentId && sessionData.studentId !== sessionData.studentName ? ` (${sessionData.studentId})` : '');
+
     return (
         <div className="md-card evidence-card" style={{ overflowY: 'auto' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -226,15 +259,15 @@ export default function EvidenceViewer({ sessionId }) {
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
-                                Candidate Controls & Session Status
+                                Viewing: {studentDisplayName}{rollDisplay}
                             </span>
                             <span className={`md-badge ${isTerminated ? 'status-completed' : 'status-active'}`} style={{ textTransform: 'uppercase', background: isTerminated ? '#d93025' : '#188038', color: '#ffffff' }}>
                                 {isTerminated ? 'Terminated' : 'Active Live'}
                             </span>
                         </div>
                         <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '2px' }}>
-                            Student ID: <strong>{sessionData?.studentId || 'Candidate'}</strong> • Exam Code: <strong>{sessionData?.examId || ''}</strong>
-                            {sessionData?.warnings && sessionData.warnings.length > 0 && ` • Warnings Sent: ${sessionData.warnings.length}`}
+                            Exam: <strong>{sessionData?.examId || ''}</strong> &bull; Session: <span title={String(sessionId)} style={{ cursor: 'help' }}>{String(sessionId).substring(0, 8)}...</span>
+                            {sessionData?.warnings && sessionData.warnings.length > 0 && ` &bull; Warnings Sent: ${sessionData.warnings.length}`}
                         </div>
                     </div>
 

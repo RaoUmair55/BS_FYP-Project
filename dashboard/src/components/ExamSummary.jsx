@@ -44,11 +44,13 @@ const ExamSummary = ({ examId, onBack }) => {
     const handleExportCSV = () => {
         if (!summary || !summary.sessions) return;
         const examCode = summary.exam?.examCode || 'EXAM';
-        const headers = ["Candidate ID", "Exam Code", "Start Time", "End Time", "Violations Count", "Risk Score", "Risk Category", "Submission Status", "Submission Type"];
+        const headers = ["Student Name", "Roll Number", "Candidate ID", "Exam Code", "Start Time", "End Time", "Violations Count", "Risk Score", "Risk Category", "Submission Status", "Submission Type"];
         
         const rows = summary.sessions.map(s => {
             const riskCategory = s.finalRiskScore >= 60 ? "High Risk" : s.finalRiskScore >= 30 ? "Moderate Risk" : "Low Risk";
             return [
+                `"${s.studentName || s.studentId || 'Candidate'}"`,
+                `"${s.rollNumber || s.studentId || ''}"`,
                 `"${s.studentId || ''}"`,
                 `"${s.examId || examCode}"`,
                 `"${new Date(s.startTime).toLocaleString()}"`,
@@ -293,7 +295,7 @@ const ExamSummary = ({ examId, onBack }) => {
                         <table className="summary-table">
                             <thead>
                                 <tr>
-                                    <th>Candidate ID</th>
+                                    <th>Candidate / Student</th>
                                     <th>Started At</th>
                                     <th>Violations</th>
                                     <th>Risk Score</th>
@@ -305,7 +307,14 @@ const ExamSummary = ({ examId, onBack }) => {
                                 {sessions.map((s) => (
                                     <tr key={s.sessionId} className="summary-table-row">
                                         <td className="student-id-cell">
-                                            <span className="student-id-text">{s.studentId}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '13.5px' }}>
+                                                    {s.studentName || s.studentId || 'Candidate'}
+                                                </span>
+                                                <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                    {s.rollNumber ? `Roll: ${s.rollNumber}` : s.studentId}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td className="time-cell">
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>

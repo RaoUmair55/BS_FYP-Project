@@ -153,10 +153,10 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                 <div style={{ padding: '10px 12px', background: '#f8f9fa', borderBottom: '1px solid #dadce0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div>
                                         <div style={{ fontWeight: 600, fontSize: '13px', color: '#202124' }}>
-                                            {s.studentId}
+                                            {s.studentName || s.studentId || 'Candidate'}
                                         </div>
                                         <div style={{ fontSize: '11px', color: '#5f6368' }}>
-                                            Code: {s.examId}
+                                            {s.rollNumber ? `${s.rollNumber} • ` : ''}Code: {s.examId}
                                         </div>
                                     </div>
 

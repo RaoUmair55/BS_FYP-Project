@@ -1,60 +1,64 @@
 async function handleLogin() {
-  const examId = document.getElementById('examId').value.trim();
-  const studentId = document.getElementById('studentId').value.trim();
+  const examIdInput = document.getElementById('examId');
+  const examId = examIdInput.value.trim().toUpperCase();
   const btn = document.getElementById('loginBtn');
   const errorMsg = document.getElementById('errorMsg');
   
-  if (!examId || !studentId) {
-    errorMsg.textContent = 'Please enter both Exam ID and Student ID.';
+  if (!examId) {
+    errorMsg.textContent = 'Please enter an Exam Code.';
+    examIdInput.focus();
     return;
   }
   
   errorMsg.textContent = '';
   btn.disabled = true;
-  btn.textContent = 'Connecting...';
+  btn.textContent = 'Validating Exam Code...';
   
   try {
-    const sessionInfo = await window.api.getSessionInfo();
-    const serverUrl = sessionInfo.serverUrl;
-    
-    // Create session on the backend
-    const response = await fetch(`${serverUrl}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        examId: examId,
-        studentId: studentId
-      })
-    });
-    
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to connect to server.');
+    let serverUrl = 'http://localhost:5000';
+    try {
+      const sessionInfo = await window.api.getSessionInfo();
+      if (sessionInfo && sessionInfo.serverUrl) {
+        serverUrl = sessionInfo.serverUrl;
+      }
+    } catch (e) {}
+
+    // Check if the exam code exists on the backend if available
+    try {
+      const checkRes = await fetch(`${serverUrl}/exams/code/${encodeURIComponent(examId)}`);
+      if (checkRes.ok) {
+        const examData = await checkRes.json();
+        if (examData.status && examData.status.toLowerCase() !== 'active') {
+          throw new Error(`Exam "${examData.title || examId}" is currently ${examData.status.toUpperCase()} and not accepting candidates.`);
+        }
+      } else if (checkRes.status === 404) {
+        throw new Error(`Exam code "${examId}" not found. Please verify the code with your instructor.`);
+      }
+    } catch (fetchErr) {
+      // If network error / backend unreachable, we warn or re-throw specific message
+      if (fetchErr.message && !fetchErr.message.includes('Failed to fetch')) {
+        throw fetchErr;
+      }
     }
     
-    const data = await response.json();
-    const sessionId = data._id; // MongoDB creates an _id
-    
-    const sessionInfoObj = { sessionId, examId, studentId };
-    sessionStorage.setItem('sessionInfo', JSON.stringify(sessionInfoObj));
-    localStorage.setItem('sessionInfo', JSON.stringify(sessionInfoObj));
+    const entryData = { examId };
+    sessionStorage.setItem('sessionInfo', JSON.stringify(entryData));
+    localStorage.setItem('sessionInfo', JSON.stringify(entryData));
 
-    // Tell Electron main process to log us in
-    const result = await window.api.login({ sessionId, examId, studentId });
-    if (!result.success) {
-      throw new Error(result.error || 'Internal app error');
+    // Tell Electron main process to initialize exam entry
+    const result = await window.api.login(entryData);
+    if (result && !result.success) {
+      throw new Error(result.error || 'Internal app initialization error');
     }
   } catch (error) {
     errorMsg.textContent = error.message;
     btn.disabled = false;
-    btn.textContent = 'Start Exam Session';
+    btn.textContent = 'Enter Exam ➔';
   }
 }
 
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
 
-document.getElementById('studentId').addEventListener('keydown', (e) => {
+document.getElementById('examId').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') handleLogin();
 });

@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { AlertCircle, AlertTriangle, Info, CheckCircle, ExternalLink, MessageSquare, Check, X, ShieldAlert, Sparkles, Filter, Video, Users, Smartphone, Eye, Globe } from 'lucide-react';
+import { 
+    AlertCircle, AlertTriangle, Info, CheckCircle, XCircle, Clock, 
+    ExternalLink, MessageSquare, Check, X, ShieldAlert, Sparkles, 
+    Filter, Video, Users, Smartphone, Eye, Globe 
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
 
@@ -165,60 +169,97 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                     {v.details?.duration && ` • Duration: ${v.details.duration.toFixed(1)}s`}
                                 </div>
 
+                                {v.screenshotPath && (
+                                    <div 
+                                        style={{ 
+                                            marginTop: '6px', 
+                                            marginBottom: '8px', 
+                                            borderRadius: '6px', 
+                                            overflow: 'hidden', 
+                                            border: '1px solid #dadce0', 
+                                            maxHeight: '180px', 
+                                            background: '#0f172a',
+                                            cursor: onSelectViolation ? 'pointer' : 'default'
+                                        }}
+                                        onClick={() => onSelectViolation && onSelectViolation(v)}
+                                        title={onSelectViolation ? "Click to open candidate Evidence Review" : "Violation screenshot"}
+                                    >
+                                        <img 
+                                            src={`${API_BASE.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`} 
+                                            alt="Alert Evidence Snapshot" 
+                                            style={{ width: '100%', maxHeight: '180px', objectFit: 'contain', display: 'block' }} 
+                                        />
+                                    </div>
+                                )}
+
                                 {v.reviewNote && (
                                     <div style={{ fontSize: '12px', color: '#3c4043', background: '#f1f3f4', padding: '6px 10px', borderRadius: '4px', marginBottom: '8px', fontStyle: 'italic' }}>
                                         Note: "{v.reviewNote}"
                                     </div>
                                 )}
 
-                                {/* Quick Action Buttons for Unreviewed Items */}
-                                {!isReviewed ? (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '8px' }}>
-                                        <button 
-                                            className="md-btn md-btn-sm" 
-                                            style={{ background: '#e6f4ea', color: '#137333', border: '1px solid #a7f3d0' }}
-                                            onClick={() => handleQuickReview(v, 'confirmed')}
-                                        >
-                                            <Check size={14} />
-                                            <span>Confirm</span>
-                                        </button>
+                                {/* Action Buttons */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginTop: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '8px' }}>
+                                    {!isReviewed ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button 
+                                                className="md-btn md-btn-sm" 
+                                                style={{ background: '#e6f4ea', color: '#137333', border: '1px solid #a7f3d0' }}
+                                                onClick={() => handleQuickReview(v, 'confirmed')}
+                                            >
+                                                <Check size={14} />
+                                                <span>Confirm</span>
+                                            </button>
 
-                                        <button 
-                                            className="md-btn md-btn-sm" 
-                                            style={{ background: '#f1f3f4', color: '#5f6368', border: '1px solid #dadce0' }}
-                                            onClick={() => handleQuickReview(v, 'dismissed')}
-                                        >
-                                            <X size={14} />
-                                            <span>Dismiss</span>
-                                        </button>
+                                            <button 
+                                                className="md-btn md-btn-sm" 
+                                                style={{ background: '#f1f3f4', color: '#5f6368', border: '1px solid #dadce0' }}
+                                                onClick={() => handleQuickReview(v, 'dismissed')}
+                                            >
+                                                <X size={14} />
+                                                <span>Dismiss</span>
+                                            </button>
 
+                                            <button 
+                                                className="md-btn md-btn-sm md-btn-text"
+                                                onClick={() => {
+                                                    setSelectedViolationForNote(v);
+                                                    setNoteText(v.reviewNote || '');
+                                                    setNoteDecision('confirmed');
+                                                }}
+                                            >
+                                                <MessageSquare size={14} />
+                                                <span>Note</span>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button 
+                                                className="md-btn md-btn-text md-btn-sm"
+                                                style={{ fontSize: '11px', padding: '2px 6px' }}
+                                                onClick={() => {
+                                                    setSelectedViolationForNote(v);
+                                                    setNoteText(v.reviewNote || '');
+                                                    setNoteDecision(v.decision || 'confirmed');
+                                                }}
+                                            >
+                                                <span>Edit Decision</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {onSelectViolation && v.sessionId && (
                                         <button 
-                                            className="md-btn md-btn-sm md-btn-text"
-                                            onClick={() => {
-                                                setSelectedViolationForNote(v);
-                                                setNoteText(v.reviewNote || '');
-                                                setNoteDecision('confirmed');
-                                            }}
+                                            className="md-btn md-btn-sm md-btn-outlined"
+                                            style={{ fontSize: '11px', padding: '3px 8px', marginLeft: 'auto' }}
+                                            onClick={() => onSelectViolation(v)}
+                                            title="Open candidate evidence timeline"
                                         >
-                                            <MessageSquare size={14} />
-                                            <span>Note & Review</span>
+                                            <Eye size={12} />
+                                            <span>Review Candidate</span>
                                         </button>
-                                    </div>
-                                ) : (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                                        <button 
-                                            className="md-btn md-btn-text md-btn-sm"
-                                            style={{ fontSize: '11px', padding: '2px 6px' }}
-                                            onClick={() => {
-                                                setSelectedViolationForNote(v);
-                                                setNoteText(v.reviewNote || '');
-                                                setNoteDecision(v.decision || 'confirmed');
-                                            }}
-                                        >
-                                            <span>Edit Decision</span>
-                                        </button>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
                         );
                     })}

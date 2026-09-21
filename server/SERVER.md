@@ -9,7 +9,13 @@ The IntegrityFlow backend is a robust Node.js/Express and MongoDB service provid
 - **Defense in Depth**: Express rate limiting on sensitive auth endpoints, brute-force account lockouts (15-minute lock after 5 failed attempts), constant-time comparisons, generic error messaging, HTTP security headers via `helmet`, and audit trails (`AuthAuditLog`).
 - **Teacher Route Protection**: Enforces JWT verification via `requireAuth` on all examiner endpoints (`/exams`, `/sessions/active`, `/violations`, `/risk-score`), while keeping machine-to-machine candidate routes (such as `POST /violation` and `POST /sessions`) open.
 
-### Standalone Modular Email Verification (Part B)
+### Student Identity & Session Management (Part B)
+- **Comprehensive Candidate Profiles**: `Session` model enforces mandatory `studentName` (String, required) and `rollNumber` (String, required) alongside `studentId`, `examId`, `consentGiven`, and timestamps.
+- **Strict Validation on Creation (`POST /sessions`)**: Rejects session creation with `400 Bad Request` if `studentName`, `rollNumber`, or `examId` are missing.
+- **Consolidated 4-Step Candidate Lifecycle**: Coordinates seamless progression (`consent → identity → self-check → exam`).
+- **Real-Time Examiner Visibility**: Returns enriched session objects across active candidate queries (`GET /sessions/active`), candidate status checks (`GET /sessions/:sessionId/status`), and historical analytics aggregates (`GET /exams/:examId/summary`).
+
+### Standalone Modular Email Verification (Part C)
 - **Decoupled Verification Architecture**: Built and fully tested verification subsystem using the **Strategy Pattern** (`LinkVerificationStrategy` for magic links, `OtpVerificationStrategy` for 6-digit numeric codes) alongside a **Mail Provider Interface** (`MailProvider`, `EtherealMailProvider`).
 - **Built But Disconnected**: The email verification service and router (`src/routes/verification.js`) are fully implemented and unit/integration tested, but **intentionally not yet wired into the live signup/login flow** or mounted in `index.js`. This allows the current frontend and test suites to operate unhindered while keeping verification ready for 1-click activation.
 
@@ -71,12 +77,15 @@ This modular design guarantees that:
 - `src/middleware/authMiddleware.js` — `requireAuth` (Bearer token parser) and `requireRole` route authorization middleware.
 - `src/routes/auth.js` — Endpoints: `/auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/me`.
 - `src/routes/violations.js` — Added `requireAuth` to teacher GET and review endpoints while keeping `POST /violation` unauthenticated.
-- `src/routes/sessions.js` — Protected teacher triage, terminate, warn, and active session listing routes.
-- `src/routes/exams.js` — Protected exam creation, deletion, status modification, and analytics routes.
+- `src/models/Session.js` — Added mandatory `studentName` (String, required) and `rollNumber` (String, required) fields.
+- `src/routes/sessions.js` — Updated `POST /sessions` to require `studentName` and `rollNumber` (with 400 error handling), and updated `GET /sessions/:sessionId/status`.
+- `src/routes/exams.js` — Updated `GET /exams/:examId/summary` candidate session aggregator to include `studentName` and `rollNumber`.
+- `src/routes/violations.js` — Added `requireAuth` to teacher GET and review endpoints while keeping `POST /violation` unauthenticated.
 - `src/routes/examPaper.js` — Protected exam paper uploads and listings.
 - `src/routes/riskScore.js` — Protected risk score calculation endpoint.
 - `src/index.js` — Applied `helmet()`, `cookieParser()`, and mounted `/auth`.
 - `.env.example` & `.env` — Added `JWT_SECRET`, `RESET_TOKEN_SECRET`, `EMAIL_TOKEN_SECRET`, and `REQUIRE_EMAIL_VERIFICATION`.
+- `scripts/test_student_identity_flow.js` — Automated schema validation and database persistence test for student identity.
 
 ### Part B — Modular Email Verification Subsystem
 - `src/services/mail/MailProvider.js` — Abstract mail provider interface.
@@ -100,6 +109,7 @@ This modular design guarantees that:
 - `scripts/test_auth_system.js` — Automated unit/integration test suite for Part A.
 - `scripts/test_verification_system.js` — Automated integration test suite for Part B.
 - `scripts/test_http_endpoints.js` — HTTP end-to-end endpoint test suite.
+- `scripts/test_student_identity_flow.js` — Student identity model validation and session persistence test suite.
 
 ---
 

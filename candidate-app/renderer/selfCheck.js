@@ -7,6 +7,29 @@ let cameraPassed = false;
 let micPassed = false;
 let appsPassed = false;
 
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    let sessionInfo = null;
+    try {
+      sessionInfo = await window.api.getSessionInfo();
+    } catch (e) {}
+    if (!sessionInfo || !sessionInfo.studentName) {
+      try {
+        sessionInfo = JSON.parse(sessionStorage.getItem('sessionInfo') || localStorage.getItem('sessionInfo') || '{}');
+      } catch (e) {}
+    }
+    const badge = document.getElementById('candidateInfoBadge');
+    if (badge && sessionInfo) {
+      const name = sessionInfo.studentName || sessionInfo.studentId || 'Candidate';
+      const roll = sessionInfo.rollNumber ? ` (${sessionInfo.rollNumber})` : '';
+      const exam = sessionInfo.examId ? ` • Exam: ${sessionInfo.examId}` : '';
+      badge.textContent = `Candidate: ${name}${roll}${exam}`;
+    }
+  } catch (err) {
+    console.warn('[SelfCheck] Error setting candidate badge:', err);
+  }
+});
+
 function updateBeginButton() {
   btnBegin.disabled = !(cameraPassed && micPassed && appsPassed);
 }

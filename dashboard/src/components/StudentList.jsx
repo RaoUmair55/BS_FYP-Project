@@ -42,9 +42,12 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
         }
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
+            const sName = (s.studentName || '').toLowerCase();
+            const rNum = (s.rollNumber || '').toLowerCase();
             const sid = (s.studentId || '').toLowerCase();
             const eid = (s.examId || '').toLowerCase();
-            return sid.includes(query) || eid.includes(query);
+            const sessId = (s.sessionId || s._id || '').toLowerCase();
+            return sName.includes(query) || rNum.includes(query) || sid.includes(query) || eid.includes(query) || sessId.includes(query);
         }
         return true;
     });
@@ -78,7 +81,7 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                     <Search size={16} style={{ color: '#5f6368' }} />
                     <input 
                         type="text" 
-                        placeholder="Search student or exam code..." 
+                        placeholder="Search student name, roll #, or exam..." 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '13px', width: '100%' }}
@@ -100,6 +103,8 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                         const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
                         const isSelected = selectedSessionId === sid;
                         const pendingAlerts = unreviewedBySession[sid] || 0;
+                        const displayName = s.studentName || s.studentId || 'Candidate';
+                        const displayRoll = s.rollNumber || s.studentId;
 
                         return (
                             <div 
@@ -107,9 +112,16 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                                 onClick={() => onSelectStudent(sid)}
                                 className={`student-item ${isSelected ? 'selected' : ''}`}
                             >
-                                <div>
-                                    <div className="student-info-name">{s.studentId}</div>
-                                    <div className="student-info-sub">Code: {s.examId} • ID: {sid.substring(0, 8)}...</div>
+                                <div style={{ overflow: 'hidden' }}>
+                                    <div className="student-info-name" style={{ fontWeight: 600, fontSize: '13.5px', color: '#202124', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                        {displayName}
+                                    </div>
+                                    <div className="student-info-sub" style={{ fontSize: '11.5px', color: '#5f6368', marginTop: '2px' }}>
+                                        <span style={{ fontWeight: 500 }}>{displayRoll}</span> &bull; Exam: {s.examId}
+                                        <span title={`Session ID: ${sid}`} style={{ opacity: 0.5, fontSize: '10px', marginLeft: '4px' }}>
+                                            ({String(sid).substring(0, 6)}...)
+                                        </span>
+                                    </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {pendingAlerts > 0 && (

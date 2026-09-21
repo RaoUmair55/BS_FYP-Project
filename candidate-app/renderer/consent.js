@@ -22,34 +22,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     errorBanner.style.display = 'none';
 
     try {
-      // Get active session info
-      const sessionInfo = await window.api.getSessionInfo();
-      const serverUrl = sessionInfo.serverUrl || 'http://localhost:5000';
-      const sessionId = sessionInfo.sessionId;
-
-      if (sessionId) {
-        // Record consent on the central server (Data Ethics Section 10.4)
-        await fetch(`${serverUrl}/sessions/${sessionId}/consent`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            consentGiven: true
-          })
-        }).catch(err => {
-          console.warn('[Consent] Server consent endpoint warning:', err);
-        });
-      }
-
-      // Transition to System Self-Check
-      await window.api.proceedToSelfCheck();
+      // Transition to Identity Capture
+      await window.api.proceedToIdentity({
+        consentGiven: true,
+        consentTimestamp: new Date().toISOString()
+      });
     } catch (err) {
       console.error('[Consent] Failed to proceed:', err);
       errorBanner.textContent = err.message || 'Failed to record consent. Please try again.';
       errorBanner.style.display = 'block';
       btnContinue.disabled = false;
-      btnContinue.innerHTML = '<span>I Agree & Continue to System Check</span> <span>➔</span>';
+      btnContinue.innerHTML = '<span>I Agree & Continue to Identification</span> <span>➔</span>';
     }
   });
 

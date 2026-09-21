@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const sessionSchema = new mongoose.Schema({
     studentId: { type: String, required: true },
+    studentName: { type: String, required: true },
+    rollNumber: { type: String, required: true },
     examId: { type: String, required: true },
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },

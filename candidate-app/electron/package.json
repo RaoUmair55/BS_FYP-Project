@@ -14,7 +14,7 @@
   "scripts": {
     "prestart": "npm run build:renderer",
     "start": "electron .",
-    "build:renderer": "esbuild ../renderer/examScreen.js ../renderer/login.js --bundle --outdir=../renderer/dist"
+    "build:renderer": "esbuild ../renderer/examScreen.js ../renderer/login.js ../renderer/identity.js --bundle --outdir=../renderer/dist"
   },
   "dependencies": {
     "axios": "^1.19.0",

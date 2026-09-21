@@ -33,12 +33,22 @@ router.get('/active', requireAuth, async (req, res) => {
 // POST /sessions
 router.post('/', async (req, res) => {
     try {
-        const { studentId, examId } = req.body;
-        if (!studentId || !examId) {
-            return res.status(400).json({ error: 'Both Student ID and Exam Code are required.' });
+        const { studentName, rollNumber, examId, studentId, consentGiven, consentTimestamp } = req.body;
+        
+        if (!studentName || !studentName.trim()) {
+            return res.status(400).json({ error: 'Student Name is required.' });
+        }
+        if (!rollNumber || !rollNumber.trim()) {
+            return res.status(400).json({ error: 'Roll Number is required.' });
+        }
+        if (!examId || !examId.trim()) {
+            return res.status(400).json({ error: 'Exam Code is required.' });
         }
 
         const inputCode = examId.trim().toUpperCase();
+        const trimmedName = studentName.trim();
+        const trimmedRoll = rollNumber.trim();
+        const finalStudentId = (studentId && studentId.trim()) || trimmedRoll;
 
         // Validate against real Exam documents if any exist
         const examCount = await Exam.countDocuments();
@@ -65,8 +75,12 @@ router.post('/', async (req, res) => {
         }
 
         const newSession = new Session({
-            studentId,
-            examId: inputCode
+            studentId: finalStudentId,
+            studentName: trimmedName,
+            rollNumber: trimmedRoll,
+            examId: inputCode,
+            consentGiven: consentGiven === true || consentGiven === 'true',
+            consentTimestamp: consentTimestamp ? new Date(consentTimestamp) : (consentGiven ? new Date() : null)
         });
         const savedSession = await newSession.save();
         res.status(201).json(savedSession);
@@ -238,11 +252,15 @@ router.get('/:sessionId/status', async (req, res) => {
         res.json({
             sessionId: session._id,
             studentId: session.studentId,
+            studentName: session.studentName || session.studentId,
+            rollNumber: session.rollNumber || session.studentId,
             examId: session.examId,
             status: session.status,
             terminationReason: session.terminationReason,
             warnings: session.warnings || [],
-            cameraVerificationStatus: session.cameraVerificationStatus
+            cameraVerificationStatus: session.cameraVerificationStatus,
+            cameraVerificationPhoto: session.cameraVerificationPhoto,
+            cameraVerificationNote: session.cameraVerificationNote
         });
     } catch (err) {
         console.error('Error fetching session status:', err);

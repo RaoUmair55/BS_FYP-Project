@@ -208,6 +208,8 @@ router.get('/:examId/summary', requireAuth, async (req, res) => {
             return {
                 sessionId: session._id,
                 studentId: session.studentId,
+                studentName: session.studentName || session.studentId,
+                rollNumber: session.rollNumber || session.studentId,
                 examId: session.examId,
                 status: session.status,
                 startTime: session.startTime,

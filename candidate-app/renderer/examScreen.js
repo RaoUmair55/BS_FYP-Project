@@ -18,7 +18,11 @@ async function init() {
     // Update Header Elements
     const studentBadge = document.getElementById('studentBadge');
     const examBadge = document.getElementById('examBadge');
-    if (studentBadge) studentBadge.textContent = `Student: ${sessionInfo.studentId || 'Candidate'}`;
+    if (studentBadge) {
+      const name = sessionInfo.studentName || sessionInfo.studentId || 'Candidate';
+      const roll = sessionInfo.rollNumber ? ` (${sessionInfo.rollNumber})` : '';
+      studentBadge.textContent = `Student: ${name}${roll}`;
+    }
     if (examBadge) examBadge.textContent = `Exam: ${sessionInfo.examId}`;
 
     // Start Running Timer

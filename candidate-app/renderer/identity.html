@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IntegrityFlow — Candidate Identification</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --primary-hover: #1557d0;
+      --primary-subtle: #e8f0fe;
+      --surface: #ffffff;
+      --bg: #f8fafc;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --red: #ef4444;
+      --red-subtle: #fef2f2;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font);
+      background-color: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .identity-card {
+      background: var(--surface);
+      width: 100%;
+      max-width: 440px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+      padding: 36px 32px;
+      box-sizing: border-box;
+      text-align: center;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    .brand-header {
+      margin-bottom: 24px;
+    }
+
+    .brand-logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .exam-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: var(--primary-subtle);
+      color: var(--primary);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      border: 1px solid #c2e7ff;
+    }
+
+    .form-group {
+      text-align: left;
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text-main);
+      outline: none;
+      transition: all 0.2s ease;
+      background: #ffffff;
+    }
+
+    .form-group input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+    }
+
+    .form-group input::placeholder {
+      color: #94a3b8;
+      font-size: 13.5px;
+    }
+
+    .form-hint {
+      font-size: 11.5px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .error-banner {
+      display: none;
+      background-color: var(--red-subtle);
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #b91c1c;
+      font-size: 12.5px;
+      margin-bottom: 18px;
+      text-align: left;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 12px;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-submit:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn-submit:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="identity-card">
+    <div class="brand-header">
+      <img src="assets/icon.png" alt="IntegrityFlow" class="brand-logo">
+      <h1>Candidate Identification</h1>
+      <p class="subtitle">Please provide your academic credentials to create your secure exam session.</p>
+      <div id="examBadge" class="exam-badge">
+        <span>📝</span>
+        <span id="examCodeText">Exam: Loading...</span>
+      </div>
+    </div>
+
+    <div id="errorBanner" class="error-banner"></div>
+
+    <div class="form-group">
+      <label for="studentName">Full Name</label>
+      <input type="text" id="studentName" placeholder="e.g. Jane Doe / Muhammad Ali" autofocus autocomplete="name">
+      <div class="form-hint">Official student name matching your university record.</div>
+    </div>
+
+    <div class="form-group">
+      <label for="rollNumber">Roll Number / Registration ID</label>
+      <input type="text" id="rollNumber" placeholder="e.g. FA20-BCS-042 or 2021-CS-101" autocomplete="off">
+      <div class="form-hint">Your institution student registration or roll number.</div>
+    </div>
+
+    <button id="btnSubmitIdentity" class="btn-submit">
+      <span>Continue to System Check</span>
+      <span>➔</span>
+    </button>
+  </div>
+
+  <script src="dist/identity.js"></script>
+</body>
+</html>

@@ -13,42 +13,55 @@ import './Dashboard.css';
 
 const API_BASE = 'http://localhost:5000';
 
+let globalAudioCtx = null;
+
+function getAudioContext() {
+    if (!globalAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+            globalAudioCtx = new AudioCtx();
+        }
+    }
+    return globalAudioCtx;
+}
+
 function playAlertChime() {
     try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
+        const ctx = getAudioContext();
+        if (!ctx) return;
         
-        // Pitch 1
+        // Auto-resume if browser autoplay policy suspended the context
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
+
+        const now = ctx.currentTime;
+        
+        // Primary warning tone (880Hz -> 1320Hz)
         const osc1 = ctx.createOscillator();
         const gain1 = ctx.createGain();
         osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(880, ctx.currentTime);
-        osc1.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.15);
-        gain1.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        
+        osc1.frequency.setValueAtTime(880, now);
+        osc1.frequency.exponentialRampToValueAtTime(1320, now + 0.12);
+        gain1.gain.setValueAtTime(0.4, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
         osc1.connect(gain1);
         gain1.connect(ctx.destination);
-        osc1.start();
-        osc1.stop(ctx.currentTime + 0.3);
+        osc1.start(now);
+        osc1.stop(now + 0.25);
 
-        // Pitch 2
-        setTimeout(() => {
-            if (ctx.state === 'closed') return;
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.type = 'sine';
-            osc2.frequency.setValueAtTime(1100, ctx.currentTime);
-            osc2.frequency.exponentialRampToValueAtTime(1500, ctx.currentTime + 0.15);
-            gain2.gain.setValueAtTime(0.35, ctx.currentTime);
-            gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-            
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            osc2.start();
-            osc2.stop(ctx.currentTime + 0.3);
-        }, 150);
+        // Secondary alert ping (1320Hz -> 1760Hz)
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1320, now + 0.13);
+        osc2.frequency.exponentialRampToValueAtTime(1760, now + 0.28);
+        gain2.gain.setValueAtTime(0.45, now + 0.13);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now + 0.13);
+        osc2.stop(now + 0.45);
     } catch (e) {
         console.warn('Audio chime play error:', e);
     }
@@ -63,20 +76,50 @@ export default function Dashboard() {
     const [selectedExamFilter, setSelectedExamFilter] = useState(null);
     const [selectedSummaryExamId, setSelectedSummaryExamId] = useState(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
-    const [prevViolationCount, setPrevViolationCount] = useState(0);
+
+    const lastSeenViolationIdRef = React.useRef(null);
+    const isInitialMountRef = React.useRef(true);
 
     // End exam confirmation state from live monitoring view
     const [showEndExamConfirm, setShowEndExamConfirm] = useState(false);
 
-    // Play sound chime on new high-severity alert
+    // Pre-unlock audio context on first user interaction
     useEffect(() => {
-        if (violations && violations.length > prevViolationCount) {
-            const latest = violations[0];
-            if (soundEnabled && latest && latest.severity >= 3) {
+        const unlockAudio = () => {
+            const ctx = getAudioContext();
+            if (ctx && ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
+            }
+        };
+        window.addEventListener('click', unlockAudio, { once: true });
+        window.addEventListener('keydown', unlockAudio, { once: true });
+        return () => {
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('keydown', unlockAudio);
+        };
+    }, []);
+
+    // Play sound chime on newly arriving violation
+    useEffect(() => {
+        if (!violations || violations.length === 0) return;
+
+        const latest = violations[0];
+        const latestId = String(latest._id || latest.id || latest.timestamp);
+
+        // On first mount, establish baseline without blaring sound for old historical logs
+        if (isInitialMountRef.current) {
+            isInitialMountRef.current = false;
+            lastSeenViolationIdRef.current = latestId;
+            return;
+        }
+
+        // If a new live violation arrived
+        if (latestId !== lastSeenViolationIdRef.current) {
+            lastSeenViolationIdRef.current = latestId;
+            if (soundEnabled && latest.severity >= 2) {
                 playAlertChime();
             }
         }
-        setPrevViolationCount(violations ? violations.length : 0);
     }, [violations, soundEnabled]);
 
     // Auto-switch to evidence review when a student is clicked in the list
@@ -357,7 +400,15 @@ export default function Dashboard() {
                         </div>
 
                         {rightPanelView === 'feed' ? (
-                            <AlertFeed violations={violations} />
+                            <AlertFeed 
+                                violations={violations} 
+                                onSelectViolation={(v) => {
+                                    if (v?.sessionId) {
+                                        setSelectedSessionId(v.sessionId);
+                                        setRightPanelView('evidence');
+                                    }
+                                }}
+                            />
                         ) : rightPanelView === 'grid' ? (
                             <CandidateGrid 
                                 riskScores={riskScores} 
@@ -369,7 +420,10 @@ export default function Dashboard() {
                                 }} 
                             />
                         ) : (
-                            <EvidenceViewer sessionId={selectedSessionId} />
+                            <EvidenceViewer 
+                                sessionId={selectedSessionId} 
+                                liveViolations={violations}
+                            />
                         )}
                     </div>
                 </main>
