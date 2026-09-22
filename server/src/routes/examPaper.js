@@ -95,6 +95,10 @@ router.get('/:examId/paper', async (req, res) => {
             return res.status(404).json({ error: 'Exam paper not found' });
         }
 
+        if (exam.paperPath.startsWith('http://') || exam.paperPath.startsWith('https://')) {
+            return res.redirect(exam.paperPath);
+        }
+
         const exists = await storageService.exists(exam.paperPath);
         if (!exists) {
             return res.status(404).json({ error: 'File missing on server' });

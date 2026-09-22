@@ -22,17 +22,28 @@ def check_apps():
 @app.post("/kill-app")
 def kill_app(payload: dict):
     import psutil
+    import subprocess
     target = payload.get("name")
     if not target:
         return {"success": False, "error": "No app name provided"}
     
     target_lower = target.lower()
     killed = 0
-    for proc in psutil.process_iter(['name']):
+    for proc in psutil.process_iter(['name', 'pid']):
         try:
             if proc.info.get('name', '').lower() == target_lower:
                 proc.kill()
                 killed += 1
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+            
+    # If psutil couldn't kill it (e.g. UWP / Windows Store app), try taskkill
+    if killed == 0:
+        try:
+            res = subprocess.run(["taskkill", "/F", "/IM", target], capture_output=True)
+            if res.returncode == 0:
+                killed += 1
+        except Exception:
+            pass
+            
     return {"success": True, "killed": killed}

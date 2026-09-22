@@ -6,7 +6,8 @@ import StudentList from '../components/StudentList';
 import AlertFeed from '../components/AlertFeed';
 import EvidenceViewer from '../components/EvidenceViewer';
 import CandidateGrid from '../components/CandidateGrid';
-import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles } from 'lucide-react';
+import AdminDashboard from '../components/AdminDashboard/AdminDashboard';
+import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AuthModal from '../components/AuthModal';
 import './Dashboard.css';
@@ -195,6 +196,18 @@ export default function Dashboard() {
                             <Radio size={16} />
                             <span>Live Monitoring</span>
                         </button>
+                        {teacher?.role === 'admin' && (
+                            <button 
+                                className={`nav-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setSelectedSummaryExamId(null);
+                                    setActiveTab('admin');
+                                }}
+                            >
+                                <FolderKanban size={16} />
+                                <span>Admin & Storage Console</span>
+                            </button>
+                        )}
                     </div>
 
                     <button 
@@ -227,7 +240,7 @@ export default function Dashboard() {
                                 width: 26,
                                 height: 26,
                                 borderRadius: '50%',
-                                background: 'linear-gradient(135deg, var(--brand-primary), #7c3aed)',
+                                background: teacher.role === 'admin' ? 'linear-gradient(135deg, #1a73e8, #7c3aed)' : 'linear-gradient(135deg, #188038, #34a853)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -241,8 +254,14 @@ export default function Dashboard() {
                                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
                                     {teacher.name}
                                 </span>
-                                <span style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
-                                    {teacher.role || 'Teacher'}
+                                <span style={{ 
+                                    fontSize: 10, 
+                                    fontWeight: 700, 
+                                    color: teacher.role === 'admin' ? '#1a73e8' : '#188038', 
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    {teacher.role === 'admin' ? '🛡️ Administrator' : 'Examiner'}
                                 </span>
                             </div>
                             <button
@@ -265,30 +284,58 @@ export default function Dashboard() {
                         </div>
                     ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <button
-                                type="button"
-                                onClick={() => demoLogin()}
-                                title="1-Click Quick Demo Sign-in"
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    padding: '6px 14px',
-                                    backgroundColor: '#ffffff',
-                                    border: '1px solid #dadce0',
-                                    borderRadius: '4px',
-                                    color: '#1a73e8',
-                                    fontSize: '13px',
-                                    fontWeight: 500,
-                                    cursor: 'pointer',
-                                    transition: 'background-color 0.15s ease'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(26, 115, 232, 0.04)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
-                            >
-                                <Sparkles size={14} color="#1a73e8" />
-                                <span>Demo Sign-in</span>
-                            </button>
+                            {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => demoLogin('admin')}
+                                        title="Sign in as Administrator"
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            padding: '6px 14px',
+                                            backgroundColor: '#ffffff',
+                                            border: '1px solid #1a73e8',
+                                            borderRadius: '4px',
+                                            color: '#1a73e8',
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            transition: 'background-color 0.15s ease'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(26, 115, 232, 0.08)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
+                                    >
+                                        <Shield size={14} color="#1a73e8" />
+                                        <span>Demo Admin</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => demoLogin('teacher')}
+                                        title="Sign in as Regular Teacher"
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            padding: '6px 12px',
+                                            backgroundColor: '#ffffff',
+                                            border: '1px solid #dadce0',
+                                            borderRadius: '4px',
+                                            color: '#3c4043',
+                                            fontSize: '13px',
+                                            fontWeight: 500,
+                                            cursor: 'pointer',
+                                            transition: 'background-color 0.15s ease'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
+                                    >
+                                        <Sparkles size={14} color="#5f6368" />
+                                        <span>Demo Teacher</span>
+                                    </button>
+                                </>
+                            )}
                             <button
                                 type="button"
                                 onClick={() => setShowAuthModal(true)}
@@ -319,7 +366,14 @@ export default function Dashboard() {
             </header>
 
             {/* Main Content Areas */}
-            {activeTab === 'exams' ? (
+            {activeTab === 'admin' ? (
+                <main className="dashboard-main-single">
+                    <AdminDashboard 
+                        onNavigateExams={() => setActiveTab('exams')}
+                        onNavigateMonitoring={() => setActiveTab('monitoring')}
+                    />
+                </main>
+            ) : activeTab === 'exams' ? (
                 <main className="dashboard-main-single">
                     {selectedSummaryExamId ? (
                         <ExamSummary 

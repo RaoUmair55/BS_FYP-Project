@@ -49,7 +49,7 @@ export default function Signup({ onNavigate }) {
 
         setIsSubmitting(true);
         try {
-            await signup(name.trim(), email.trim().toLowerCase(), password, 'teacher');
+            await signup(name.trim(), email.trim().toLowerCase(), password, role);
             setSignupSuccess(true);
             // After signup, AuthContext has access token & teacher, App routes automatically to dashboard
         } catch (err) {

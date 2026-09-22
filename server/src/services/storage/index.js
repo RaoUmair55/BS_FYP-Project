@@ -1,13 +1,22 @@
 const LocalStorageProvider = require('./LocalStorageProvider');
+const CloudinaryStorageProvider = require('./CloudinaryStorageProvider');
 
 // -----------------------------------------------------------------------------
-// Active Storage Provider
+// Active Storage Provider Factory
 // -----------------------------------------------------------------------------
-// To swap to a cloud storage provider (e.g. AWS S3, Cloudinary, Azure Blob):
-// 1. Create S3StorageProvider.js implementing StorageProvider.js
-// 2. Change the instantiated instance below:
-//    const storageService = new S3StorageProvider({ bucket: process.env.S3_BUCKET });
+// Automatically chooses Cloudinary when credentials are configured in .env,
+// otherwise seamlessly falls back to LocalStorageProvider for offline/dev use.
 // -----------------------------------------------------------------------------
-const storageService = new LocalStorageProvider();
+let storageService;
+
+if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    storageService = new CloudinaryStorageProvider();
+} else if (process.env.CLOUDINARY_URL) {
+    storageService = new CloudinaryStorageProvider();
+} else {
+    console.log('[StorageService] Cloudinary credentials not found in env. Falling back to LocalStorageProvider.');
+    storageService = new LocalStorageProvider();
+}
 
 module.exports = storageService;
+

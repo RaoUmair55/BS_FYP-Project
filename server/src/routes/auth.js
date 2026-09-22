@@ -111,12 +111,12 @@ router.post('/signup', async (req, res) => {
         // Hash password with bcrypt (12 rounds)
         const passwordHash = await bcrypt.hash(password, 12);
 
-        // Create new teacher
+        // Public registration always assigns default role 'teacher'
         const newTeacher = new Teacher({
             name,
             email,
             passwordHash,
-            role: role || 'teacher',
+            role: 'teacher',
             emailVerified: false,
             failedLoginAttempts: 0
         });

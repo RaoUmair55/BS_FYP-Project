@@ -10,10 +10,11 @@ class WhitelistEnforcer:
     """
     Enforces a whitelist of allowed applications using psutil.
     """
-    def __init__(self, session_id, on_violation_callback, mode="exam"):
+    def __init__(self, session_id, on_violation_callback, mode="exam", is_self_check=False):
         self.session_id = session_id
         self.on_violation_callback = on_violation_callback
         self.mode = mode
+        self.is_self_check = is_self_check
         self.violation_counts = {}
         self.running = False
         self.monitor_thread = None
@@ -94,8 +95,8 @@ class WhitelistEnforcer:
             "applemobiledeviceprocess.exe"
         }
         
-        # Hardcoded list of common Windows services/drivers/telemetry to skip
-        # as false positives during self-check.
+        # Hardcoded list of common Windows services/drivers/telemetry/databases to skip
+        # as false positives during monitoring and self-check.
         self.KNOWN_BACKGROUND_SERVICES = {
             "searchindexer.exe", "searchprotocolhost.exe", "searchfilterhost.exe",
             "officeclicktorun.exe", "mousocoreworker.exe", "unsecapp.exe",
@@ -112,7 +113,18 @@ class WhitelistEnforcer:
             "btwrsupportservice.exe", "ibtsiva.exe",
             "nvdisplay.container.exe", "nvcontainer.exe", "nvsphelper64.exe",
             "onedrive.sync.service.exe", "onedrive.exe", "wlanext.exe",
-            "applemobiledeviceprocess.exe", "chrome-native-host.exe"
+            "applemobiledeviceprocess.exe", "chrome-native-host.exe",
+            # Intel platform & graphics services
+            "esif_uf.exe", "esif_assist.exe", "oneapp.igcc.winservice.exe", "jhi_service.exe",
+            "ipfsvc.exe", "dptf.exe",
+            # Audio drivers & services
+            "rtkaudioservice64.exe", "ravbg64.exe", "ravcpl64.exe",
+            # Hyper-V, virtualization & container services
+            "vmcompute.exe", "vmms.exe", "vmmem", "vmmemx", "wslservice.exe", "wslhost.exe",
+            "docker.exe", "dockerd.exe",
+            # Database and developer background daemons
+            "postgres.exe", "pg_ctl.exe", "mysqld.exe", "sqlservr.exe", "mongod.exe", "redis-server.exe",
+            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe"
         }
         
         # Protect this exact AI module process instance
@@ -190,9 +202,10 @@ class WhitelistEnforcer:
         print("[WhitelistEnforcer] Stopped enforcement loop.")
 
     def _monitor_loop(self):
+        current_user = os.environ.get('USERNAME', '').lower()
         while self.running:
-            # Only perform active process killing and violation reporting during actual EXAM mode
-            if self.mode != "exam":
+            # Only pause automatic killing & reporting during the pre-exam self-check phase
+            if self.is_self_check:
                 time.sleep(2.0)
                 continue
 
@@ -203,39 +216,59 @@ class WhitelistEnforcer:
                 try:
                     pid = proc.info['pid']
                     name = proc.info['name']
-                    username = proc.info.get('username') or ''
                     
                     if not name:
                         continue
                         
-                    # 1. Ignore system and service accounts to protect the OS
-                    if any(sys_acc in username.lower() for sys_acc in ['nt authority\\system', 'local service', 'network service']):
-                        continue
-
                     name_lower = name.lower()
                     
-                    # 2. Protect the AI module and its dev environment dynamically
-                    if pid in self.protected_pids or pid in self.unkillable_pids:
-                        continue
-                        
-                    # 3. Protect critical OS processes
+                    # 1. Protect critical OS processes & hardware safety list
                     if name_lower in self.SAFETY_LIST:
                         continue
                         
-                    # 3.5. Ignore known harmless background services and drivers
+                    # 2. Ignore known harmless background services, telemetry, drivers, and databases
                     if name_lower in self.KNOWN_BACKGROUND_SERVICES or name_lower.startswith("antigravitysetup"):
                         continue
+
+                    # 3. Protect the AI module and its dev environment dynamically
+                    if pid in self.protected_pids:
+                        continue
+
+                    # 4. Filter by process owner (must belong to the active logged-in candidate)
+                    username = proc.info.get('username')
+                    if not username:
+                        try:
+                            username = proc.username()
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            # If psutil cannot query the username, it is a protected Windows service or elevated system daemon
+                            continue
+                            
+                    if not username:
+                        continue
                         
-                    # 4. Exam Mode Hard Block
+                    username_lower = username.lower()
+                    
+                    # Ignore Windows system/service accounts
+                    if any(sys_acc in username_lower for sys_acc in [
+                        'nt authority', 'local service', 'network service', 
+                        'window manager', 'font driver host', 'system', 'umfd-', 'dwm-'
+                    ]):
+                        continue
+                        
+                    # Only enforce on processes owned by the current candidate's user session
+                    if current_user and current_user not in username_lower:
+                        continue
+                        
+                    # 5. Exam Mode Hard Block
                     if self.mode == "exam" and name_lower in self.EXAM_BLOCKED:
                         # Fall through to handle_violation immediately, no exceptions
                         pass
                         
-                    # 5. Allow whitelisted apps
+                    # 6. Allow whitelisted apps (uses exam_whitelist in exam mode, dev_whitelist in dev mode)
                     elif name_lower in self.whitelist:
                         continue
 
-                    # If we reach here, it's an unauthorized process
+                    # If we reach here, it's an unauthorized application launched by the candidate
                     self._handle_violation(proc, name_lower)
 
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -260,20 +293,33 @@ class WhitelistEnforcer:
         time.sleep(0.5)
         
         # Capture screenshot BEFORE terminating the app, so we get the evidence
-        screenshot_path = capture_screenshot(self.session_id, "unauthorized_app")
+        screenshot_path = None
+        try:
+            screenshot_path = capture_screenshot(self.session_id, "unauthorized_app")
+        except Exception as e:
+            print(f"[WhitelistEnforcer] Warning: Could not capture screenshot: {e}")
         
-        # Terminate gracefully, then force kill if needed
+        # Terminate gracefully, then force kill if needed, with Windows taskkill fallback
+        killed = False
         try:
             proc.terminate()
             try:
                 proc.wait(timeout=2.0)
+                killed = True
             except psutil.TimeoutExpired:
                 print(f"[WhitelistEnforcer] Process {name_lower} did not terminate gracefully. Force killing...")
                 proc.kill()
+                killed = True
         except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-            print(f"[WhitelistEnforcer] Could not terminate {name_lower}: {e}")
-            self.unkillable_pids.add(pid) # Don't try to kill it again
-            return # If we couldn't kill it, maybe we don't send the violation yet.
+            print(f"[WhitelistEnforcer] psutil could not terminate {name_lower} (PID: {pid}): {e}. Trying Windows taskkill fallback...")
+            try:
+                import subprocess
+                res = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+                if res.returncode == 0:
+                    killed = True
+                    print(f"[WhitelistEnforcer] Successfully terminated {name_lower} via taskkill.")
+            except Exception as taskkill_err:
+                print(f"[WhitelistEnforcer] taskkill fallback failed: {taskkill_err}")
         
         # Format payload matching CONTRACT.md
         payload = {
@@ -318,18 +364,10 @@ class WhitelistEnforcer:
         for proc in psutil.process_iter(['pid', 'name', 'username']):
             try:
                 name = proc.info.get('name')
-                username = proc.info.get('username') or ''
                 pid = proc.info.get('pid')
                 if not name: 
                     continue
                     
-                username_lower = username.lower()
-                if not username_lower or any(sys_acc in username_lower for sys_acc in ['nt authority\\system', 'local service', 'network service', 'window manager']): 
-                    continue
-                    
-                if current_user and current_user not in username_lower:
-                    continue
-                
                 name_lower = name.lower()
                 if pid == self.protected_pid: 
                     continue
@@ -338,6 +376,25 @@ class WhitelistEnforcer:
                 if name_lower in self.KNOWN_BACKGROUND_SERVICES:
                     continue
                 if name_lower in dev_whitelist: 
+                    continue
+
+                username = proc.info.get('username')
+                if not username:
+                    try:
+                        username = proc.username()
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        continue
+                if not username:
+                    continue
+                    
+                username_lower = username.lower()
+                if any(sys_acc in username_lower for sys_acc in [
+                    'nt authority', 'local service', 'network service', 
+                    'window manager', 'font driver host', 'system', 'umfd-', 'dwm-'
+                ]): 
+                    continue
+                    
+                if current_user and current_user not in username_lower:
                     continue
                 
                 if name_lower in seen_names:

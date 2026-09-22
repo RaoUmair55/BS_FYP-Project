@@ -10,20 +10,11 @@ const { requireAuth } = require('../middleware/authMiddleware');
 const storageService = require('../services/storage');
 const multer = require('multer');
 
-// Configure multer for screenshot uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '../../uploads/screenshots');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
-    }
+// Configure multer for screenshot uploads using memory storage
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }
 });
-const upload = multer({ storage });
 
 const router = express.Router();
 
@@ -37,9 +28,15 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
             } catch (e) {}
         }
         
-        let screenshotPath = req.body.screenshotPath;
+        let screenshotPath = req.body.screenshotPath || null;
         if (req.file) {
-            screenshotPath = `/uploads/screenshots/${req.file.filename}`;
+            try {
+                const uniqueFilename = `screenshot-${Date.now()}-${req.file.originalname || 'snapshot.jpg'}`;
+                const saved = await storageService.save(req.file.buffer, uniqueFilename, 'screenshots');
+                screenshotPath = saved.url;
+            } catch (uploadErr) {
+                console.error('[Violations Route] Failed to upload screenshot to storage service:', uploadErr);
+            }
         }
         
         const severity = parseInt(req.body.severity, 10) || req.body.severity;
@@ -159,6 +156,22 @@ router.patch('/violations/:violationId/review', requireAuth, async (req, res) =>
         } catch (scoreErr) {
             console.error('Failed to recalculate risk score:', scoreErr);
         }
+
+        // Record Teacher Action in Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'VIOLATION_REVIEWED',
+            targetType: 'violation',
+            targetId: updatedViolation._id,
+            targetSummary: `Reviewed violation [${updatedViolation.type}]: Decision = ${decision.toUpperCase()}${reviewNote ? ` ("${reviewNote}")` : ''}`,
+            details: {
+                sessionId: updatedViolation.sessionId,
+                violationType: updatedViolation.type,
+                severity: updatedViolation.severity,
+                decision,
+                reviewNote
+            }
+        });
 
         res.json({
             message: 'Violation reviewed successfully',

@@ -242,7 +242,9 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     );
 
     const cameraPhotoUrl = sessionData?.cameraVerificationPhoto 
-        ? `${API_BASE_URL.replace(/\/$/, '')}/${sessionData.cameraVerificationPhoto.replace(/^\//, '')}`
+        ? (sessionData.cameraVerificationPhoto.startsWith('http://') || sessionData.cameraVerificationPhoto.startsWith('https://')
+            ? sessionData.cameraVerificationPhoto
+            : `${API_BASE_URL.replace(/\/$/, '')}/${sessionData.cameraVerificationPhoto.replace(/^\//, '')}`)
         : null;
     const cameraStatus = sessionData?.cameraVerificationStatus || 'none';
     const isTerminated = sessionData?.status === 'terminated';
@@ -455,7 +457,9 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     const isReviewed = Boolean(v.reviewed);
                                     const decision = v.decision || 'pending';
                                     const imageSrc = v.screenshotPath 
-                                        ? `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`
+                                        ? (v.screenshotPath.startsWith('http://') || v.screenshotPath.startsWith('https://')
+                                            ? v.screenshotPath
+                                            : `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`)
                                         : null;
 
                                     return (

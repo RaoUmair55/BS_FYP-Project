@@ -199,16 +199,17 @@ export function AuthProvider({ children }) {
         return data;
     };
 
-    // 1-Click Quick Demo Login for testing/examiners
-    const demoLogin = async () => {
-        const demoEmail = 'proctor@integrityflow.edu';
+    // 1-Click Quick Demo Login for testing/examiners/admins
+    const demoLogin = async (role = 'admin') => {
+        const demoEmail = role === 'admin' ? 'admin@integrityflow.edu' : 'proctor@integrityflow.edu';
         const demoPassword = 'Password123!';
+        const demoName = role === 'admin' ? 'Super Administrator' : 'Dr. Integrity Examiner';
 
         try {
             return await login(demoEmail, demoPassword);
         } catch (err) {
-            // Auto register demo teacher if not in DB yet
-            return await signup('Dr. Integrity Examiner', demoEmail, demoPassword, 'teacher');
+            // Auto register demo user with specified role if not in DB yet
+            return await signup(demoName, demoEmail, demoPassword, role);
         }
     };
 

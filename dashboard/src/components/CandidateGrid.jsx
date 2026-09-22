@@ -131,7 +131,9 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                         const cameraStatus = s.cameraVerificationStatus || 'none';
                         const isVerified = cameraStatus === 'verified';
                         const photoUrl = s.cameraVerificationPhoto 
-                            ? `${API_BASE_URL.replace(/\/$/, '')}/${s.cameraVerificationPhoto.replace(/^\//, '')}`
+                            ? (s.cameraVerificationPhoto.startsWith('http://') || s.cameraVerificationPhoto.startsWith('https://')
+                                ? s.cameraVerificationPhoto
+                                : `${API_BASE_URL.replace(/\/$/, '')}/${s.cameraVerificationPhoto.replace(/^\//, '')}`)
                             : null;
                         const isVerifying = verifyingMap[sid] || false;
 

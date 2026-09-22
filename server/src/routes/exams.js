@@ -106,6 +106,21 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
         const newExam = new Exam(examData);
         const savedExam = await newExam.save();
 
+        // Record Teacher Action in Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'EXAM_CREATED',
+            targetType: 'exam',
+            targetId: savedExam._id,
+            targetSummary: `Created new Exam: "${savedExam.title}" (Code: ${savedExam.examCode})`,
+            details: {
+                examCode: savedExam.examCode,
+                title: savedExam.title,
+                durationMinutes: savedExam.durationMinutes,
+                hasPaper: Boolean(savedExam.paperPath)
+            }
+        });
+
         res.status(201).json({
             message: 'Exam created successfully',
             exam: savedExam
@@ -340,6 +355,16 @@ router.post('/:examId/paper', requireAuth, handleUpload, async (req, res) => {
         exam.paperFilename = req.file.originalname;
         await exam.save();
 
+        // Record Teacher Action in Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'PAPER_UPDATED',
+            targetType: 'exam',
+            targetId: exam._id,
+            targetSummary: `Updated Question Paper for Exam: "${exam.title}" (${exam.paperFilename})`,
+            details: { examId: exam.examCode || exam._id, filename: exam.paperFilename, path: exam.paperPath }
+        });
+
         res.json({ message: 'Question paper updated successfully', exam });
     } catch (err) {
         res.status(500).json({ error: 'Failed to update exam paper' });
@@ -358,6 +383,16 @@ router.delete('/:examId', requireAuth, async (req, res) => {
         if (exam.paperPath) {
             await storageService.delete(exam.paperPath);
         }
+
+        // Record Teacher Action in Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'EXAM_DELETED',
+            targetType: 'exam',
+            targetId: req.params.examId,
+            targetSummary: `Deleted Exam: "${exam.title}" (Code: ${exam.examCode})`,
+            details: { examCode: exam.examCode, title: exam.title }
+        });
 
         res.json({ message: 'Exam deleted successfully', examId: req.params.examId });
     } catch (err) {

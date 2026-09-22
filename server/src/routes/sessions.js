@@ -235,6 +235,21 @@ router.patch('/:sessionId/camera-verification', requireAuth, async (req, res) =>
             });
         }
 
+        // Record Teacher Action in Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'VERIFICATION_REVIEWED',
+            targetType: 'session',
+            targetId: session._id,
+            targetSummary: `Camera Verification Review: Candidate ${session.studentName || session.studentId} marked as ${status.toUpperCase()}${note ? ` ("${note}")` : ''}`,
+            details: {
+                sessionId: session._id,
+                examId: session.examId,
+                status,
+                note
+            }
+        });
+
         res.json({ message: `Camera verification status updated to ${status}`, session });
     } catch (err) {
         console.error('Error updating camera verification:', err);
@@ -335,6 +350,22 @@ router.post('/:sessionId/terminate', requireAuth, async (req, res) => {
             const scoreData = await calculateRiskScore(session._id);
             broadcastRiskScoreUpdate(io, session._id.toString(), scoreData.riskScore);
         }
+
+        // Record Teacher Action in Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'SESSION_TERMINATED',
+            targetType: 'session',
+            targetId: session._id,
+            targetSummary: `Terminated Candidate: ${session.studentName || session.studentId} (${session.rollNumber || 'N/A'}) - Reason: "${session.terminationReason}"`,
+            details: {
+                sessionId: session._id,
+                examId: session.examId,
+                studentName: session.studentName,
+                rollNumber: session.rollNumber,
+                reason: session.terminationReason
+            }
+        });
 
         res.json({ message: 'Candidate session terminated successfully', session });
     } catch (err) {

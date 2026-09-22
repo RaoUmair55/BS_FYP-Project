@@ -131,23 +131,28 @@ export default function Login({ onNavigate }) {
                     </button>
                 </form>
 
-                <div className="auth-divider">or quick evaluation</div>
+                {/* Demo Sign-in: Enabled in development or when VITE_ENABLE_DEMO_LOGIN=true */}
+                {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                    <>
+                        <div className="auth-divider">or quick evaluation</div>
 
-                <button
-                    type="button"
-                    className="auth-demo-btn"
-                    onClick={handleDemoLogin}
-                    disabled={isSubmitting || isDemoSubmitting}
-                >
-                    {isDemoSubmitting ? (
-                        <span className="auth-spinner dark" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
-                    ) : (
-                        <>
-                            <Sparkles size={15} style={{ color: 'var(--google-blue)' }} />
-                            <span>1-Click Demo Teacher Sign In</span>
-                        </>
-                    )}
-                </button>
+                        <button
+                            type="button"
+                            className="auth-demo-btn"
+                            onClick={handleDemoLogin}
+                            disabled={isSubmitting || isDemoSubmitting}
+                        >
+                            {isDemoSubmitting ? (
+                                <span className="auth-spinner dark" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
+                            ) : (
+                                <>
+                                    <Sparkles size={15} style={{ color: 'var(--google-blue)' }} />
+                                    <span>1-Click Demo Sign In</span>
+                                </>
+                            )}
+                        </button>
+                    </>
+                )}
 
                 <div className="auth-footer-nav">
                     <span>Don't have an account?</span>

@@ -41,17 +41,18 @@ if __name__ == "__main__":
     cpu_thread = threading.Thread(target=monitor_cpu_budget, daemon=True)
     cpu_thread.start()
     
+    is_self_check = os.environ.get("IS_SELF_CHECK", "false").lower() in ("true", "1")
+    
     enforcer = WhitelistEnforcer(
         session_id=exam_session_id, 
         on_violation_callback=send_violation_to_electron,
-        mode=app_mode
+        mode=app_mode,
+        is_self_check=is_self_check
     )
     # Inject enforcer instance so server can use it for check_running_apps
     server.enforcer = enforcer
     
     enforcer.start()
-    
-    is_self_check = os.environ.get("IS_SELF_CHECK", "false").lower() in ("true", "1")
     
     if not is_self_check:
         try:

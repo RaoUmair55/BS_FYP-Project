@@ -32,8 +32,11 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 const io = initSocket(server);
 app.locals.io = io; // Make io accessible in routes
 
-// Connect to MongoDB (without crashing if it fails)
-connectDB();
+// Connect to MongoDB and bootstrap Root Super Admin
+const seedAdmin = require('./config/seedAdmin');
+connectDB().then(() => {
+    seedAdmin();
+});
 
 // Mount Routes
 app.use('/auth', require('./routes/auth'));
@@ -43,6 +46,7 @@ app.use('/exam', require('./routes/examPaper'));
 app.use('/exams', require('./routes/exams'));
 app.use('/risk-score', require('./routes/riskScore'));
 app.use('/submissions', require('./routes/submissions'));
+app.use('/admin', require('./routes/admin'));
 
 // Test Route: /health
 app.get('/health', (req, res) => {

@@ -185,7 +185,9 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                         title={onSelectViolation ? "Click to open candidate Evidence Review" : "Violation screenshot"}
                                     >
                                         <img 
-                                            src={`${API_BASE.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`} 
+                                            src={v.screenshotPath.startsWith('http://') || v.screenshotPath.startsWith('https://') 
+                                                ? v.screenshotPath 
+                                                : `${API_BASE.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`} 
                                             alt="Alert Evidence Snapshot" 
                                             style={{ width: '100%', maxHeight: '180px', objectFit: 'contain', display: 'block' }} 
                                         />
