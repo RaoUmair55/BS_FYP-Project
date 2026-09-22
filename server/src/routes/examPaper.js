@@ -75,28 +75,56 @@ router.post('/:examId/paper', requireAuth, uploadMiddleware, async (req, res) =>
 router.get('/:examId/paper', async (req, res) => {
     try {
         const examId = req.params.examId;
+        const mongoose = require('mongoose');
 
-        // IMPORTANT: Security check - must have at least one active session for this exam
+        // Security check - must have at least one active session for this exam
+        const sessionQuery = [
+            { examId: new RegExp('^' + examId + '$', 'i') }
+        ];
+        if (mongoose.Types.ObjectId.isValid(examId)) {
+            sessionQuery.push({ examId: examId });
+        }
+
         const activeSession = await Session.findOne({ 
-            examId: new RegExp('^' + examId + '$', 'i'), 
+            $or: sessionQuery,
             status: "active" 
         });
         if (!activeSession) {
             return res.status(403).json({ error: 'Exam paper only available once candidate exam session is active.' });
         }
 
-        const exam = await Exam.findOne({ 
-            $or: [
-                { examCode: new RegExp('^' + examId + '$', 'i') },
-                { examId: new RegExp('^' + examId + '$', 'i') }
-            ]
-        });
+        const examQuery = [
+            { examCode: new RegExp('^' + examId + '$', 'i') },
+            { examId: new RegExp('^' + examId + '$', 'i') }
+        ];
+        if (mongoose.Types.ObjectId.isValid(examId)) {
+            examQuery.push({ _id: examId });
+        }
+
+        const exam = await Exam.findOne({ $or: examQuery });
         if (!exam || !exam.paperPath) {
             return res.status(404).json({ error: 'Exam paper not found' });
         }
 
+        // If stored in Cloudinary / remote URL, fetch and stream the buffer directly to avoid client CORS redirect blocks
         if (exam.paperPath.startsWith('http://') || exam.paperPath.startsWith('https://')) {
-            return res.redirect(exam.paperPath);
+            try {
+                const remoteRes = await fetch(exam.paperPath);
+                if (!remoteRes.ok) {
+                    console.error(`[ExamPaper] Remote fetch failed with status: ${remoteRes.status}`);
+                    return res.status(remoteRes.status).json({ error: 'Failed to fetch exam paper from storage' });
+                }
+                const buffer = await remoteRes.arrayBuffer();
+                const contentType = remoteRes.headers.get('content-type') || (
+                    (exam.paperFilename && exam.paperFilename.endsWith('.pdf')) ? 'application/pdf' : 'application/octet-stream'
+                );
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename || 'exam_paper.pdf'}"`);
+                return res.send(Buffer.from(buffer));
+            } catch (remoteErr) {
+                console.error('[ExamPaper] Error proxying remote paper:', remoteErr);
+                return res.status(500).json({ error: 'Failed to stream remote paper' });
+            }
         }
 
         const exists = await storageService.exists(exam.paperPath);
@@ -104,8 +132,8 @@ router.get('/:examId/paper', async (req, res) => {
             return res.status(404).json({ error: 'File missing on server' });
         }
 
-        // Stream the file back
-        res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename}"`);
+        // Stream the local file back
+        res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename || 'exam_paper.pdf'}"`);
         res.sendFile(storageService.getAbsolutePath(exam.paperPath));
 
     } catch (err) {

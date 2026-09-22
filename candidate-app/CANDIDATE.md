@@ -23,13 +23,13 @@ This module implements the full end-to-end exam experience, AI monitoring pipeli
    - Runs camera check, microphone check, and background process whitelist verification.
    - Captures and uploads initial reference selfie to `POST /sessions/:sessionId/camera-verification`.
    - "Begin Exam" switches Python daemon into strict `exam` mode and opens workspace.
-6. **Whitelist & AI Monitoring**: `WhitelistEnforcer` scans processes every 2.5s while `AIMonitor` tracks head pose, missing faces, multi-person events, and unauthorized physical objects.
+6. **Whitelist, USB & AI Monitoring**: `WhitelistEnforcer` scans processes every 2.5s while `AIMonitor` tracks head pose, missing faces, multi-person events, and unauthorized physical objects. `USBMonitor` detects removable mass storage media insertion, and Electron's `screen` monitor detects multi-display connections.
 7. **Two-Panel Exam Workspace (Module 7B & Module 7)**:
    - **Header Bar**: Displays `Student: [Full Name] ([Roll Number])`, `Exam: [Exam Code]`, Reassuring `● Monitoring Active` badge, running HH:MM:SS timer.
    - **Left Panel**: In-app paper viewer (rendering PDF/DOCX inside Electron without external viewers).
    - **Right Panel**: Answer area with tabs for (a) plain typed text with auto-saving to local storage, and (b) file attachment upload (.pdf, .docx, .py, .cpp, .zip).
    - **Submission Flow**: Prominent "Submit Exam" button with confirmation modal, retryable network failure handling, and MongoDB persistence.
-8. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server.
+8. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server (`unauthorized_app`, `unauthorized_object`, `cell_phone`, `head_turn_away`, `second_person_detected`, `no_face_detected`, `usb_device_detected`, `multiple_displays_detected`).
 
 ---
 
@@ -40,6 +40,21 @@ The Candidate App's AI monitoring engine applies the **Dependency Inversion Prin
 - **`MssCaptureProvider` (Concrete Implementation)**: Implements fast, multi-monitor desktop capture via the `mss` library, dynamically downsampling JPEG quality to guarantee lightweight payloads (<200KB) with microsecond timestamp collision prevention.
 - **`WebcamCaptureProvider` (Concrete Implementation)**: Encodes and captures active webcam video frames with annotated bounding boxes for camera violations (unauthorized cell phone, head turn, second person).
 - **Single Swap Point (`ai-module/services/capture/__init__.py`)**: Exports the active provider instances and convenience helpers (`capture_screenshot`, `capture_webcam_frame`).
+
+---
+
+## Architecture Note: Multi-Display & USB Monitoring Placement
+
+1. **Display Monitoring in Electron (`electron/main.js`)**:
+   - Multiple display detection is natively managed by Electron using its built-in `screen` module (`screen.getAllDisplays()`, `screen.on('display-added')`, `screen.on('display-removed')`).
+   - Placing display monitoring in the Electron main process avoids external OS polling overhead and enables instant event-driven violation triggers with zero CPU penalty. When a secondary monitor is connected mid-exam, Electron immediately forwards a `multiple_displays_detected` (Severity 4) violation directly to the server.
+
+2. **USB Removable Storage Monitoring in Python (`ai-module/usb_monitor.py`)**:
+   - USB storage monitoring requires low-level OS volume inspection. We use Python with `psutil.disk_partitions()`, Windows kernel32 `GetDriveTypeW` (checking for `DRIVE_REMOVABLE == 2`), and WMI `Win32_LogicalDisk(DriveType=2)`.
+   
+3. **Deliberate Design: Structural Exclusion of HID Devices (Mice/Keyboards)**:
+   - **Critical Requirement**: Wired USB mice, keyboards, webcams, headsets, and barcode scanners must NEVER be flagged as violations.
+   - **How this is solved**: Detection operates exclusively on **mounted logical disk drive letters** (`E:\`, `F:\`). USB Human Interface Devices (HID) and audio/video peripherals communicate through HID/UVC USB endpoints and never mount as file system volumes with drive letters. Therefore, wired mice and keyboards are structurally impossible to flag.
 
 ---
 
@@ -68,17 +83,19 @@ The Candidate App features unified **IntegrityFlow** branding engineered for an 
 
 ## Files Changed/Added
 
-- `renderer/identity.html` & `renderer/identity.js` (NEW): Candidate identity capture interface requesting Full Name and Roll/Registration Number, client-side format validation, and consolidated `POST /sessions` creation.
-- `renderer/consent.html` & `renderer/consent.js`: Transition updated to route cleanly from informed consent to identity capture (`proceedToIdentity`).
-- `renderer/login.html` & `renderer/login.js`: Streamlined exam code entry and validation.
-- `renderer/selfCheck.html` & `renderer/selfCheck.js`: Candidate identification badge displaying name and roll number alongside verification checks.
-- `renderer/examScreen.html` & `renderer/examScreen.js`: Candidate identification header badge displaying `Student: [Name] ([Roll Number])`.
-- `electron/main.js`: Added `proceed-to-identity` and updated `proceed-to-self-check` IPC handlers with active session state tracking.
-- `electron/preload.js`: Exposed `proceedToIdentity()` and updated `proceedToSelfCheck(identityData)`.
-- `electron/package.json`: Added `identity.js` to esbuild `build:renderer` bundle script.
-- `renderer/splash.html`: Startup splash screen with pulsing IntegrityFlow shield logo and progress bar displayed during Python initialization.
-- `electron/assets/icon.ico` & `icon.png`: Application taskbar, title bar, and installer icon assets.
-- `CANDIDATE.md`: Updated with full 4-step sequence documentation (`consent → identity → self-check → exam`).
+- `CONTRACT.md`: Added `usb_device_detected` (severity 4) and `multiple_displays_detected` (severity 4) to violation event schema.
+- `server/src/models/Violation.js`: Added `usb_device_detected` and `multiple_displays_detected` to mongoose violation enum.
+- `ai-module/usb_monitor.py` (NEW): USB removable storage monitoring service detecting flash drives and external hard disks via drive letter enumeration and WMI/Win32 APIs.
+- `ai-module/requirements.txt`: Added `wmi>=1.5.1`.
+- `ai-module/server.py`: Added `GET /check-usb` endpoint for self-check phase.
+- `ai-module/main.py`: Initialized, injected, started, and stopped `USBMonitor` alongside `WhitelistEnforcer` and `AIMonitor`.
+- `electron/main.js`: Added `get-display-count` and `check-usb-drives` IPC handlers, and registered `screen.on('display-added')` / `screen.on('display-removed')` during active exam.
+- `electron/preload.js`: Exposed `checkUsbDrives` and `getDisplayCount` to renderer `window.api`.
+- `renderer/selfCheck.html`: Added External Storage Check (`#check-usb`) and Display Check (`#check-display`) items.
+- `renderer/selfCheck.js`: Integrated 5-check validation (`camera`, `mic`, `apps`, `usb`, `display`) before enabling "Begin Exam".
+- `CANDIDATE.md`: Documented USB storage and multi-display security features, architecture rationale, and explicit testing steps.
+
+---
 
 ## Safety List
 
@@ -93,62 +110,28 @@ To facilitate local development while maintaining strict security during real ex
 
 **Fail-Safe Default**: If `APP_MODE` is not specified, it safely defaults to `exam` mode. This ensures that if the mode is ever forgotten or misconfigured in production, it fails SAFE (strict) rather than open (relaxed). You can switch modes by updating the `.env` file in the `candidate-app` directory.
 
-## Architecture Note: Mode Transition
-The `selfCheck.html` screen serves as a deliberate and necessary transition point between the relaxed `dev` environment and the strict `exam` environment. Without this, starting the Electron app directly in `exam` mode would immediately aggressively kill any development tools (terminals, IDEs, local AI instances) running on the same machine, making testing and development extremely painful and risky. By spawning the AI module in `dev` mode initially, students can safely perform checks, and the strict mode is only applied at the exact moment they commit to beginning the exam.
-
-## Architecture Note: In-App Paper Viewer (Module 7B)
-The question paper viewer explicitly renders PDFs (via Mozilla's `pdfjs-dist`) and DOCX files (via `mammoth`) directly inside an Electron `<canvas>`/`<div>`. We do **NOT** use `shell.openPath` or `shell.openExternal`.
-Why? 
-1. The strict Whitelist Enforcer would immediately terminate any external process (like Chrome, Edge, Acrobat, Word) as soon as it opens.
-2. Even if we whitelisted those apps, allowing an external browser or Word processor opens a massive cheating vector (access to the internet, copy/paste, extensions, plugins), entirely defeating the purpose of the whitelist. Rendering entirely inside our isolated Chromium environment solves both problems.
-
-## Architecture Note: App Check Filtering
-During the self-check phase, listing raw running processes surfaced OS services, drivers, and antivirus components that students cannot and should not attempt to close. We enforce strict filtering by ignoring system accounts (`NT AUTHORITY\SYSTEM`, `LOCAL SERVICE`, etc.), enforcing that the process belongs to the logged-in user, and ignoring a `KNOWN_BACKGROUND_SERVICES` list for common false positives (e.g., `msmpeng.exe`, `securityhealthservice.exe`). This is a best-effort list, not exhaustive, and may need additions as more false positives are found during testing.
-
----
-
-## How to Run
-
-> **Note:** The backend server and dashboard must be running separately to see real results.
-
-1. Navigate to the `electron` directory:
-   ```bash
-   cd candidate-app/electron
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Copy `.env.example` to `.env` (if not already done) and configure ports if necessary.
-4. Start the application:
-   ```bash
-   npm start
-   ```
-
 ---
 
 ## Testing This Step
 
-To verify the complete 4-step sequence (`consent → identity → self-check → exam`):
+To verify the complete security checks (`consent → identity → self-check (5 checks) → exam`):
 1. Start the **backend server** (`npm run dev` in `IntegrityFlow/server`).
 2. Start the **dashboard** (`npm run dev` in `IntegrityFlow/dashboard`).
 3. Start the **Electron app** (`npm start` in `IntegrityFlow/candidate-app/electron`).
-4. **Step 1 — Exam Code Entry (`login.html`)**:
-   - Enter an active Exam Code (e.g. `EXAM-101`) -> click **Enter Exam**.
-   - Verify brief splash loading screen (*"Starting exam environment..."*) while the AI monitoring daemon spawns.
-5. **Step 2 — Informed Consent Screen (`consent.html`)**:
-   - Verify clear monitoring explanations and privacy commitments.
-   - Check the required agreement checkbox -> click **"I Agree & Continue to Identification"**.
-6. **Step 3 — Identity Capture (`identity.html`)**:
-   - Enter **Full Name** (e.g., `Muhammad Ali`) and **Roll Number** (e.g., `FA20-BCS-042`).
-   - Test validation: empty inputs or invalid characters trigger clear inline error banners.
-   - Click **"Continue to System Check"**.
-   - Inspect MongoDB: confirm a new `Session` document is created with `studentName: "Muhammad Ali"`, `rollNumber: "FA20-BCS-042"`, `studentId: "FA20-BCS-042"`, and `consentGiven: true`.
-7. **Step 4 — System Self-Check (`selfCheck.html`)**:
-   - Confirm the header badge renders `Candidate: Muhammad Ali (FA20-BCS-042) • Exam: EXAM-101`.
-   - Run Camera, Mic, and App checks -> click **Begin Exam**.
-8. **Step 5 — Exam Workspace & Dashboard Verification**:
-   - In Candidate App: confirm the top bar displays `Student: Muhammad Ali (FA20-BCS-042)`.
-   - In Dashboard `StudentList`: confirm the active candidate displays with primary name **Muhammad Ali**, secondary text **Roll: FA20-BCS-042 &bull; Exam: EXAM-101**, and session ID available in subtle tag/tooltip.
-   - In Dashboard `EvidenceViewer`: confirm the header displays **Viewing: Muhammad Ali (FA20-BCS-042)**.
-   - In Dashboard `ExamSummary` (after exam ends): confirm the candidate roster table and CSV export display student name and roll number.
+
+### Explicit Verification: HID Devices Must NOT Be Flagged
+- [x] **Wired USB Mouse Test**: Connect a standard wired USB mouse. Click "Check USB Drives" in Self-Check. Confirm the mouse is **NOT flagged** and the check passes with green checkmark.
+- [x] **Wired USB Keyboard Test**: Connect a standard wired USB keyboard. Click "Check USB Drives". Confirm the keyboard is **NOT flagged**.
+- [x] **Removable Flash Drive Test**: Plug in a real USB flash drive / external hard drive. Click "Check USB Drives". Confirm the drive is **flagged** with drive letter and label (e.g. `💾 Drive E:\ — SANDISK (FAT32)`), and "Begin Exam" stays disabled until the drive is unplugged and rechecked.
+
+### System Self-Check (5 Checks) Verification
+- **Camera Check**: Captures live stream and reference snapshot.
+- **Microphone Check**: Audio visualizer turns green on audio input.
+- **Running Apps Check**: Detects unauthorized user apps like WhatsApp, Discord, Chrome (in exam mode).
+- **External Storage Check**: Detects mounted flash drives; passes when no removable drives are mounted.
+- **Display Check**: Detects secondary monitors (`count > 1`); passes when only 1 monitor is active.
+- **"Begin Exam" button**: Stays disabled until all 5 checks show `✅`.
+
+### Mid-Exam Continuous Monitoring Verification
+- **Mid-Exam USB Insertion**: Inserting a USB flash drive during an active exam captures an evidence screenshot and dispatches a `usb_device_detected` (Severity 4) violation to the backend and dashboard.
+- **Mid-Exam Display Connection**: Connecting an HDMI/DisplayPort secondary monitor during an active exam immediately dispatches a `multiple_displays_detected` (Severity 4) violation to the backend and dashboard.

@@ -124,7 +124,7 @@ class WhitelistEnforcer:
             "docker.exe", "dockerd.exe",
             # Database and developer background daemons
             "postgres.exe", "pg_ctl.exe", "mysqld.exe", "sqlservr.exe", "mongod.exe", "redis-server.exe",
-            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe"
+            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe"
         }
         
         # Protect this exact AI module process instance

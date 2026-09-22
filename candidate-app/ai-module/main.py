@@ -5,6 +5,7 @@ import threading
 import time
 import psutil
 from whitelist_enforcer import WhitelistEnforcer
+from usb_monitor import USBMonitor
 from ai_monitor import AIMonitor
 import server
 
@@ -51,8 +52,16 @@ if __name__ == "__main__":
     )
     # Inject enforcer instance so server can use it for check_running_apps
     server.enforcer = enforcer
-    
     enforcer.start()
+    
+    usb_monitor = USBMonitor(
+        session_id=exam_session_id,
+        on_violation_callback=send_violation_to_electron,
+        is_self_check=is_self_check
+    )
+    # Inject usb_monitor instance so server can use it for /check-usb
+    server.usb_monitor = usb_monitor
+    usb_monitor.start()
     
     if not is_self_check:
         try:
@@ -70,3 +79,4 @@ if __name__ == "__main__":
         uvicorn.run(server.app, host="127.0.0.1", port=8000)
     finally:
         enforcer.stop()
+        usb_monitor.stop()

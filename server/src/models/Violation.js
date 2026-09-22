@@ -5,7 +5,17 @@ const violationSchema = new mongoose.Schema({
     type: { 
         type: String, 
         required: true,
-        enum: ["head_turn_away", "second_person_detected", "no_face_detected", "unauthorized_object", "unauthorized_app", "cell_phone", "camera_issue"]
+        enum: [
+            "head_turn_away", 
+            "second_person_detected", 
+            "no_face_detected", 
+            "unauthorized_object", 
+            "unauthorized_app", 
+            "cell_phone", 
+            "camera_issue",
+            "usb_device_detected",
+            "multiple_displays_detected"
+        ]
     },
     severity: { type: Number, required: true, min: 1, max: 5 },
     timestamp: { type: Date, required: true },

@@ -77,6 +77,31 @@
       </div>
     </div>
 
+    <div class="check-item" id="check-usb">
+      <div class="check-header">
+        <span>4. External Storage Check</span>
+        <span class="status-icon status-pending">⏳</span>
+      </div>
+      <div class="check-content">
+        <p style="font-size: 0.875rem; color: #6b7280;">Scanning for USB removable flash drives and external hard drives...</p>
+        <ul class="app-list" id="usb-list"></ul>
+        <p class="error-text" style="color: #ef4444; display: none;"></p>
+        <button id="btn-check-usb" class="secondary-button">Check USB Drives</button>
+      </div>
+    </div>
+
+    <div class="check-item" id="check-display">
+      <div class="check-header">
+        <span>5. Display Check</span>
+        <span class="status-icon status-pending">⏳</span>
+      </div>
+      <div class="check-content">
+        <p style="font-size: 0.875rem; color: #6b7280;">Verifying single monitor display configuration...</p>
+        <p class="error-text" style="color: #ef4444; display: none;"></p>
+        <button id="btn-check-display" class="secondary-button">Check Displays</button>
+      </div>
+    </div>
+
     <button id="btn-begin-exam" disabled>Begin Exam</button>
   </div>
   <script src="./selfCheck.js"></script>

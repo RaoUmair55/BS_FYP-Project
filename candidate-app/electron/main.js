@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -19,6 +19,8 @@ process.on('uncaughtException', function (err) {
 // ----------------------------------------------------------------
 let mainWindow;
 let pythonProcess;
+let displayAddedListener = null;
+let displayRemovedListener = null;
 let activeSessionInfo = {
   sessionId: null,
   examId: null,
@@ -185,6 +187,14 @@ app.on('before-quit', () => {
     pythonProcess.killedIntentional = true;
     pythonProcess.kill('SIGTERM'); // kill python child process cleanly
   }
+  if (displayAddedListener) {
+    screen.removeListener('display-added', displayAddedListener);
+    displayAddedListener = null;
+  }
+  if (displayRemovedListener) {
+    screen.removeListener('display-removed', displayRemovedListener);
+    displayRemovedListener = null;
+  }
   stopReceiver();
 });
 
@@ -204,6 +214,32 @@ ipcMain.handle('check-apps', async () => {
     console.error('[Electron] Error fetching /check-apps:', error);
     return { unauthorized_apps: [] };
   }
+});
+
+// Check USB removable storage drives via Python
+ipcMain.handle('check-usb-drives', async () => {
+  try {
+    const response = await fetch('http://127.0.0.1:8000/check-usb');
+    if (!response.ok) return { removable_drives: [] };
+    return await response.json();
+  } catch (error) {
+    console.error('[Electron] Error fetching /check-usb:', error);
+    return { removable_drives: [] };
+  }
+});
+
+// Get display count and information via Electron screen module
+ipcMain.handle('get-display-count', () => {
+  const displays = screen.getAllDisplays();
+  const primaryDisplay = screen.getPrimaryDisplay();
+  return {
+    count: displays.length,
+    displays: displays.map(d => ({
+      id: d.id,
+      bounds: d.bounds,
+      isPrimary: d.id === primaryDisplay.id
+    }))
+  };
 });
 
 // Kill App
@@ -300,6 +336,43 @@ ipcMain.handle('start-exam-mode', async () => {
     pythonProcess.kill('SIGTERM');
   }
   
+  // Clean up any existing screen listeners before registering fresh ones
+  if (displayAddedListener) {
+    screen.removeListener('display-added', displayAddedListener);
+    displayAddedListener = null;
+  }
+  if (displayRemovedListener) {
+    screen.removeListener('display-removed', displayRemovedListener);
+    displayRemovedListener = null;
+  }
+
+  // Register display addition listener for continuous monitoring during active exam
+  displayAddedListener = async (event, newDisplay) => {
+    const totalDisplays = screen.getAllDisplays().length;
+    console.log(`[Electron] Display change detected during exam! Total displays: ${totalDisplays}, New display ID: ${newDisplay?.id}`);
+    
+    const violationPayload = {
+      sessionId: activeSessionInfo.sessionId,
+      type: 'multiple_displays_detected',
+      severity: 4,
+      timestamp: new Date().toISOString(),
+      details: {
+        object_class: 'secondary_display',
+        displayId: newDisplay?.id,
+        totalDisplays: totalDisplays
+      }
+    };
+    
+    // Direct call to backend via forwardViolationToServer (originates in Electron)
+    await forwardViolationToServer(violationPayload);
+  };
+  screen.on('display-added', displayAddedListener);
+
+  displayRemovedListener = (event, oldDisplay) => {
+    console.log(`[Electron] Display removed during exam. Total displays remaining: ${screen.getAllDisplays().length}`);
+  };
+  screen.on('display-removed', displayRemovedListener);
+
   // Small delay to ensure port is freed
   const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
   pythonProcess = spawnPythonProcess(targetMode, false);

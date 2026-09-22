@@ -19,6 +19,14 @@ def check_apps():
         return {"unauthorized_apps": unauthorized}
     return {"unauthorized_apps": []}
 
+@app.get("/check-usb")
+def check_usb():
+    import server
+    if hasattr(server, 'usb_monitor') and server.usb_monitor:
+        removable = server.usb_monitor.check_for_existing_removable_drives()
+        return {"removable_drives": removable}
+    return {"removable_drives": []}
+
 @app.post("/kill-app")
 def kill_app(payload: dict):
     import psutil

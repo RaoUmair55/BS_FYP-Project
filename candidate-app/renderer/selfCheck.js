@@ -1,11 +1,15 @@
 const btnCamera = document.getElementById('btn-check-camera');
 const btnMic = document.getElementById('btn-check-mic');
 const btnApps = document.getElementById('btn-check-apps');
+const btnUsb = document.getElementById('btn-check-usb');
+const btnDisplay = document.getElementById('btn-check-display');
 const btnBegin = document.getElementById('btn-begin-exam');
 
 let cameraPassed = false;
 let micPassed = false;
 let appsPassed = false;
+let usbPassed = false;
+let displayPassed = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -31,7 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function updateBeginButton() {
-  btnBegin.disabled = !(cameraPassed && micPassed && appsPassed);
+  btnBegin.disabled = !(cameraPassed && micPassed && appsPassed && usbPassed && displayPassed);
 }
 
 async function uploadCameraVerificationSnapshot(video) {
@@ -258,6 +262,90 @@ btnApps.addEventListener('click', async () => {
     setStatus('check-apps', 'fail', 'Failed to check running apps.');
     btnApps.disabled = false;
     btnApps.textContent = 'Recheck';
+  }
+});
+
+btnUsb.addEventListener('click', async () => {
+  try {
+    setStatus('check-usb', 'pending');
+    btnUsb.textContent = 'Scanning USB Drives...';
+    btnUsb.disabled = true;
+
+    const result = await window.api.checkUsbDrives();
+    const drives = result.removable_drives || [];
+    
+    const list = document.getElementById('usb-list');
+    list.innerHTML = '';
+
+    if (drives.length === 0) {
+      usbPassed = true;
+      const successMsg = document.createElement('li');
+      successMsg.textContent = 'All clear — no removable USB storage devices detected.';
+      successMsg.style.color = '#10b981';
+      list.appendChild(successMsg);
+      setStatus('check-usb', 'pass');
+      btnUsb.textContent = 'USB Storage OK';
+      btnUsb.disabled = true;
+    } else {
+      usbPassed = false;
+      const explanation = document.createElement('li');
+      explanation.textContent = "Removable flash drive(s) or external hard drive(s) detected — please unplug all removable storage to continue:";
+      explanation.style.color = '#374151';
+      explanation.style.marginBottom = '0.5rem';
+      list.appendChild(explanation);
+
+      drives.forEach(drive => {
+        const li = document.createElement('li');
+        li.style.marginBottom = '6px';
+        li.style.padding = '8px';
+        li.style.background = '#fef2f2';
+        li.style.border = '1px solid #fee2e2';
+        li.style.borderRadius = '4px';
+        li.style.color = '#991b1b';
+        li.style.fontSize = '13px';
+        li.textContent = `💾 Drive ${drive.device || drive.mountpoint} — ${drive.label || 'Removable Storage'} (${drive.fstype || 'FAT32'})`;
+        list.appendChild(li);
+      });
+
+      setStatus('check-usb', 'fail', 'Please remove all USB drives / external storage.');
+      btnUsb.textContent = 'Recheck USB Drives';
+      btnUsb.disabled = false;
+    }
+    updateBeginButton();
+  } catch (err) {
+    console.error('USB Check Error:', err);
+    setStatus('check-usb', 'fail', 'Failed to scan USB storage.');
+    btnUsb.disabled = false;
+    btnUsb.textContent = 'Recheck USB Drives';
+  }
+});
+
+btnDisplay.addEventListener('click', async () => {
+  try {
+    setStatus('check-display', 'pending');
+    btnDisplay.textContent = 'Checking Displays...';
+    btnDisplay.disabled = true;
+
+    const result = await window.api.getDisplayCount();
+    const count = result.count || 1;
+
+    if (count === 1) {
+      displayPassed = true;
+      setStatus('check-display', 'pass');
+      btnDisplay.textContent = 'Single Display OK';
+      btnDisplay.disabled = true;
+    } else {
+      displayPassed = false;
+      setStatus('check-display', 'fail', `Multiple displays detected (${count} monitors active). Please disconnect additional displays — only 1 display is permitted during the exam.`);
+      btnDisplay.textContent = 'Recheck Displays';
+      btnDisplay.disabled = false;
+    }
+    updateBeginButton();
+  } catch (err) {
+    console.error('Display Check Error:', err);
+    setStatus('check-display', 'fail', 'Failed to verify display setup.');
+    btnDisplay.disabled = false;
+    btnDisplay.textContent = 'Recheck Displays';
   }
 });
 
