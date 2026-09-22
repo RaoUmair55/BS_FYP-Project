@@ -11,6 +11,15 @@ def log_violation(payload: dict):
     print("Violation logged:", payload)
     return payload
 
+@app.post("/configure-whitelist")
+def configure_whitelist(payload: dict):
+    import server
+    allowed_apps = payload.get("allowed_apps", [])
+    if hasattr(server, 'enforcer') and server.enforcer:
+        server.enforcer.set_allowed_apps(allowed_apps)
+        return {"success": True, "allowed_count": len(server.enforcer.allowed_apps)}
+    return {"success": False, "error": "WhitelistEnforcer not initialized"}
+
 @app.get("/check-apps")
 def check_apps():
     import server

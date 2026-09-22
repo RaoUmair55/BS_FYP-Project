@@ -17,6 +17,9 @@ const examSchema = new mongoose.Schema({
     paperFilename: { type: String, default: null },
     status: { type: String, enum: ['draft', 'active', 'completed'], default: 'draft' },
     durationMinutes: { type: Number, default: 60 },
+    extraMinutes: { type: Number, default: 0 },
+    startedAt: { type: Date, default: null },
+    endTime: { type: Date, default: null },
     rules: {
         detectCellPhone: { type: Boolean, default: true },
         detectMultiplePersons: { type: Boolean, default: true },
@@ -24,6 +27,12 @@ const examSchema = new mongoose.Schema({
         detectLookingAway: { type: Boolean, default: true },
         autoTerminateRiskScore: { type: Number, default: 80 }
     },
+    allowedApplications: [{
+        id: { type: String },
+        name: { type: String },
+        executable: { type: String, required: true },
+        category: { type: String, default: 'General' }
+    }],
     createdAt: { type: Date, default: Date.now }
 });
 

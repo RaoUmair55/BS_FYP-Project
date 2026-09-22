@@ -14,7 +14,66 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
     const { authFetch } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [verifyingMap, setVerifyingMap] = useState({});
+    const [extendingMap, setExtendingMap] = useState({});
+    const [currentTime, setCurrentTime] = useState(Date.now());
+
+    // Update current time ticker every second for accurate countdown
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const handleExtendTime = async (examId, addMinutes) => {
+        if (!examId) return;
+        setExtendingMap(prev => ({ ...prev, [examId]: true }));
+        try {
+            const res = await authFetch(`${API_BASE_URL}/exams/${examId}/extend-time`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ addMinutes })
+            });
+            if (res.ok) {
+                fetchSessions();
+            }
+        } catch (err) {
+            console.error('Failed to extend exam time:', err);
+        } finally {
+            setExtendingMap(prev => ({ ...prev, [examId]: false }));
+        }
+    };
+
+    const formatRemainingTime = (endTimeStr) => {
+        if (!endTimeStr) return { text: 'Untimed', isUrgent: false, isExpired: false, minutesLeft: 999 };
+        const endMs = new Date(endTimeStr).getTime();
+        const diffSecs = Math.floor((endMs - currentTime) / 1000);
+        if (diffSecs <= 0) return { text: 'Time Expired', isUrgent: true, isExpired: true, minutesLeft: 0 };
+        const mins = Math.floor(diffSecs / 60);
+        const secs = diffSecs % 60;
+        const isUrgent = mins < 5;
+        if (mins >= 60) {
+            const hrs = Math.floor(mins / 60);
+            const remMins = mins % 60;
+            return { text: `${hrs}h ${remMins}m left`, isUrgent: false, isExpired: false, minutesLeft: mins };
+        }
+        return { 
+            text: isUrgent ? `${mins}m ${secs}s left` : `${mins}m left`, 
+            isUrgent, 
+            isExpired: false, 
+            minutesLeft: mins 
+        };
+    };
+
+    // Find any active exams nearing completion (< 5 mins)
+    const expiringExams = Array.from(new Set(
+        filteredSessions
+            .filter(s => {
+                if (!s.endTime) return false;
+                const endMs = new Date(s.endTime).getTime();
+                const diffMs = endMs - currentTime;
+                return diffMs > 0 && diffMs <= 5 * 60 * 1000;
+            })
+            .map(s => s.examId)
+    ));
 
     const fetchSessions = () => {
         getActiveSessions()
@@ -117,32 +176,94 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                 </span>
             </div>
 
+            {/* Expiring Exams Alert Banner (< 5 mins remaining) */}
+            {expiringExams.length > 0 && (
+                <div style={{
+                    marginBottom: '16px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    boxShadow: '0 2px 4px rgba(245, 158, 11, 0.1)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <AlertTriangle size={20} style={{ color: '#d97706', flexShrink: 0 }} />
+                        <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#92400e' }}>
+                                ⏳ Exam Approaching Time Limit (Under 5 Minutes Remaining)
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#b45309' }}>
+                                Active exam: <strong>{expiringExams.join(', ')}</strong>. Unsubmitted sessions will auto-submit when the timer expires.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#92400e' }}>Extend:</span>
+                        {expiringExams.map(exCode => (
+                            <React.Fragment key={exCode}>
+                                <button
+                                    className="md-btn md-btn-sm"
+                                    style={{ background: '#d97706', color: '#ffffff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                                    disabled={extendingMap[exCode]}
+                                    onClick={() => handleExtendTime(exCode, 5)}
+                                >
+                                    +5m
+                                </button>
+                                <button
+                                    className="md-btn md-btn-sm"
+                                    style={{ background: '#b45309', color: '#ffffff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                                    disabled={extendingMap[exCode]}
+                                    onClick={() => handleExtendTime(exCode, 10)}
+                                >
+                                    +10m
+                                </button>
+                                <button
+                                    className="md-btn md-btn-sm"
+                                    style={{ background: '#78350f', color: '#ffffff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                                    disabled={extendingMap[exCode]}
+                                    onClick={() => handleExtendTime(exCode, 15)}
+                                >
+                                    +15m
+                                </button>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {filteredSessions.length === 0 ? (
                 <div className="md-empty-card" style={{ border: 'none', background: 'transparent' }}>
                     <Users size={40} className="md-empty-icon" />
                     <p style={{ margin: 0 }}>No active candidate sessions found.</p>
                 </div>
             ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
                     {filteredSessions.map((s) => {
                         const sid = s.sessionId || s._id;
                         const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
                         const pendingAlerts = unreviewedBySession[sid] || 0;
                         const cameraStatus = s.cameraVerificationStatus || 'none';
                         const isVerified = cameraStatus === 'verified';
+                        const timeInfo = formatRemainingTime(s.endTime);
                         const photoUrl = s.cameraVerificationPhoto 
                             ? (s.cameraVerificationPhoto.startsWith('http://') || s.cameraVerificationPhoto.startsWith('https://')
                                 ? s.cameraVerificationPhoto
                                 : `${API_BASE_URL.replace(/\/$/, '')}/${s.cameraVerificationPhoto.replace(/^\//, '')}`)
                             : null;
                         const isVerifying = verifyingMap[sid] || false;
+                        const isExtending = extendingMap[s.examId] || false;
 
                         return (
                             <div 
                                 key={sid}
                                 className="md-card candidate-webcam-card"
                                 style={{
-                                    border: currentScore >= 60 ? '2px solid #d93025' : currentScore >= 30 ? '2px solid #f9ab00' : '1px solid #dadce0',
+                                    border: currentScore >= 60 ? '2px solid #d93025' : currentScore >= 30 ? '2px solid #f9ab00' : timeInfo.isUrgent ? '2px solid #f59e0b' : '1px solid #dadce0',
                                     borderRadius: '8px',
                                     overflow: 'hidden',
                                     background: '#ffffff',
@@ -157,8 +278,20 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                         <div style={{ fontWeight: 600, fontSize: '13px', color: '#202124' }}>
                                             {s.studentName || s.studentId || 'Candidate'}
                                         </div>
-                                        <div style={{ fontSize: '11px', color: '#5f6368' }}>
-                                            {s.rollNumber ? `${s.rollNumber} • ` : ''}Code: {s.examId}
+                                        <div style={{ fontSize: '11px', color: '#5f6368', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                            <span>{s.rollNumber ? `${s.rollNumber} • ` : ''}Code: {s.examId}</span>
+                                            {/* Remaining Time Badge */}
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '1px 6px',
+                                                borderRadius: '10px',
+                                                fontWeight: 600,
+                                                background: timeInfo.isExpired ? '#fee2e2' : timeInfo.isUrgent ? '#fef3c7' : '#ecfdf5',
+                                                color: timeInfo.isExpired ? '#b91c1c' : timeInfo.isUrgent ? '#92400e' : '#047857',
+                                                border: `1px solid ${timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`
+                                            }}>
+                                                ⏱️ {timeInfo.text}
+                                            </span>
                                         </div>
                                     </div>
 
@@ -225,6 +358,25 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                     >
                                         <Eye size={12} />
                                         <span>Review</span>
+                                    </button>
+
+                                    <button
+                                        className="md-btn md-btn-sm"
+                                        style={{ fontSize: '11px', padding: '4px 6px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
+                                        onClick={() => handleExtendTime(s.examId, 5)}
+                                        disabled={isExtending}
+                                        title="Extend this exam's duration by 5 minutes"
+                                    >
+                                        +5m
+                                    </button>
+                                    <button
+                                        className="md-btn md-btn-sm"
+                                        style={{ fontSize: '11px', padding: '4px 6px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
+                                        onClick={() => handleExtendTime(s.examId, 10)}
+                                        disabled={isExtending}
+                                        title="Extend this exam's duration by 10 minutes"
+                                    >
+                                        +10m
                                     </button>
                                 </div>
                             </div>

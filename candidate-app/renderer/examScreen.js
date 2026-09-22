@@ -4,6 +4,12 @@ let sessionInfo = null;
 let timerInterval = null;
 let startTime = Date.now();
 let selectedFile = null;
+let targetEndTime = null;
+let serverTimeOffset = 0;
+let isSubmitted = false;
+let autoSubmitting = false;
+let seenWarningCount = 0;
+let statusInterval = null;
 
 async function init() {
   const loadingEl = document.getElementById('loadingMessage');
@@ -25,10 +31,35 @@ async function init() {
     }
     if (examBadge) examBadge.textContent = `Exam: ${sessionInfo.examId}`;
 
-    // Start Running Timer
+    // Fetch initial session timing and status
+    try {
+      const statusRes = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`);
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData.endTime) {
+          targetEndTime = new Date(statusData.endTime).getTime();
+        }
+        if (statusData.serverTime) {
+          serverTimeOffset = new Date(statusData.serverTime).getTime() - Date.now();
+        }
+        const durationBadge = document.getElementById('durationBadge');
+        if (durationBadge && statusData.totalDurationMinutes) {
+          durationBadge.textContent = `Total: ${statusData.totalDurationMinutes}m`;
+        }
+      }
+    } catch (e) {
+      console.warn("Initial status fetch error:", e);
+    }
+
+    // Default targetEndTime fallback to 60 mins if not yet returned
+    if (!targetEndTime) {
+      targetEndTime = Date.now() + 60 * 60 * 1000;
+    }
+
+    // Start Live Countdown Timer
     startTimer();
 
-    // Start Polling for Examiner Warnings & Termination Status
+    // Start Polling for Examiner Warnings, Time Extensions & Termination Status
     startSessionStatusPolling();
 
     // Restore Draft typed answer from LocalStorage if present
@@ -83,19 +114,48 @@ function startTimer() {
 
   if (timerInterval) clearInterval(timerInterval);
   
-  startTime = Date.now();
-  timerInterval = setInterval(() => {
-    const elapsedMs = Date.now() - startTime;
-    const totalSecs = Math.floor(elapsedMs / 1000);
-    const hrs = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
-    const mins = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
-    const secs = String(totalSecs % 60).padStart(2, '0');
-    timerDisplay.textContent = `Elapsed: ${hrs}:${mins}:${secs}`;
-  }, 1000);
-}
+  const updateCountdown = () => {
+    if (isSubmitted) return;
+    const now = Date.now() + serverTimeOffset;
+    const remainingMs = (targetEndTime || (now + 60 * 60 * 1000)) - now;
 
-let seenWarningCount = 0;
-let statusInterval = null;
+    if (remainingMs <= 0) {
+      timerDisplay.textContent = `Time Left: 00:00`;
+      timerDisplay.className = 'timer-badge critical';
+      if (!isSubmitted && !autoSubmitting) {
+        autoSubmitting = true;
+        handleAutoSubmit();
+      }
+      return;
+    }
+
+    const totalSecs = Math.floor(remainingMs / 1000);
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+
+    let timeStr = '';
+    if (hrs > 0) {
+      timeStr = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    } else {
+      timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    timerDisplay.textContent = `Time Left: ${timeStr}`;
+
+    // Update alert styling states
+    if (totalSecs <= 60) {
+      timerDisplay.className = 'timer-badge critical';
+    } else if (totalSecs <= 300) {
+      timerDisplay.className = 'timer-badge urgent';
+    } else {
+      timerDisplay.className = 'timer-badge';
+    }
+  };
+
+  updateCountdown();
+  timerInterval = setInterval(updateCountdown, 1000);
+}
 
 function startSessionStatusPolling() {
   if (!sessionInfo || !sessionInfo.sessionId) return;
@@ -113,6 +173,27 @@ function startSessionStatusPolling() {
         return;
       }
 
+      // Check for global or session time extension from examiner
+      if (data.endTime) {
+        const newEndMs = new Date(data.endTime).getTime();
+        if (targetEndTime && newEndMs > targetEndTime + 10000) {
+          const addedMinutes = Math.round((newEndMs - targetEndTime) / (60 * 1000));
+          targetEndTime = newEndMs;
+          showExaminerTimeExtensionToast(addedMinutes);
+        } else {
+          targetEndTime = newEndMs;
+        }
+      }
+
+      if (data.serverTime) {
+        serverTimeOffset = new Date(data.serverTime).getTime() - Date.now();
+      }
+
+      const durationBadge = document.getElementById('durationBadge');
+      if (durationBadge && data.totalDurationMinutes) {
+        durationBadge.textContent = `Total: ${data.totalDurationMinutes}m`;
+      }
+
       // Check for new warnings sent by examiner
       if (data.warnings && data.warnings.length > seenWarningCount) {
         const newWarnings = data.warnings.slice(seenWarningCount);
@@ -124,6 +205,34 @@ function startSessionStatusPolling() {
       console.warn('Error polling session status:', e);
     }
   }, 3000);
+}
+
+function showExaminerTimeExtensionToast(addedMinutes) {
+  let toast = document.getElementById('timeExtensionToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'timeExtensionToast';
+    toast.style.cssText = `
+      position: fixed; top: 75px; left: 50%; transform: translateX(-50%);
+      background: #ecfdf5; color: #065f46; border: 2px solid #10b981;
+      padding: 14px 20px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+      z-index: 999999; font-weight: 600; font-size: 14px; max-width: 90%;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      animation: fadeInDown 0.4s ease;
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `
+    <div>🎉 <strong>TIME EXTENDED!</strong> Your examiner added <strong>+${addedMinutes} minutes</strong> to this exam.</div>
+    <button onclick="document.getElementById('timeExtensionToast').style.display='none'" 
+            style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">
+      Got it
+    </button>
+  `;
+  toast.style.display = 'flex';
+  setTimeout(() => {
+    if (toast) toast.style.display = 'none';
+  }, 8000);
 }
 
 function showExaminerWarningToast(msg) {
@@ -362,16 +471,29 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function performSubmission() {
-    if (!sessionInfo) return;
+  async function handleAutoSubmit() {
+    const autoModal = document.getElementById('autoSubmitModal');
+    if (autoModal) autoModal.style.display = 'flex';
+    const confirmModal = document.getElementById('confirmModal');
+    if (confirmModal) confirmModal.style.display = 'none';
+    await performSubmission(true);
+  }
+
+  async function performSubmission(isAutoSubmit = false) {
+    if (!sessionInfo || isSubmitted) return;
 
     if (errorAlert) errorAlert.style.display = 'none';
-    submitExamBtn.disabled = true;
-    submitExamBtn.innerHTML = `<span>Submitting...</span>`;
+    if (submitExamBtn) {
+      submitExamBtn.disabled = true;
+      submitExamBtn.innerHTML = `<span>${isAutoSubmit ? 'Auto-Submitting...' : 'Submitting...'}</span>`;
+    }
 
     try {
       const formData = new FormData();
       formData.append('sessionId', sessionInfo.sessionId);
+      if (isAutoSubmit) {
+        formData.append('autoSubmitted', 'true');
+      }
       if (answerText && answerText.value.trim()) {
         formData.append('answerText', answerText.value.trim());
       }
@@ -391,8 +513,13 @@ window.addEventListener('DOMContentLoaded', () => {
       }
 
       // Success!
+      isSubmitted = true;
       if (timerInterval) clearInterval(timerInterval);
+      if (statusInterval) clearInterval(statusInterval);
       localStorage.removeItem(`integrityflow_draft_${sessionInfo.sessionId}`);
+
+      const autoModal = document.getElementById('autoSubmitModal');
+      if (autoModal) autoModal.style.display = 'none';
 
       document.getElementById('answerWorkspace').style.display = 'none';
       document.getElementById('successScreen').style.display = 'flex';
@@ -406,8 +533,10 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Submission failed:', err);
-      submitExamBtn.disabled = false;
-      submitExamBtn.innerHTML = `<span>Submit Exam</span><span>➔</span>`;
+      if (submitExamBtn) {
+        submitExamBtn.disabled = false;
+        submitExamBtn.innerHTML = `<span>Submit Exam</span><span>➔</span>`;
+      }
       
       if (errorAlert) {
         errorAlertMsg.textContent = `Submission failed: ${err.message}`;

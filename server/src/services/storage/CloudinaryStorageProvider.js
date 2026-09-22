@@ -35,6 +35,24 @@ class CloudinaryStorageProvider extends StorageProvider {
         const baseName = path.parse(filename).name.replace(/[^a-zA-Z0-9_-]/g, '_');
         const publicId = `${baseName}_${Date.now()}`;
 
+        // Also persist a local copy in uploads folder as local cache / fallback
+        try {
+            const fs = require('fs');
+            const localDir = path.join(__dirname, '../../../../server/uploads', folder);
+            if (!fs.existsSync(localDir)) {
+                fs.mkdirSync(localDir, { recursive: true });
+            }
+            const localFilePath = path.join(localDir, filename);
+            if (Buffer.isBuffer(fileBuffer)) {
+                fs.writeFileSync(localFilePath, fileBuffer);
+            } else if (typeof fileBuffer === 'string' && fileBuffer.startsWith('data:')) {
+                const base64Data = fileBuffer.replace(/^data:[^;]+;base64,/, '');
+                fs.writeFileSync(localFilePath, Buffer.from(base64Data, 'base64'));
+            }
+        } catch (localSaveErr) {
+            console.warn('[CloudinaryStorageProvider] Local cache write warning:', localSaveErr.message);
+        }
+
         return new Promise((resolve, reject) => {
             const uploadOptions = {
                 folder: folderPath,
@@ -99,23 +117,52 @@ class CloudinaryStorageProvider extends StorageProvider {
     }
 
     /**
-     * Delete a stored file from Cloudinary
+     * Delete a stored file from Cloudinary or local fallback
      */
     async delete(filePath) {
         if (!filePath) return false;
         try {
+            const fs = require('fs');
+            // 1. Check if filePath is a local file on disk
+            if (!filePath.startsWith('http://') && !filePath.startsWith('https://')) {
+                // If it's an absolute path
+                if (path.isAbsolute(filePath) && fs.existsSync(filePath)) {
+                    try {
+                        fs.unlinkSync(filePath);
+                        return true;
+                    } catch (err) {
+                        console.warn('[CloudinaryStorageProvider] Local unlink warning:', err);
+                    }
+                }
+
+                // If it's a relative path to uploads
+                const uploadsPath = path.join(__dirname, '../../../uploads', filePath.replace(/^\/?(uploads\/)?/, ''));
+                if (fs.existsSync(uploadsPath)) {
+                    try {
+                        fs.unlinkSync(uploadsPath);
+                        return true;
+                    } catch (err) {
+                        console.warn('[CloudinaryStorageProvider] Uploads unlink warning:', err);
+                    }
+                }
+            }
+
             const publicId = this._extractPublicId(filePath);
-            if (!publicId) return false;
+            if (!publicId) return true; // If no publicId could be extracted, treat as handled
 
             // Try image resource type first
             let result = await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-            if (result.result !== 'ok') {
+            if (!result || result.result !== 'ok') {
                 // Try raw resource type (for PDFs, docs)
                 result = await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
             }
-            return result.result === 'ok';
+            if (!result || result.result !== 'ok') {
+                // Try video resource type
+                result = await cloudinary.uploader.destroy(publicId, { resource_type: 'video' });
+            }
+            return true;
         } catch (err) {
-            console.error('[CloudinaryStorageProvider] Delete error:', err);
+            console.warn('[CloudinaryStorageProvider] Delete warning:', err.message || err);
             return false;
         }
     }
@@ -130,6 +177,7 @@ class CloudinaryStorageProvider extends StorageProvider {
         }
         try {
             const publicId = this._extractPublicId(filePath);
+            if (!publicId) return false;
             const res = await cloudinary.api.resource(publicId);
             return Boolean(res);
         } catch (err) {
@@ -151,6 +199,10 @@ class CloudinaryStorageProvider extends StorageProvider {
     _extractPublicId(filePath) {
         if (!filePath) return null;
         if (!filePath.startsWith('http://') && !filePath.startsWith('https://')) {
+            // If it has backslashes or leading slashes, it's a filesystem path, not a public_id
+            if (filePath.includes('\\') || filePath.startsWith('/') || filePath.startsWith('.')) {
+                return null;
+            }
             return filePath;
         }
         try {

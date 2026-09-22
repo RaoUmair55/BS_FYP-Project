@@ -23,6 +23,7 @@ async function handleLogin() {
       }
     } catch (e) {}
 
+    let allowedApplications = [];
     // Check if the exam code exists on the backend if available
     try {
       const checkRes = await fetch(`${serverUrl}/exams/code/${encodeURIComponent(examId)}`);
@@ -30,6 +31,9 @@ async function handleLogin() {
         const examData = await checkRes.json();
         if (examData.status && examData.status.toLowerCase() !== 'active') {
           throw new Error(`Exam "${examData.title || examId}" is currently ${examData.status.toUpperCase()} and not accepting candidates.`);
+        }
+        if (examData.allowedApplications && Array.isArray(examData.allowedApplications)) {
+          allowedApplications = examData.allowedApplications;
         }
       } else if (checkRes.status === 404) {
         throw new Error(`Exam code "${examId}" not found. Please verify the code with your instructor.`);
@@ -41,7 +45,7 @@ async function handleLogin() {
       }
     }
     
-    const entryData = { examId };
+    const entryData = { examId, allowedApplications };
     sessionStorage.setItem('sessionInfo', JSON.stringify(entryData));
     localStorage.setItem('sessionInfo', JSON.stringify(entryData));
 

@@ -29,6 +29,7 @@ let activeSessionInfo = {
   rollNumber: null,
   consentGiven: false,
   consentTimestamp: null,
+  allowedApplications: [],
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
 };
 
@@ -110,13 +111,14 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   
   lastPythonStderr = '';
 
-  // Inject session ID to the Python environment
+  // Inject session ID and allowed applications to the Python environment
   const pythonEnv = { 
     ...process.env, 
     PYTHONUNBUFFERED: '1',
     EXAM_SESSION_ID: activeSessionInfo.sessionId, 
     APP_MODE: mode,
-    IS_SELF_CHECK: isSelfCheck ? 'true' : 'false'
+    IS_SELF_CHECK: isSelfCheck ? 'true' : 'false',
+    ALLOWED_APPLICATIONS: JSON.stringify(activeSessionInfo.allowedApplications || [])
   };
   
   let proc;
@@ -253,20 +255,24 @@ ipcMain.handle('get-session-info', () => {
 });
 
 // Handle Login / Exam Code Entry
-ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber }) => {
-  console.log(`[Electron] Candidate entering exam. Exam: ${examId}`);
+ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber, allowedApplications }) => {
+  console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Allowed Apps:`, allowedApplications);
   activeSessionInfo.examId = examId;
   if (studentId) activeSessionInfo.studentId = studentId;
   if (studentName) activeSessionInfo.studentName = studentName;
   if (rollNumber) activeSessionInfo.rollNumber = rollNumber;
+  if (allowedApplications && Array.isArray(allowedApplications)) {
+    activeSessionInfo.allowedApplications = allowedApplications;
+  }
   
   // 1. Show splash/loading screen immediately while Python spawns and health-checks
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/splash.html'));
   }
 
-  // 2. Spawn python in dev mode for self-check
-  pythonProcess = spawnPythonProcess('dev', true);
+  // 2. Spawn python in configured mode (exam/dev) for self-check
+  const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
+  pythonProcess = spawnPythonProcess(targetMode, true);
   
   const isPythonReady = await waitForPythonReady();
   if (!isPythonReady) {
@@ -278,6 +284,17 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
       await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
     }
     return { success: false, error: 'AI module failed to start' };
+  }
+
+  // Send allowed applications to Python daemon
+  try {
+    await fetch('http://127.0.0.1:8000/configure-whitelist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allowed_apps: activeSessionInfo.allowedApplications || [] })
+    });
+  } catch (e) {
+    console.warn('[Electron] Warning configuring Python whitelist:', e);
   }
   
   // 3. Python is ready -> proceed to consent screen
@@ -379,6 +396,17 @@ ipcMain.handle('start-exam-mode', async () => {
   const isReady = await waitForPythonReady();
   
   if (isReady) {
+    // Re-send allowed applications to newly spawned exam-mode daemon
+    try {
+      await fetch('http://127.0.0.1:8000/configure-whitelist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowed_apps: activeSessionInfo.allowedApplications || [] })
+      });
+    } catch (e) {
+      console.warn('[Electron] Warning configuring Python whitelist in exam mode:', e);
+    }
+
     if (mainWindow) {
       await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
       // mainWindow.webContents.openDevTools();

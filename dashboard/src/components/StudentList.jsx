@@ -5,9 +5,26 @@ import { Users, Search, AlertCircle, Clock } from 'lucide-react';
 import './Components.css';
 
 export default function StudentList({ riskScores, onSelectStudent, selectedSessionId, examFilter, violations = [] }) {
-    const [sessions, setSessions] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [currentTime, setCurrentTime] = useState(Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const formatRemainingTime = (endTimeStr) => {
+        if (!endTimeStr) return null;
+        const endMs = new Date(endTimeStr).getTime();
+        const diffSecs = Math.floor((endMs - currentTime) / 1000);
+        if (diffSecs <= 0) return { text: 'Expired', isUrgent: true };
+        const mins = Math.floor(diffSecs / 60);
+        const secs = diffSecs % 60;
+        const isUrgent = mins < 5;
+        return { 
+            text: isUrgent ? `${mins}m ${secs}s` : `${mins}m left`, 
+            isUrgent 
+        };
+    };
 
     const fetchSessions = () => {
         getActiveSessions()
@@ -105,6 +122,7 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                         const pendingAlerts = unreviewedBySession[sid] || 0;
                         const displayName = s.studentName || s.studentId || 'Candidate';
                         const displayRoll = s.rollNumber || s.studentId;
+                        const timeInfo = formatRemainingTime(s.endTime);
 
                         return (
                             <div 
@@ -113,8 +131,20 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                                 className={`student-item ${isSelected ? 'selected' : ''}`}
                             >
                                 <div style={{ overflow: 'hidden' }}>
-                                    <div className="student-info-name" style={{ fontWeight: 600, fontSize: '13.5px', color: '#202124', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                        {displayName}
+                                    <div className="student-info-name" style={{ fontWeight: 600, fontSize: '13.5px', color: '#202124', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span>{displayName}</span>
+                                        {timeInfo && (
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '1px 5px',
+                                                borderRadius: '8px',
+                                                fontWeight: 600,
+                                                background: timeInfo.isUrgent ? '#fee2e2' : '#f1f5f9',
+                                                color: timeInfo.isUrgent ? '#b91c1c' : '#475569'
+                                            }}>
+                                                ⏱️ {timeInfo.text}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="student-info-sub" style={{ fontSize: '11.5px', color: '#5f6368', marginTop: '2px' }}>
                                         <span style={{ fontWeight: 500 }}>{displayRoll}</span> &bull; Exam: {s.examId}

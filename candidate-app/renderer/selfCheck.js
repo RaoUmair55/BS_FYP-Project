@@ -29,8 +29,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const exam = sessionInfo.examId ? ` • Exam: ${sessionInfo.examId}` : '';
       badge.textContent = `Candidate: ${name}${roll}${exam}`;
     }
+
+    // Display teacher-allowed applications if configured
+    const allowedNotice = document.getElementById('allowed-apps-notice');
+    if (allowedNotice && sessionInfo && sessionInfo.allowedApplications && sessionInfo.allowedApplications.length > 0) {
+      const appNames = sessionInfo.allowedApplications.map(a => a.name || a.executable).join(', ');
+      allowedNotice.innerHTML = `<strong>Permitted Tools for this exam:</strong> ${appNames}`;
+      allowedNotice.style.display = 'block';
+    }
   } catch (err) {
-    console.warn('[SelfCheck] Error setting candidate badge:', err);
+    console.warn('[SelfCheck] Error setting candidate badge or allowed apps:', err);
   }
 });
 

@@ -10,7 +10,7 @@ class WhitelistEnforcer:
     """
     Enforces a whitelist of allowed applications using psutil.
     """
-    def __init__(self, session_id, on_violation_callback, mode="exam", is_self_check=False):
+    def __init__(self, session_id, on_violation_callback, mode="exam", is_self_check=False, allowed_apps=None):
         self.session_id = session_id
         self.on_violation_callback = on_violation_callback
         self.mode = mode
@@ -20,9 +20,10 @@ class WhitelistEnforcer:
         self.monitor_thread = None
         self.whitelist = set()
         self.unkillable_pids = set()
-        
+        self.allowed_apps = set()
+
         # Hardcoded list of processes that are strictly forbidden in exam mode,
-        # overriding any accidental whitelisting.
+        # unless explicitly whitelisted by the teacher.
         self.EXAM_BLOCKED = {
             "cmd.exe",
             "powershell.exe",
@@ -44,6 +45,10 @@ class WhitelistEnforcer:
         if allow_dev_browsers or app_mode == "dev":
             self.EXAM_BLOCKED.discard("msedge.exe")
             self.EXAM_BLOCKED.discard("chrome.exe")
+
+        # Parse allowed_apps parameter or ALLOWED_APPLICATIONS env var
+        self._parse_allowed_apps(allowed_apps or os.environ.get("ALLOWED_APPLICATIONS"))
+        self.load_whitelist()
 
         # Hardcoded OS safety list - never kill these processes to keep Windows stable.
         self.SAFETY_LIST = {
@@ -145,6 +150,43 @@ class WhitelistEnforcer:
         except Exception:
             pass
 
+    def _parse_allowed_apps(self, raw_allowed):
+        if not raw_allowed:
+            return
+        try:
+            if isinstance(raw_allowed, str):
+                trimmed = raw_allowed.strip()
+                if trimmed.startswith('[') or trimmed.startswith('{'):
+                    parsed = json.loads(trimmed)
+                    if isinstance(parsed, list):
+                        for item in parsed:
+                            if isinstance(item, dict) and 'executable' in item:
+                                self.allowed_apps.add(item['executable'].lower())
+                            elif isinstance(item, str):
+                                self.allowed_apps.add(item.lower())
+                else:
+                    for app in trimmed.split(','):
+                        if app.strip():
+                            self.allowed_apps.add(app.strip().lower())
+            elif isinstance(raw_allowed, list):
+                for item in raw_allowed:
+                    if isinstance(item, dict) and 'executable' in item:
+                        self.allowed_apps.add(item['executable'].lower())
+                    elif isinstance(item, str):
+                        self.allowed_apps.add(item.lower())
+            elif isinstance(raw_allowed, set):
+                self.allowed_apps = {a.lower() for a in raw_allowed}
+        except Exception as e:
+            print(f"[WhitelistEnforcer] Error parsing allowed applications: {e}")
+
+    def set_allowed_apps(self, allowed_apps):
+        """
+        Dynamically update permitted apps during exam handshake.
+        """
+        self.allowed_apps = set()
+        self._parse_allowed_apps(allowed_apps)
+        self.load_whitelist()
+
     def _get_window_titles(self):
         try:
             import ctypes
@@ -180,13 +222,22 @@ class WhitelistEnforcer:
                 key = f"{self.mode}_whitelist"
                 entries = data.get(key, [])
                 self.whitelist = {app.lower() for app in entries}
-                if self.mode == "exam":
-                    print(f"[WhitelistEnforcer] Running in {self.mode.upper()} mode — EXAM_BLOCKED enforced ({len(self.EXAM_BLOCKED)} processes), {len(self.whitelist)} processes whitelisted")
-                else:
-                    print(f"[WhitelistEnforcer] Running in {self.mode.upper()} mode — EXAM_BLOCKED not enforced, {len(self.whitelist)} processes whitelisted")
         except Exception as e:
             print(f"[WhitelistEnforcer] Error loading whitelist: {e}")
             self.whitelist = set()
+
+        # Merge dynamic teacher-allowed applications for this specific exam
+        if self.allowed_apps:
+            for app in self.allowed_apps:
+                app_lower = app.lower()
+                self.EXAM_BLOCKED.discard(app_lower)
+                self.whitelist.add(app_lower)
+            print(f"[WhitelistEnforcer] Dynamically whitelisted {len(self.allowed_apps)} teacher-permitted tools: {list(self.allowed_apps)}")
+
+        if self.mode == "exam":
+            print(f"[WhitelistEnforcer] Running in {self.mode.upper()} mode — EXAM_BLOCKED enforced ({len(self.EXAM_BLOCKED)} processes), {len(self.whitelist)} processes whitelisted")
+        else:
+            print(f"[WhitelistEnforcer] Running in {self.mode.upper()} mode — EXAM_BLOCKED not enforced, {len(self.whitelist)} processes whitelisted")
 
     def start(self):
         self.load_whitelist()
@@ -259,12 +310,16 @@ class WhitelistEnforcer:
                     if current_user and current_user not in username_lower:
                         continue
                         
-                    # 5. Exam Mode Hard Block
+                    # 5. Teacher allowed tools check (Takes precedence before EXAM_BLOCKED)
+                    if name_lower in self.allowed_apps:
+                        continue
+
+                    # 6. Exam Mode Hard Block
                     if self.mode == "exam" and name_lower in self.EXAM_BLOCKED:
                         # Fall through to handle_violation immediately, no exceptions
                         pass
                         
-                    # 6. Allow whitelisted apps (uses exam_whitelist in exam mode, dev_whitelist in dev mode)
+                    # 7. Allow whitelisted apps (uses exam_whitelist in exam mode, dev_whitelist in dev mode)
                     elif name_lower in self.whitelist:
                         continue
 
@@ -344,7 +399,7 @@ class WhitelistEnforcer:
 
     def check_running_apps(self):
         """
-        One-off check to list currently running non-whitelisted apps using dev_whitelist rules.
+        One-off check to list currently running non-whitelisted apps using dev_whitelist rules + allowed applications.
         """
         config_path = os.path.join(os.path.dirname(__file__), 'config', 'whitelist.json')
         dev_whitelist = set()
@@ -375,7 +430,7 @@ class WhitelistEnforcer:
                     continue
                 if name_lower in self.KNOWN_BACKGROUND_SERVICES:
                     continue
-                if name_lower in dev_whitelist: 
+                if name_lower in dev_whitelist or name_lower in self.allowed_apps: 
                     continue
 
                 username = proc.info.get('username')

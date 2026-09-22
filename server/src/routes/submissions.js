@@ -34,13 +34,16 @@ router.post('/', handleUpload, async (req, res) => {
         const hasFile = !!req.file;
         const hasText = !!(answerText && answerText.trim().length > 0);
 
-        if (!hasFile && !hasText) {
+        const autoSubmitted = req.body && (req.body.autoSubmitted === 'true' || req.body.autoSubmitted === true);
+
+        if (!hasFile && !hasText && !autoSubmitted) {
             return res.status(400).json({ error: 'Please provide typed text or attach an answer file.' });
         }
 
-        let submissionType = 'text';
+        let submissionType = 'none';
         if (hasFile && hasText) submissionType = 'both';
         else if (hasFile) submissionType = 'file';
+        else if (hasText) submissionType = 'text';
 
         let savedFile = null;
         if (req.file) {
@@ -52,7 +55,7 @@ router.post('/', handleUpload, async (req, res) => {
         const submission = new Submission({
             sessionId,
             submissionType,
-            answerText: answerText || '',
+            answerText: answerText || (autoSubmitted ? '[Auto-Submitted on Time Expiry - No text entered]' : ''),
             filename: req.file ? req.file.originalname : null,
             filePath: savedFile ? savedFile.url : null,
             fileSize: req.file ? req.file.size : 0,
@@ -62,15 +65,20 @@ router.post('/', handleUpload, async (req, res) => {
         await submission.save();
 
         try {
-            await Session.findByIdAndUpdate(sessionId, { status: 'completed', endTime: new Date() });
+            await Session.findByIdAndUpdate(sessionId, { 
+                status: 'completed', 
+                endTime: new Date(),
+                autoSubmitted: autoSubmitted
+            });
         } catch (e) {
             // Ignore format mismatch if session ID is custom string
         }
 
         res.status(201).json({
-            message: 'Exam submitted successfully',
+            message: autoSubmitted ? 'Exam auto-submitted on time expiry' : 'Exam submitted successfully',
             submissionId: submission._id,
-            submissionType: submission.submissionType
+            submissionType: submission.submissionType,
+            autoSubmitted
         });
     } catch (err) {
         console.error('Error processing submission:', err);

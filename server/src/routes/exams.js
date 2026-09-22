@@ -71,6 +71,17 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
             }
         }
 
+        let parsedAllowedApps = [];
+        if (req.body.allowedApplications) {
+            try {
+                parsedAllowedApps = typeof req.body.allowedApplications === 'string' 
+                    ? JSON.parse(req.body.allowedApplications) 
+                    : req.body.allowedApplications;
+            } catch (e) {
+                parsedAllowedApps = [];
+            }
+        }
+
         let paperPath = null;
         let paperFilename = null;
         if (req.file) {
@@ -98,10 +109,17 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
                 detectLookingAway: parsedRules.detectLookingAway !== undefined ? Boolean(parsedRules.detectLookingAway) : true,
                 autoTerminateRiskScore: parsedRules.autoTerminateRiskScore !== undefined ? Number(parsedRules.autoTerminateRiskScore) : 80
             },
+            allowedApplications: Array.isArray(parsedAllowedApps) ? parsedAllowedApps : [],
             paperPath,
             paperFilename,
-            createdAt: new Date()
+            createdAt: new Date(),
+            extraMinutes: 0
         };
+
+        if (examData.status === 'active') {
+            examData.startedAt = new Date();
+            examData.endTime = new Date(Date.now() + (examData.durationMinutes) * 60 * 1000);
+        }
 
         const newExam = new Exam(examData);
         const savedExam = await newExam.save();
@@ -176,11 +194,22 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/code/:code', async (req, res) => {
     try {
         const examCode = req.params.code.trim().toUpperCase();
-        const exam = await Exam.findOne({ examCode });
+        let exam = await Exam.findOne({ examCode });
         if (!exam) {
             return res.status(404).json({ error: `Exam code "${examCode}" not found.` });
         }
-        res.json(exam);
+
+        // If exam is active but timing was not yet stamped, stamp it now
+        if (exam.status === 'active' && !exam.startedAt) {
+            exam.startedAt = new Date();
+            exam.endTime = new Date(Date.now() + ((exam.durationMinutes || 60) + (exam.extraMinutes || 0)) * 60 * 1000);
+            await exam.save();
+        }
+
+        res.json({
+            ...exam.toObject(),
+            serverTime: new Date()
+        });
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch exam details' });
     }
@@ -299,15 +328,19 @@ router.patch('/:examId/status', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Invalid status value. Must be draft, active, or completed.' });
         }
 
-        const exam = await Exam.findByIdAndUpdate(
-            req.params.examId,
-            { status },
-            { new: true }
-        );
-
+        const exam = await Exam.findById(req.params.examId);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }
+
+        exam.status = status;
+
+        if (status === 'active' && !exam.startedAt) {
+            exam.startedAt = new Date();
+            exam.endTime = new Date(Date.now() + ((exam.durationMinutes || 60) + (exam.extraMinutes || 0)) * 60 * 1000);
+        }
+
+        await exam.save();
 
         // If exam is completed, close out any remaining active student sessions for this exam
         if (status === 'completed') {
@@ -328,6 +361,103 @@ router.patch('/:examId/status', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('Error updating exam status:', err);
         res.status(500).json({ error: 'Failed to update status' });
+    }
+});
+
+// POST /exams/:examId/extend-time — Extend global duration for all students in exam (Teacher-facing)
+router.post('/:examId/extend-time', requireAuth, async (req, res) => {
+    try {
+        const { addMinutes } = req.body;
+        const minutes = Number(addMinutes);
+        if (!minutes || isNaN(minutes) || minutes <= 0) {
+            return res.status(400).json({ error: 'addMinutes must be a positive number.' });
+        }
+
+        let exam = null;
+        if (req.params.examId.match(/^[0-9a-fA-F]{24}$/)) {
+            exam = await Exam.findById(req.params.examId);
+        }
+        if (!exam) {
+            exam = await Exam.findOne({
+                $or: [
+                    { examCode: new RegExp('^' + req.params.examId + '$', 'i') },
+                    { examId: new RegExp('^' + req.params.examId + '$', 'i') }
+                ]
+            });
+        }
+
+        if (!exam) {
+            return res.status(404).json({ error: 'Exam not found' });
+        }
+
+        exam.extraMinutes = (exam.extraMinutes || 0) + minutes;
+        
+        // If already started, extend endTime based on startedAt
+        if (exam.startedAt) {
+            exam.endTime = new Date(exam.startedAt.getTime() + ((exam.durationMinutes || 60) + exam.extraMinutes) * 60 * 1000);
+        } else {
+            exam.startedAt = new Date();
+            exam.endTime = new Date(Date.now() + ((exam.durationMinutes || 60) + exam.extraMinutes) * 60 * 1000);
+        }
+
+        await exam.save();
+
+        // Update all active sessions for this exam
+        const code = exam.examCode || exam.examId;
+        await Session.updateMany(
+            {
+                $or: [
+                    { examId: new RegExp('^' + code + '$', 'i') },
+                    { examId: exam._id.toString() }
+                ],
+                status: 'active'
+            },
+            {
+                $set: {
+                    endTime: exam.endTime,
+                    extraMinutes: exam.extraMinutes
+                }
+            }
+        );
+
+        // Broadcast to all dashboard clients and candidate apps
+        const io = req.app.locals.io;
+        if (io) {
+            io.emit('timeExtended', {
+                examId: code,
+                addMinutes: minutes,
+                extraMinutes: exam.extraMinutes,
+                newEndTime: exam.endTime,
+                totalDurationMinutes: (exam.durationMinutes || 60) + exam.extraMinutes
+            });
+        }
+
+        // Record Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'EXAM_TIME_EXTENDED',
+            targetType: 'exam',
+            targetId: exam._id,
+            targetSummary: `Extended time by +${minutes} mins for Exam: "${exam.title}" (${code}). New total: ${(exam.durationMinutes || 60) + exam.extraMinutes} mins.`,
+            details: {
+                examCode: code,
+                addMinutes: minutes,
+                totalExtraMinutes: exam.extraMinutes,
+                newEndTime: exam.endTime
+            }
+        });
+
+        res.json({
+            message: `Exam time extended by +${minutes} minutes`,
+            exam: {
+                ...exam.toObject(),
+                totalDurationMinutes: (exam.durationMinutes || 60) + exam.extraMinutes,
+                serverTime: new Date()
+            }
+        });
+    } catch (err) {
+        console.error('Error extending exam time:', err);
+        res.status(500).json({ error: 'Failed to extend exam time', details: err.message });
     }
 });
 

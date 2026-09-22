@@ -96,6 +96,23 @@
       font-size: 14px;
       font-weight: 600;
       color: #0f172a;
+      transition: all 0.3s ease;
+    }
+    .timer-badge.urgent {
+      background: #fef3c7;
+      color: #92400e;
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+    }
+    .timer-badge.critical {
+      background: #fee2e2;
+      color: #b91c1c;
+      border-color: #ef4444;
+      animation: timerPulse 1s infinite alternate;
+    }
+    @keyframes timerPulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      100% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
     }
 
     /* Split Screen Layout */
@@ -484,7 +501,8 @@
       </div>
     </div>
     <div class="top-bar-right">
-      <div id="timerDisplay" class="timer-badge">Elapsed: 00:00:00</div>
+      <div id="durationBadge" class="badge" style="font-weight:600; background:#f1f5f9; color:#334155;">Total: --m</div>
+      <div id="timerDisplay" class="timer-badge">Time Left: --:--</div>
       <button id="testViolationBtn">Test Alert</button>
     </div>
   </div>
@@ -581,6 +599,21 @@
       <div class="modal-actions">
         <button id="cancelSubmitBtn" class="btn-secondary">Cancel</button>
         <button id="confirmSubmitBtn" class="btn-danger">Yes, Submit Exam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto-Submit Overlay (Shown when countdown timer reaches 00:00) -->
+  <div id="autoSubmitModal" class="modal-overlay">
+    <div class="modal-card" style="text-align: center; max-width: 440px;">
+      <div style="font-size: 40px; margin-bottom: 12px;">⏱️</div>
+      <div class="modal-title" style="color: #b91c1c;">Exam Time Expired!</div>
+      <div class="modal-desc" style="margin-bottom: 16px;">
+        The allocated exam duration has concluded. Your workspace is being automatically packaged and submitted to the examiner.
+      </div>
+      <div style="display: flex; align-items: center; justify-content: center; gap: 8px; color: #0284c7; font-weight: 600; font-size: 13px;">
+        <span class="pulse-dot" style="background:#0284c7;"></span>
+        <span>Auto-submitting your answers now...</span>
       </div>
     </div>
   </div>

@@ -2,11 +2,7 @@
   "exam_whitelist": [
     "electron.exe",
     "candidate-app-electron.exe",
-    "python.exe",
-    "code.exe",
-    "antigravity ide.exe",
-    "msedge.exe",
-    "chrome.exe"
+    "python.exe"
   ],
   "dev_whitelist": [
     "electron.exe",

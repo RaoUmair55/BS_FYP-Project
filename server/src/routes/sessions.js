@@ -50,6 +50,10 @@ router.post('/', async (req, res) => {
         const trimmedRoll = rollNumber.trim();
         const finalStudentId = (studentId && studentId.trim()) || trimmedRoll;
 
+        let examDuration = 60;
+        let examEndTime = null;
+        let examExtra = 0;
+
         // Validate against real Exam documents if any exist
         const examCount = await Exam.countDocuments();
         if (examCount > 0) {
@@ -72,6 +76,25 @@ router.post('/', async (req, res) => {
                     error: `Exam "${exam.title || exam.examCode || exam.examId}" (${inputCode}) is currently ${currentStatus.toUpperCase()} and not accepting candidates.` 
                 });
             }
+
+            examDuration = exam.durationMinutes || 60;
+            examExtra = exam.extraMinutes || 0;
+
+            // If exam has not yet officially stamped startedAt, stamp it upon first candidate entering
+            if (!exam.startedAt) {
+                exam.startedAt = new Date();
+                exam.endTime = new Date(Date.now() + (examDuration + examExtra) * 60 * 1000);
+                await exam.save();
+            } else if (exam.endTime && new Date() >= new Date(exam.endTime)) {
+                return res.status(400).json({
+                    error: `Exam time for "${inputCode}" has already ended. Submission window is closed.`
+                });
+            }
+            examEndTime = exam.endTime;
+        }
+
+        if (!examEndTime) {
+            examEndTime = new Date(Date.now() + examDuration * 60 * 1000);
         }
 
         const newSession = new Session({
@@ -79,6 +102,9 @@ router.post('/', async (req, res) => {
             studentName: trimmedName,
             rollNumber: trimmedRoll,
             examId: inputCode,
+            startTime: new Date(),
+            endTime: examEndTime,
+            extraMinutes: examExtra,
             consentGiven: consentGiven === true || consentGiven === 'true',
             consentTimestamp: consentTimestamp ? new Date(consentTimestamp) : (consentGiven ? new Date() : null)
         });
@@ -264,6 +290,27 @@ router.get('/:sessionId/status', async (req, res) => {
         if (!session) {
             return res.status(404).json({ error: 'Session not found' });
         }
+
+        let examEndTime = session.endTime;
+        let examExtra = session.extraMinutes || 0;
+        let durationMinutes = 60;
+
+        if (session.examId) {
+            const exam = await Exam.findOne({
+                $or: [
+                    { examCode: new RegExp('^' + session.examId + '$', 'i') },
+                    { examId: new RegExp('^' + session.examId + '$', 'i') }
+                ]
+            });
+            if (exam) {
+                durationMinutes = exam.durationMinutes || 60;
+                examExtra = exam.extraMinutes || 0;
+                if (exam.endTime) {
+                    examEndTime = exam.endTime;
+                }
+            }
+        }
+
         res.json({
             sessionId: session._id,
             studentId: session.studentId,
@@ -271,6 +318,13 @@ router.get('/:sessionId/status', async (req, res) => {
             rollNumber: session.rollNumber || session.studentId,
             examId: session.examId,
             status: session.status,
+            startTime: session.startTime,
+            endTime: examEndTime,
+            extraMinutes: examExtra,
+            durationMinutes: durationMinutes,
+            totalDurationMinutes: durationMinutes + examExtra,
+            serverTime: new Date(),
+            autoSubmitted: session.autoSubmitted || false,
             terminationReason: session.terminationReason,
             warnings: session.warnings || [],
             cameraVerificationStatus: session.cameraVerificationStatus,

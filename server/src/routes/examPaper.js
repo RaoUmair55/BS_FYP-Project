@@ -106,21 +106,52 @@ router.get('/:examId/paper', async (req, res) => {
             return res.status(404).json({ error: 'Exam paper not found' });
         }
 
-        // If stored in Cloudinary / remote URL, fetch and stream the buffer directly to avoid client CORS redirect blocks
-        if (exam.paperPath.startsWith('http://') || exam.paperPath.startsWith('https://')) {
+        // 1. Check if a local file exists on disk first (e.g. uploads/papers/...)
+        const fs = require('fs');
+        const path = require('path');
+        const localCandidates = [];
+        if (exam.paperPath && !exam.paperPath.startsWith('http://') && !exam.paperPath.startsWith('https://')) {
+            localCandidates.push(exam.paperPath);
+            localCandidates.push(path.join(__dirname, '../../uploads', exam.paperPath));
+            localCandidates.push(path.join(__dirname, '../../uploads/papers', exam.paperPath));
+        }
+        if (exam.paperFilename) {
+            localCandidates.push(path.join(__dirname, '../../uploads/papers', exam.paperFilename));
+        }
+        if (exam.paperPath) {
+            const base = path.basename(exam.paperPath);
+            localCandidates.push(path.join(__dirname, '../../uploads/papers', base));
+        }
+
+        for (const cand of localCandidates) {
+            if (fs.existsSync(cand)) {
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename || 'exam_paper.pdf'}"`);
+                return res.sendFile(path.resolve(cand));
+            }
+        }
+
+        // 2. If stored in Cloudinary / remote URL, fetch and stream the buffer directly
+        if (exam.paperPath && (exam.paperPath.startsWith('http://') || exam.paperPath.startsWith('https://'))) {
             try {
                 const remoteRes = await fetch(exam.paperPath);
-                if (!remoteRes.ok) {
-                    console.error(`[ExamPaper] Remote fetch failed with status: ${remoteRes.status}`);
-                    return res.status(remoteRes.status).json({ error: 'Failed to fetch exam paper from storage' });
+                if (remoteRes.ok) {
+                    const buffer = await remoteRes.arrayBuffer();
+                    const contentType = remoteRes.headers.get('content-type') || (
+                        (exam.paperFilename && exam.paperFilename.endsWith('.pdf')) ? 'application/pdf' : 'application/octet-stream'
+                    );
+                    res.setHeader('Content-Type', contentType);
+                    res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename || 'exam_paper.pdf'}"`);
+                    return res.send(Buffer.from(buffer));
                 }
-                const buffer = await remoteRes.arrayBuffer();
-                const contentType = remoteRes.headers.get('content-type') || (
-                    (exam.paperFilename && exam.paperFilename.endsWith('.pdf')) ? 'application/pdf' : 'application/octet-stream'
-                );
-                res.setHeader('Content-Type', contentType);
-                res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename || 'exam_paper.pdf'}"`);
-                return res.send(Buffer.from(buffer));
+                
+                console.error(`[ExamPaper] Remote fetch failed with status: ${remoteRes.status}`);
+                if (remoteRes.status === 401) {
+                    return res.status(401).json({ 
+                        error: 'Cloudinary blocked PDF delivery (HTTP 401). Please re-upload the exam paper or enable "PDF and ZIP file delivery" in your Cloudinary Security Settings.' 
+                    });
+                }
+                return res.status(remoteRes.status).json({ error: 'Failed to fetch exam paper from storage' });
             } catch (remoteErr) {
                 console.error('[ExamPaper] Error proxying remote paper:', remoteErr);
                 return res.status(500).json({ error: 'Failed to stream remote paper' });

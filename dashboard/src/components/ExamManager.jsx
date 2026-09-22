@@ -5,6 +5,22 @@ import './Components.css';
 
 const API_BASE = 'http://localhost:5000';
 
+const SOFTWARE_PRESETS = [
+    { id: 'vscode', name: 'Visual Studio Code', executable: 'code.exe', category: 'IDE & Coding', icon: '💻' },
+    { id: 'codeblocks', name: 'Code::Blocks', executable: 'codeblocks.exe', category: 'IDE & Coding', icon: '🧱' },
+    { id: 'devcpp', name: 'Dev-C++', executable: 'devcpp.exe', category: 'IDE & Coding', icon: '⚡' },
+    { id: 'clion', name: 'CLion (C/C++)', executable: 'clion64.exe', category: 'IDE & Coding', icon: '⚙️' },
+    { id: 'pycharm', name: 'PyCharm', executable: 'pycharm64.exe', category: 'IDE & Coding', icon: '🐍' },
+    { id: 'notepadpp', name: 'Notepad++', executable: 'notepad++.exe', category: 'IDE & Coding', icon: '📝' },
+    { id: 'eclipse', name: 'Eclipse IDE', executable: 'eclipse.exe', category: 'IDE & Coding', icon: '🌙' },
+    { id: 'intellij', name: 'IntelliJ IDEA', executable: 'idea64.exe', category: 'IDE & Coding', icon: '💡' },
+    { id: 'winword', name: 'Microsoft Word', executable: 'winword.exe', category: 'Office & Text', icon: '📄' },
+    { id: 'excel', name: 'Microsoft Excel', executable: 'excel.exe', category: 'Office & Text', icon: '📊' },
+    { id: 'notepad', name: 'Windows Notepad', executable: 'notepad.exe', category: 'Office & Text', icon: '🗒️' },
+    { id: 'calc', name: 'Windows Calculator', executable: 'calc.exe', category: 'Math & Tools', icon: '🧮' },
+    { id: 'matlab', name: 'MATLAB', executable: 'matlab.exe', category: 'Math & Tools', icon: '📐' }
+];
+
 export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSummary }) {
     const { authFetch, teacher, accessToken, setShowAuthModal, demoLogin } = useAuth();
     const [exams, setExams] = useState([]);
@@ -31,8 +47,56 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
     const [detectLookingAway, setDetectLookingAway] = useState(true);
     const [autoTerminateRiskScore, setAutoTerminateRiskScore] = useState(80);
 
+    // Allowed Applications state
+    const [allowedApps, setAllowedApps] = useState([]);
+    const [customAppName, setCustomAppName] = useState('');
+    const [customAppExe, setCustomAppExe] = useState('');
+
     const [paperFile, setPaperFile] = useState(null);
     const [formError, setFormError] = useState(null);
+
+    const togglePresetApp = (preset) => {
+        setAllowedApps(prev => {
+            const exists = prev.some(a => a.executable.toLowerCase() === preset.executable.toLowerCase());
+            if (exists) {
+                return prev.filter(a => a.executable.toLowerCase() !== preset.executable.toLowerCase());
+            } else {
+                return [...prev, {
+                    id: preset.id,
+                    name: preset.name,
+                    executable: preset.executable,
+                    category: preset.category
+                }];
+            }
+        });
+    };
+
+    const handleAddCustomApp = () => {
+        if (!customAppExe.trim()) return;
+        let exe = customAppExe.trim().toLowerCase();
+        if (!exe.endsWith('.exe')) {
+            exe = `${exe}.exe`;
+        }
+        const name = customAppName.trim() || customAppExe.trim();
+        
+        if (allowedApps.some(a => a.executable.toLowerCase() === exe)) {
+            return;
+        }
+
+        setAllowedApps(prev => [...prev, {
+            id: `custom_${Date.now()}`,
+            name,
+            executable: exe,
+            category: 'Custom Software'
+        }]);
+
+        setCustomAppName('');
+        setCustomAppExe('');
+    };
+
+    const handleRemoveAllowedApp = (executable) => {
+        setAllowedApps(prev => prev.filter(a => a.executable.toLowerCase() !== executable.toLowerCase()));
+    };
 
     useEffect(() => {
         fetchExams();
@@ -97,6 +161,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                 formData.append('paper', paperFile);
             }
 
+            formData.append('allowedApplications', JSON.stringify(allowedApps));
+
             const res = await authFetch(`${API_BASE}/exams`, {
                 method: 'POST',
                 body: formData
@@ -112,6 +178,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             setCustomCode('');
             setStatus('active');
             setPaperFile(null);
+            setAllowedApps([]);
+            setCustomAppName('');
+            setCustomAppExe('');
             setShowModal(false);
             fetchExams();
         } catch (err) {
@@ -361,6 +430,23 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             {exam.rules.autoTerminateRiskScore > 0 && <span className="md-badge" style={{ background: '#fef7e0', color: '#b06000', padding: '1px 6px' }}>⚠️ Alert Threshold ({exam.rules.autoTerminateRiskScore})</span>}
                                         </div>
                                     )}
+
+                                    {exam.allowedApplications && exam.allowedApplications.length > 0 ? (
+                                        <div className="meta-item" style={{ fontSize: '11px', color: '#1a73e8', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                                            <span style={{ fontWeight: 600, color: '#3c4043' }}>Allowed Tools:</span>
+                                            {exam.allowedApplications.map(app => (
+                                                <span key={app.executable} className="md-badge" style={{ background: '#e8f0fe', color: '#1a73e8', padding: '1px 6px' }}>
+                                                    {app.name || app.executable}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="meta-item" style={{ fontSize: '11px', color: '#5f6368', marginTop: '4px' }}>
+                                            <span className="md-badge" style={{ background: '#f1f3f4', color: '#5f6368', padding: '1px 6px' }}>
+                                                🔒 Strict Lockdown (0 External Apps)
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="exam-card-actions">
@@ -479,7 +565,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             {/* Create Exam Modal */}
             {showModal && (
                 <div className="md-modal-overlay">
-                    <div className="md-modal-card">
+                    <div className="md-modal-card" style={{ maxWidth: '640px' }}>
                         <div className="md-modal-header">
                             <h3>Create New Exam</h3>
                             <button className="md-icon-btn" onClick={() => setShowModal(false)}>
@@ -608,6 +694,117 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                     <span className="md-help-text" style={{ fontSize: '11px', color: '#5f6368', marginTop: '2px', display: 'block' }}>
                                         Highlights candidate in student roster for immediate teacher review & manual action.
                                     </span>
+                                </div>
+                            </div>
+
+                            {/* Allowed Software & Tools Configuration */}
+                            <div style={{ background: '#f8f9fa', border: '1px solid #dadce0', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <div style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
+                                        💻 Permitted Software & Coding Tools (Optional)
+                                    </div>
+                                    <span style={{ fontSize: '12px', fontWeight: 600, color: allowedApps.length > 0 ? '#188038' : '#5f6368' }}>
+                                        {allowedApps.length > 0 ? `${allowedApps.length} Permitted` : 'Full Lockdown (Default)'}
+                                    </span>
+                                </div>
+                                <p style={{ fontSize: '12px', color: '#5f6368', margin: '0 0 10px 0' }}>
+                                    Select tools required for this exam (e.g. C++ programming, essays, math). Students running these selected applications will not be blocked.
+                                </p>
+
+                                {/* Preset Tiles */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                                    {SOFTWARE_PRESETS.map((preset) => {
+                                        const isSelected = allowedApps.some(a => a.executable.toLowerCase() === preset.executable.toLowerCase());
+                                        return (
+                                            <div
+                                                key={preset.id}
+                                                onClick={() => togglePresetApp(preset)}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                    padding: '8px 10px',
+                                                    borderRadius: '6px',
+                                                    border: isSelected ? '1.5px solid #1a73e8' : '1px solid #dadce0',
+                                                    background: isSelected ? '#e8f0fe' : '#ffffff',
+                                                    cursor: 'pointer',
+                                                    userSelect: 'none',
+                                                    transition: 'all 0.15s ease'
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '16px' }}>{preset.icon}</span>
+                                                <div style={{ flex: 1, overflow: 'hidden' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: isSelected ? 600 : 500, color: isSelected ? '#1a73e8' : '#202124', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                                        {preset.name}
+                                                    </div>
+                                                    <div style={{ fontSize: '10px', color: isSelected ? '#185abc' : '#80868b' }}>
+                                                        {preset.executable}
+                                                    </div>
+                                                </div>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={isSelected} 
+                                                    onChange={() => {}} 
+                                                    style={{ cursor: 'pointer', accentColor: '#1a73e8' }} 
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Custom Executable Adder */}
+                                <div style={{ paddingTop: '10px', borderTop: '1px solid #e8eaed' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: 500, color: '#3c4043', marginBottom: '6px' }}>
+                                        ➕ Add Custom Application / Tool
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <input 
+                                            type="text" 
+                                            className="md-input" 
+                                            placeholder="Software Name (e.g. Packet Tracer)"
+                                            value={customAppName}
+                                            onChange={(e) => setCustomAppName(e.target.value)}
+                                            style={{ fontSize: '12px', padding: '6px 10px' }}
+                                        />
+                                        <input 
+                                            type="text" 
+                                            className="md-input" 
+                                            placeholder="Executable (e.g. packettracer.exe)"
+                                            value={customAppExe}
+                                            onChange={(e) => setCustomAppExe(e.target.value)}
+                                            style={{ fontSize: '12px', padding: '6px 10px' }}
+                                        />
+                                        <button 
+                                            type="button" 
+                                            className="md-btn md-btn-outlined md-btn-sm" 
+                                            onClick={handleAddCustomApp}
+                                            style={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            Add Tool
+                                        </button>
+                                    </div>
+
+                                    {/* Custom Apps Added Display */}
+                                    {allowedApps.filter(a => !SOFTWARE_PRESETS.some(p => p.executable.toLowerCase() === a.executable.toLowerCase())).length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                            {allowedApps
+                                                .filter(a => !SOFTWARE_PRESETS.some(p => p.executable.toLowerCase() === a.executable.toLowerCase()))
+                                                .map(app => (
+                                                    <span 
+                                                        key={app.executable} 
+                                                        className="md-badge" 
+                                                        style={{ background: '#e8f0fe', color: '#1a73e8', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
+                                                    >
+                                                        <span>{app.name} ({app.executable})</span>
+                                                        <X 
+                                                            size={12} 
+                                                            style={{ cursor: 'pointer' }} 
+                                                            onClick={() => handleRemoveAllowedApp(app.executable)} 
+                                                        />
+                                                    </span>
+                                                ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

@@ -300,43 +300,68 @@ router.delete('/assets/:type/:id', async (req, res) => {
         let deletedUrl = null;
         let targetSummary = '';
 
-        if (type === 'paper') {
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: `Invalid ID: ${id}` });
+        }
+
+        const normalizedType = (type || '').toLowerCase();
+
+        if (normalizedType === 'paper' || normalizedType === 'papers') {
             const exam = await Exam.findById(id);
             if (!exam) return res.status(404).json({ error: 'Exam not found' });
             deletedUrl = exam.paperPath;
-            targetSummary = `Deleted Question Paper for Exam: ${exam.title} (${exam.examCode})`;
+            targetSummary = `Deleted Question Paper for Exam: ${exam.title || exam.examCode} (${exam.examCode})`;
             
-            if (deletedUrl) await storageService.delete(deletedUrl);
-            exam.paperPath = null;
-            exam.paperFilename = null;
-            await exam.save();
-        } else if (type === 'screenshot') {
+            if (deletedUrl) {
+                try {
+                    await storageService.delete(deletedUrl);
+                } catch (delErr) {
+                    console.warn('[AdminDeleteAsset] Storage delete warning (paper):', delErr.message);
+                }
+            }
+            await Exam.updateOne({ _id: id }, { $set: { paperPath: null, paperFilename: null } });
+        } else if (normalizedType === 'screenshot' || normalizedType === 'screenshots') {
             const violation = await Violation.findById(id);
             if (!violation) return res.status(404).json({ error: 'Violation not found' });
             deletedUrl = violation.screenshotPath;
             targetSummary = `Deleted Screenshot for Violation: ${violation.type} (ID: ${violation._id})`;
 
-            if (deletedUrl) await storageService.delete(deletedUrl);
-            violation.screenshotPath = null;
-            await violation.save();
-        } else if (type === 'verification') {
+            if (deletedUrl) {
+                try {
+                    await storageService.delete(deletedUrl);
+                } catch (delErr) {
+                    console.warn('[AdminDeleteAsset] Storage delete warning (screenshot):', delErr.message);
+                }
+            }
+            await Violation.updateOne({ _id: id }, { $set: { screenshotPath: null } });
+        } else if (normalizedType === 'verification' || normalizedType === 'verifications') {
             const session = await Session.findById(id);
             if (!session) return res.status(404).json({ error: 'Session not found' });
             deletedUrl = session.cameraVerificationPhoto;
             targetSummary = `Deleted Verification Photo for Candidate: ${session.studentName || session.studentId}`;
 
-            if (deletedUrl) await storageService.delete(deletedUrl);
-            session.cameraVerificationPhoto = null;
-            await session.save();
-        } else if (type === 'submission') {
+            if (deletedUrl) {
+                try {
+                    await storageService.delete(deletedUrl);
+                } catch (delErr) {
+                    console.warn('[AdminDeleteAsset] Storage delete warning (verification):', delErr.message);
+                }
+            }
+            await Session.updateOne({ _id: id }, { $set: { cameraVerificationPhoto: null } });
+        } else if (normalizedType === 'submission' || normalizedType === 'submissions') {
             const sub = await Submission.findById(id);
             if (!sub) return res.status(404).json({ error: 'Submission not found' });
             deletedUrl = sub.fileUrl;
-            targetSummary = `Deleted Submission file for Candidate: ${sub.studentName} (${sub.rollNumber})`;
+            targetSummary = `Deleted Submission file for Candidate: ${sub.studentName || 'Candidate'} (${sub.rollNumber || 'N/A'})`;
 
-            if (deletedUrl) await storageService.delete(deletedUrl);
-            sub.fileUrl = null;
-            await sub.save();
+            if (deletedUrl) {
+                try {
+                    await storageService.delete(deletedUrl);
+                } catch (delErr) {
+                    console.warn('[AdminDeleteAsset] Storage delete warning (submission):', delErr.message);
+                }
+            }
+            await Submission.updateOne({ _id: id }, { $set: { fileUrl: null } });
         } else {
             return res.status(400).json({ error: 'Invalid asset type. Expected: paper, screenshot, verification, submission' });
         }
@@ -347,10 +372,10 @@ router.delete('/assets/:type/:id', async (req, res) => {
             targetType: 'storage_asset',
             targetId: id,
             targetSummary,
-            details: { assetType: type, deletedUrl }
+            details: { assetType: normalizedType, deletedUrl }
         });
 
-        res.json({ message: 'Asset permanently removed from storage and unlinked from database', id, type, deletedUrl });
+        res.json({ message: 'Asset permanently removed from storage and unlinked from database', id, type: normalizedType, deletedUrl });
     } catch (err) {
         console.error('[AdminDeleteAsset] Error deleting asset:', err);
         res.status(500).json({ error: 'Failed to delete asset', details: err.message });
@@ -373,43 +398,68 @@ router.post('/assets/batch-delete', async (req, res) => {
 
         for (const item of items) {
             const { type, id } = item;
+            const normalizedType = (type || '').toLowerCase();
             try {
-                if (type === 'paper') {
+                if (!mongoose.Types.ObjectId.isValid(id)) {
+                    results.push({ id, type, success: false, error: 'Invalid ID' });
+                    continue;
+                }
+
+                if (normalizedType === 'paper' || normalizedType === 'papers') {
                     const exam = await Exam.findById(id);
                     if (exam && exam.paperPath) {
-                        await storageService.delete(exam.paperPath);
-                        exam.paperPath = null;
-                        exam.paperFilename = null;
-                        await exam.save();
+                        try {
+                            await storageService.delete(exam.paperPath);
+                        } catch (e) {
+                            console.warn('[AdminBatchDelete] Storage delete warning:', e.message);
+                        }
+                        await Exam.updateOne({ _id: id }, { $set: { paperPath: null, paperFilename: null } });
                         deletedCount++;
                         results.push({ id, type, success: true });
+                    } else if (exam) {
+                        results.push({ id, type, success: true, note: 'Already deleted' });
                     }
-                } else if (type === 'screenshot') {
+                } else if (normalizedType === 'screenshot' || normalizedType === 'screenshots') {
                     const violation = await Violation.findById(id);
                     if (violation && violation.screenshotPath) {
-                        await storageService.delete(violation.screenshotPath);
-                        violation.screenshotPath = null;
-                        await violation.save();
+                        try {
+                            await storageService.delete(violation.screenshotPath);
+                        } catch (e) {
+                            console.warn('[AdminBatchDelete] Storage delete warning:', e.message);
+                        }
+                        await Violation.updateOne({ _id: id }, { $set: { screenshotPath: null } });
                         deletedCount++;
                         results.push({ id, type, success: true });
+                    } else if (violation) {
+                        results.push({ id, type, success: true, note: 'Already deleted' });
                     }
-                } else if (type === 'verification') {
+                } else if (normalizedType === 'verification' || normalizedType === 'verifications') {
                     const session = await Session.findById(id);
                     if (session && session.cameraVerificationPhoto) {
-                        await storageService.delete(session.cameraVerificationPhoto);
-                        session.cameraVerificationPhoto = null;
-                        await session.save();
+                        try {
+                            await storageService.delete(session.cameraVerificationPhoto);
+                        } catch (e) {
+                            console.warn('[AdminBatchDelete] Storage delete warning:', e.message);
+                        }
+                        await Session.updateOne({ _id: id }, { $set: { cameraVerificationPhoto: null } });
                         deletedCount++;
                         results.push({ id, type, success: true });
+                    } else if (session) {
+                        results.push({ id, type, success: true, note: 'Already deleted' });
                     }
-                } else if (type === 'submission') {
+                } else if (normalizedType === 'submission' || normalizedType === 'submissions') {
                     const sub = await Submission.findById(id);
                     if (sub && sub.fileUrl) {
-                        await storageService.delete(sub.fileUrl);
-                        sub.fileUrl = null;
-                        await sub.save();
+                        try {
+                            await storageService.delete(sub.fileUrl);
+                        } catch (e) {
+                            console.warn('[AdminBatchDelete] Storage delete warning:', e.message);
+                        }
+                        await Submission.updateOne({ _id: id }, { $set: { fileUrl: null } });
                         deletedCount++;
                         results.push({ id, type, success: true });
+                    } else if (sub) {
+                        results.push({ id, type, success: true, note: 'Already deleted' });
                     }
                 }
             } catch (itemErr) {
@@ -453,10 +503,12 @@ router.post('/assets/purge-exam', async (req, res) => {
 
         // 1. Purge Paper
         if (purgePapers && exam && exam.paperPath) {
-            await storageService.delete(exam.paperPath);
-            exam.paperPath = null;
-            exam.paperFilename = null;
-            await exam.save();
+            try {
+                await storageService.delete(exam.paperPath);
+            } catch (e) {
+                console.warn('[AdminPurgeExam] Paper delete warning:', e.message);
+            }
+            await Exam.updateOne({ _id: exam._id }, { $set: { paperPath: null, paperFilename: null } });
             purgedPapers++;
         }
 
@@ -468,9 +520,12 @@ router.post('/assets/purge-exam', async (req, res) => {
         if (purgeVerification) {
             for (const s of sessions) {
                 if (s.cameraVerificationPhoto) {
-                    await storageService.delete(s.cameraVerificationPhoto);
-                    s.cameraVerificationPhoto = null;
-                    await s.save();
+                    try {
+                        await storageService.delete(s.cameraVerificationPhoto);
+                    } catch (e) {
+                        console.warn('[AdminPurgeExam] Verification photo delete warning:', e.message);
+                    }
+                    await Session.updateOne({ _id: s._id }, { $set: { cameraVerificationPhoto: null } });
                     purgedVerification++;
                 }
             }
@@ -480,9 +535,12 @@ router.post('/assets/purge-exam', async (req, res) => {
         if (purgeScreenshots && sessionIds.length > 0) {
             const violations = await Violation.find({ sessionId: { $in: sessionIds }, screenshotPath: { $ne: null } });
             for (const v of violations) {
-                await storageService.delete(v.screenshotPath);
-                v.screenshotPath = null;
-                await v.save();
+                try {
+                    await storageService.delete(v.screenshotPath);
+                } catch (e) {
+                    console.warn('[AdminPurgeExam] Screenshot delete warning:', e.message);
+                }
+                await Violation.updateOne({ _id: v._id }, { $set: { screenshotPath: null } });
                 purgedScreenshots++;
             }
         }
