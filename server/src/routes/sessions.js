@@ -83,6 +83,11 @@ router.post('/', async (req, res) => {
             // If exam has paper uploaded and paper is not yet released, exam is in Waiting Lobby
             if (exam.paperPath && exam.paperReleased === false) {
                 examEndTime = null;
+            } else if (exam.paperPath && exam.paperReleased === true) {
+                // Lobby is closed: Question paper was already released by the examiner
+                return res.status(403).json({
+                    error: `Lobby is closed for "${inputCode}". The examiner has already released the question paper and late entry is not permitted.`
+                });
             } else {
                 // If exam has not yet officially stamped startedAt and no lobby is pending
                 if (!exam.startedAt) {

@@ -16,7 +16,8 @@
     .status-pass { color: #10b981; }
     .status-fail { color: #ef4444; }
     .check-content { display: flex; flex-direction: column; gap: 0.5rem; }
-    video { width: 100%; max-width: 320px; height: 240px; background: #000; border-radius: 4px; object-fit: cover; }
+    video { width: 100%; height: 100%; max-width: 100%; background: #000; border-radius: 8px; object-fit: cover; display: block; }
+    .camera-wrapper video { width: 100% !important; max-width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
     .mic-meter-container { width: 100%; height: 20px; background: #e5e7eb; border-radius: 10px; overflow: hidden; }
     .mic-meter { height: 100%; background: #10b981; width: 0%; transition: width 0.1s; }
     .app-list { list-style-type: none; padding: 0; margin: 0; color: #ef4444; }
@@ -39,13 +40,48 @@
 
     <div class="check-item" id="check-camera">
       <div class="check-header">
-        <span>1. Camera Check</span>
+        <span>1. Camera & Face Calibration Check</span>
         <span class="status-icon status-pending">⏳</span>
       </div>
       <div class="check-content">
-        <video id="camera-preview" autoplay muted playsinline></video>
+        <div class="camera-wrapper" style="position: relative; width: 100%; max-width: 440px; height: 290px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #0f172a; box-shadow: 0 4px 14px rgba(0,0,0,0.18);">
+          <video id="camera-preview" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
+          
+          <!-- Alignment Frame Overlay -->
+          <div id="camera-frame-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <svg viewBox="0 0 440 290" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
+              <!-- Outer Darkened Mask -->
+              <defs>
+                <mask id="face-hole">
+                  <rect width="440" height="290" fill="white" />
+                  <ellipse cx="220" cy="136" rx="82" ry="102" fill="black" />
+                </mask>
+              </defs>
+              <rect width="440" height="290" fill="rgba(15, 23, 42, 0.40)" mask="url(#face-hole)" />
+              
+              <!-- Oval Guide Stroke -->
+              <ellipse id="face-guide-ellipse" cx="220" cy="136" rx="82" ry="102" fill="none" stroke="#38bdf8" stroke-width="3" stroke-dasharray="8 6" style="transition: all 0.3s ease;" />
+            </svg>
+
+            <!-- Guide Text Badge -->
+            <div id="camera-guide-text" style="position: absolute; bottom: 14px; background: rgba(15, 23, 42, 0.88); color: #e0f2fe; padding: 7px 16px; border-radius: 20px; font-size: 12.5px; font-weight: 600; border: 1px solid rgba(56, 189, 248, 0.45); backdrop-filter: blur(4px); transition: all 0.3s ease;">
+              👤 Position your face comfortably inside the frame
+            </div>
+          </div>
+
+          <!-- Calibration Success Overlay -->
+          <div id="calibration-success-badge" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(16, 185, 129, 0.15); display: none; align-items: center; justify-content: center; pointer-events: none; border: 3px solid #10b981;">
+            <span style="background: #10b981; color: white; padding: 7px 18px; border-radius: 20px; font-weight: bold; font-size: 13.5px; box-shadow: 0 4px 8px rgba(0,0,0,0.15);">✓ Face Calibrated</span>
+          </div>
+        </div>
+
+        <div id="calibration-instruction-box" style="display: none; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 10px 14px; margin-top: 10px; font-size: 13px; color: #166534; line-height: 1.5;">
+          <strong>✓ Head Position Calibrated:</strong> Please maintain this natural upright position facing the screen during the exam. Occasional glances at your keyboard while typing answers are permitted.
+        </div>
+
         <p class="error-text" style="color: #ef4444; display: none;"></p>
-        <button id="btn-check-camera" class="secondary-button">Start Camera Check</button>
+        <button id="btn-check-camera" class="secondary-button">1. Turn On Camera Preview</button>
+        <button id="btn-capture-calibration" class="secondary-button" style="display: none; background: #2563eb; color: #ffffff; font-weight: 600; border: none; margin-top: 8px;">📸 2. Capture Reference Photo & Calibrate</button>
       </div>
     </div>
 

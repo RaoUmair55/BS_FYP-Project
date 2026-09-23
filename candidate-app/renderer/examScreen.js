@@ -302,10 +302,97 @@ function startSessionStatusPolling() {
         const latestWarning = newWarnings[newWarnings.length - 1];
         showExaminerWarningToast(latestWarning.message);
       }
+
+      // Check if examiner flagged camera verification (issue with initial photo)
+      if ((data.cameraVerificationStatus === 'rejected' || data.cameraVerificationStatus === 'flagged' || data.cameraVerificationStatus === 're_verify') && !isReverifyingCamera) {
+        showCameraReverificationModal(data.cameraVerificationNote);
+      }
     } catch (e) {
       console.warn('Error polling session status:', e);
     }
   }, 3000);
+}
+
+let isReverifyingCamera = false;
+let reverifyStream = null;
+
+async function showCameraReverificationModal(note) {
+  const modal = document.getElementById('reverifyCameraModal');
+  const video = document.getElementById('reverify-video');
+  const noteText = document.getElementById('reverifyNoteText');
+  const snapBtn = document.getElementById('btn-snap-reverification');
+
+  if (!modal || isReverifyingCamera) return;
+  isReverifyingCamera = true;
+
+  if (noteText && note) {
+    noteText.innerHTML = `<strong>Examiner Note:</strong> "${note}"<br><span style="font-size:12px; margin-top:4px; display:block;">Please adjust your camera angle/lighting and capture a new verification photo.</span>`;
+  }
+
+  modal.style.display = 'flex';
+
+  try {
+    reverifyStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
+    if (video) video.srcObject = reverifyStream;
+  } catch (err) {
+    console.error('Failed to open reverification camera:', err);
+  }
+
+  if (snapBtn) {
+    snapBtn.onclick = async () => {
+      if (!video) return;
+      snapBtn.disabled = true;
+      snapBtn.textContent = 'Submitting New Photo...';
+
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+
+        const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/camera-verification`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ photoBase64 })
+        });
+
+        if (reverifyStream) {
+          reverifyStream.getTracks().forEach(t => t.stop());
+          reverifyStream = null;
+        }
+
+        modal.style.display = 'none';
+        isReverifyingCamera = false;
+        showPhotoSubmittedToast();
+      } catch (e) {
+        console.error('Failed to upload reverified photo:', e);
+        snapBtn.disabled = false;
+        snapBtn.textContent = 'Retry Capture';
+      }
+    };
+  }
+}
+
+function showPhotoSubmittedToast() {
+  let toast = document.getElementById('photoSubmittedToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'photoSubmittedToast';
+    toast.style.cssText = `
+      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+      background: #ecfdf5; color: #065f46; border: 2px solid #10b981;
+      padding: 12px 20px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+      z-index: 999999; font-weight: 600; font-size: 14px;
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `✓ Verification photo updated & sent to examiner.`;
+  toast.style.display = 'flex';
+  setTimeout(() => {
+    if (toast) toast.style.display = 'none';
+  }, 5000);
 }
 
 function showExaminerTimeExtensionToast(addedMinutes) {

@@ -42,6 +42,8 @@ class AIMonitor:
         self.running = False
         self.frame_count = 0
         self.head_turn_start = None
+        self.lateral_turn_start = None
+        self.downward_gaze_start = None
         self.no_face_start = None
         self.second_person_counter = 0
         self.mp_face_mesh = None
@@ -57,8 +59,9 @@ class AIMonitor:
                     self.thresholds = json.load(f)
             else:
                 self.thresholds = {
-                    "yaw_threshold_degrees": 25,
-                    "sustained_seconds": 3,
+                    "yaw_threshold_degrees": 28,
+                    "sustained_lateral_seconds": 1.5,
+                    "sustained_downward_seconds": 2.0,
                     "object_detection_confidence": 0.5
                 }
                 
@@ -291,31 +294,43 @@ class AIMonitor:
         else:
             self.second_person_counter = 0
 
-        # 3. Head Turn / Gaze Away Check
-        is_head_turned = False
+        # 3. Head Turn & Multi-Directional Gaze/Movement Check
+        is_lateral_turn = False
+        is_downward_gaze = False
         turn_reason = ""
+        frame_h, frame_w = frame.shape[:2]
 
         if num_profiles > 0 and num_faces == 0:
             # Candidate turned profile / sideways
-            is_head_turned = True
+            is_lateral_turn = True
             turn_reason = "Side head turn (profile view)"
         elif num_faces == 1:
             (x, y, w, h) = faces[0]
+            face_center_y = y + h / 2
+            face_center_x = x + w / 2
             
-            # If profile also triggered alongside frontal
-            if num_profiles > 0:
-                is_head_turned = True
+            # Check for downward head pitch (looking down at desk / notes / lap)
+            # Only trigger downward gaze if face is genuinely lowered in the frame (looking down at desk)
+            if (face_center_y / frame_h) > 0.70 or (y + h) / frame_h > 0.90:
+                is_downward_gaze = True
+                turn_reason = "Downward head tilt (looking down at desk)"
+            # Profile detected alongside frontal face -> angled turn
+            elif num_profiles > 0:
+                is_lateral_turn = True
                 turn_reason = "Angled head turn"
             elif self.eye_cascade is not None:
-                # Check eyes within upper face region
                 roi_gray = gray[y:y + int(h * 0.6), x:x + w]
                 eyes = self.eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=3, minSize=(15, 15))
                 
-                if len(eyes) == 1:
+                # If face is somewhat low and eyes are completely hidden (head tilted down)
+                if len(eyes) == 0 and (face_center_y / frame_h) > 0.62:
+                    is_downward_gaze = True
+                    turn_reason = "Downward gaze (eyes lowered away from screen)"
+                elif len(eyes) == 1:
                     ex, ey, ew, eh = eyes[0]
                     rel_pos = (ex + ew / 2) / w
-                    if rel_pos < 0.25 or rel_pos > 0.75:
-                        is_head_turned = True
+                    if rel_pos < 0.22 or rel_pos > 0.78:
+                        is_lateral_turn = True
                         turn_reason = "Lateral gaze shift (single eye visible)"
                 elif len(eyes) >= 2:
                     sorted_eyes = sorted(eyes, key=lambda e: e[0])
@@ -323,28 +338,51 @@ class AIMonitor:
                     eye2_center = sorted_eyes[-1][0] + sorted_eyes[-1][2] / 2
                     eye_mid = (eye1_center + eye2_center) / 2
                     asymmetry = abs(eye_mid - (w / 2)) / (w / 2)
-                    if asymmetry > 0.32:
-                        is_head_turned = True
+                    if asymmetry > 0.35:
+                        is_lateral_turn = True
                         turn_reason = f"Facial gaze asymmetry ({round(asymmetry, 2)})"
 
-        if is_head_turned:
-            if self.head_turn_start is None:
-                self.head_turn_start = time.time()
+        # Check Lateral Head Turn (Threshold: 1.5s)
+        if is_lateral_turn:
+            if self.lateral_turn_start is None:
+                self.lateral_turn_start = time.time()
             else:
-                elapsed = time.time() - self.head_turn_start
-                sustained_limit = self.thresholds.get("sustained_seconds", 2)
-                if elapsed >= sustained_limit:
+                elapsed = time.time() - self.lateral_turn_start
+                lateral_limit = self.thresholds.get("sustained_lateral_seconds", 1.5)
+                if elapsed >= lateral_limit:
                     annotated = frame.copy()
-                    cv2.putText(annotated, "HEAD TURN DETECTED", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                    cv2.putText(annotated, "LOOKING AWAY / HEAD TURN", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+                    cv2.putText(annotated, f"Reason: {turn_reason}", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
                     self._emit_violation(
                         "head_turn_away", 
                         severity=2, 
                         details={"duration": round(elapsed, 1), "reason": turn_reason},
                         frame=annotated
                     )
-                    self.head_turn_start = None
+                    self.lateral_turn_start = None
         else:
-            self.head_turn_start = None
+            self.lateral_turn_start = None
+
+        # Check Downward Gaze / Desk Glance (Threshold: 2.0s)
+        if is_downward_gaze:
+            if self.downward_gaze_start is None:
+                self.downward_gaze_start = time.time()
+            else:
+                elapsed = time.time() - self.downward_gaze_start
+                downward_limit = self.thresholds.get("sustained_downward_seconds", 2.0)
+                if elapsed >= downward_limit:
+                    annotated = frame.copy()
+                    cv2.putText(annotated, "LOOKING DOWN / DESK GAZE", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+                    cv2.putText(annotated, f"Reason: {turn_reason}", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
+                    self._emit_violation(
+                        "head_turn_away", 
+                        severity=2, 
+                        details={"duration": round(elapsed, 1), "reason": turn_reason},
+                        frame=annotated
+                    )
+                    self.downward_gaze_start = None
+        else:
+            self.downward_gaze_start = None
 
     def stop(self):
         """Stops the monitoring loop cleanly by breaking the while loop condition."""

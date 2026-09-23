@@ -213,6 +213,15 @@ router.get('/code/:code', async (req, res) => {
             return res.status(404).json({ error: `Exam code "${examCode}" not found.` });
         }
 
+        // If exam is active and question paper was already released, late joining is prohibited
+        if (exam.status === 'active' && exam.paperPath && exam.paperReleased === true) {
+            return res.status(403).json({
+                error: `Lobby is closed for "${examCode}". The question paper has already been released by the examiner. Late entry is not permitted.`,
+                lobbyClosed: true,
+                paperReleased: true
+            });
+        }
+
         // If exam is active and has no paper attached (untimed/immediate mode), stamp startedAt if not set
         if (exam.status === 'active' && !exam.startedAt && (!exam.paperPath || exam.paperReleased !== false)) {
             exam.startedAt = new Date();

@@ -40,8 +40,15 @@ async function handleLogin() {
         if (examData.allowedApplications && Array.isArray(examData.allowedApplications)) {
           allowedApplications = examData.allowedApplications;
         }
-      } else if (checkRes.status === 404) {
-        throw new Error(`Exam code "${examId}" not found. Please verify the code with your instructor.`);
+      } else {
+        const errJson = await checkRes.json().catch(() => ({}));
+        if (checkRes.status === 403 || errJson.lobbyClosed) {
+          throw new Error(errJson.error || `🚫 Lobby Closed: The question paper has already been released by the examiner. Late entry is not permitted.`);
+        } else if (checkRes.status === 404) {
+          throw new Error(`Exam code "${examId}" not found. Please verify the code with your instructor.`);
+        } else if (errJson.error) {
+          throw new Error(errJson.error);
+        }
       }
     } catch (fetchErr) {
       // If network error / backend unreachable, we warn or re-throw specific message

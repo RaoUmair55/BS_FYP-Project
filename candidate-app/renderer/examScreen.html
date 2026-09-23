@@ -718,6 +718,24 @@
         <span class="pulse-dot" style="background:#0284c7;"></span>
         <span>Auto-submitting your answers now...</span>
       </div>
+  <!-- Camera Re-verification Modal (Shown when teacher flags camera) -->
+  <div id="reverifyCameraModal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 480px; text-align: center;">
+      <div style="font-size: 36px; margin-bottom: 8px;">📷</div>
+      <div class="modal-title" style="color: #b45309;">Examiner Camera Verification Alert</div>
+      <div id="reverifyNoteText" class="modal-desc" style="color: #92400e; background: #fef3c7; border: 1px solid #fde68a; padding: 10px; border-radius: 6px; margin-bottom: 16px; font-size: 13.5px;">
+        Your examiner flagged an issue with your identity / camera angle. Please adjust your camera and take a new verification photo.
+      </div>
+      
+      <div class="reverify-cam-wrapper" style="position: relative; width: 100%; max-width: 380px; height: 240px; margin: 0 auto 16px auto; border-radius: 8px; overflow: hidden; background: #0f172a;">
+        <video id="reverify-video" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
+      </div>
+
+      <div class="modal-actions" style="justify-content: center; gap: 12px;">
+        <button id="btn-snap-reverification" class="btn-danger" style="background: #2563eb; width: 100%;">
+          📸 Take Photo & Submit to Examiner
+        </button>
+      </div>
     </div>
   </div>
 

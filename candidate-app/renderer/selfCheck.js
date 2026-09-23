@@ -104,54 +104,246 @@ function setStatus(id, status, errorMsg = '') {
   }
 }
 
+const btnCaptureCalibration = document.getElementById('btn-capture-calibration');
 let activeCameraStream = null;
+let faceAlignmentInterval = null;
+let isFaceProperlyAligned = false;
+
+function startFaceAlignmentTracking(video) {
+  if (faceAlignmentInterval) clearInterval(faceAlignmentInterval);
+  
+  const guideEllipse = document.getElementById('face-guide-ellipse');
+  const guideText = document.getElementById('camera-guide-text');
+  const btnCapture = document.getElementById('btn-capture-calibration');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 240;
+  canvas.height = 180;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  let isChecking = false;
+
+  faceAlignmentInterval = setInterval(async () => {
+    if (!activeCameraStream || cameraPassed || !video || video.readyState < 2 || isChecking) return;
+    isChecking = true;
+
+    let faceDetected = false;
+    let faceCenterX = 0.5;
+    let faceCenterY = 0.5;
+
+    try {
+      ctx.drawImage(video, 0, 0, 240, 180);
+      const thumbnailB64 = canvas.toDataURL('image/jpeg', 0.6);
+
+      const resp = await fetch('http://127.0.0.1:8000/detect-face', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: thumbnailB64 }),
+        signal: AbortSignal.timeout(1000)
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.detected) {
+          faceDetected = true;
+          faceCenterX = data.faceCenterX;
+          faceCenterY = data.faceCenterY;
+        }
+      }
+    } catch (e) {
+      // If Python endpoint temporarily unreachable, try native browser detector
+      if ('FaceDetector' in window) {
+        try {
+          const nativeDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+          const faces = await nativeDetector.detect(video);
+          if (faces && faces.length > 0) {
+            faceDetected = true;
+            const box = faces[0].boundingBox;
+            const vw = video.videoWidth || 640;
+            const vh = video.videoHeight || 480;
+            faceCenterX = (box.x + box.width / 2) / vw;
+            faceCenterY = (box.y + box.height / 2) / vh;
+          }
+        } catch (err) {}
+      }
+    } finally {
+      isChecking = false;
+    }
+
+    if (!faceDetected) {
+      isFaceProperlyAligned = false;
+      if (guideEllipse) {
+        guideEllipse.setAttribute('stroke', '#ef4444');
+        guideEllipse.setAttribute('stroke-dasharray', '8 6');
+      }
+      if (guideText) {
+        guideText.textContent = '❌ No face detected. Look directly into camera';
+        guideText.style.borderColor = '#ef4444';
+        guideText.style.color = '#fecaca';
+      }
+      if (btnCapture) {
+        btnCapture.disabled = true;
+        btnCapture.style.background = '#64748b';
+        btnCapture.textContent = 'Align Face in Oval to Enable';
+      }
+      return;
+    }
+
+    // Check if face is centered inside the oval guide (Target: 36% to 64% horizontal, 22% to 68% vertical)
+    const isHorizontallyCentered = faceCenterX >= 0.36 && faceCenterX <= 0.64;
+    const isVerticallyCentered = faceCenterY >= 0.22 && faceCenterY <= 0.68;
+    const isCentered = isHorizontallyCentered && isVerticallyCentered;
+
+    if (!isCentered) {
+      isFaceProperlyAligned = false;
+      if (guideEllipse) {
+        guideEllipse.setAttribute('stroke', '#f59e0b');
+        guideEllipse.setAttribute('stroke-dasharray', '8 6');
+      }
+      if (guideText) {
+        if (!isHorizontallyCentered) {
+          guideText.textContent = faceCenterX < 0.36 ? '⚠️ Move slightly right into oval' : '⚠️ Move slightly left into oval';
+        } else {
+          guideText.textContent = faceCenterY < 0.22 ? '⚠️ Lower your head slightly' : '⚠️ Raise your head slightly';
+        }
+        guideText.style.borderColor = '#f59e0b';
+        guideText.style.color = '#fef08a';
+      }
+      if (btnCapture) {
+        btnCapture.disabled = true;
+        btnCapture.style.background = '#64748b';
+        btnCapture.textContent = 'Center Face in Oval to Enable';
+      }
+    } else {
+      // Face is properly centered inside the oval!
+      isFaceProperlyAligned = true;
+      if (guideEllipse) {
+        guideEllipse.setAttribute('stroke', '#10b981');
+        guideEllipse.setAttribute('stroke-dasharray', '6 4');
+      }
+      if (guideText) {
+        guideText.textContent = '✓ Perfect! Click capture now';
+        guideText.style.borderColor = '#10b981';
+        guideText.style.color = '#a7f3d0';
+      }
+      if (btnCapture) {
+        btnCapture.disabled = false;
+        btnCapture.style.background = '#2563eb';
+        btnCapture.textContent = '📸 2. Capture Reference Photo & Calibrate';
+      }
+    }
+  }, 160);
+}
 
 btnCamera.addEventListener('click', async () => {
   try {
     let stream = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
     } catch (firstErr) {
-      // Fallback with ideal resolution constraints if default video: true fails
-      stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: { ideal: 640 }, height: { ideal: 480 } } 
-      });
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
     }
     
     activeCameraStream = stream;
     const video = document.getElementById('camera-preview');
     if (video) {
       video.srcObject = stream;
-    }
-    
-    // Check if video metadata is ready
-    const handleMetadata = () => {
-        cameraPassed = true;
-        setStatus('check-camera', 'pass');
-        updateBeginButton();
-        btnCamera.disabled = true;
-        btnCamera.textContent = 'Camera OK';
-
-        // Capture snapshot for teacher camera verification
-        if (video) {
-          uploadCameraVerificationSnapshot(video);
-        }
-    };
-
-    if (video) {
-      if (video.readyState >= 2 && video.videoWidth > 0) {
-        handleMetadata();
+      if (video.readyState >= 2) {
+        startFaceAlignmentTracking(video);
       } else {
-        video.onloadedmetadata = handleMetadata;
+        video.onloadedmetadata = () => startFaceAlignmentTracking(video);
       }
-    } else {
-      handleMetadata();
+    }
+
+    btnCamera.style.display = 'none';
+    if (btnCaptureCalibration) {
+      btnCaptureCalibration.style.display = 'block';
+      btnCaptureCalibration.disabled = true;
+      btnCaptureCalibration.style.background = '#64748b';
+      btnCaptureCalibration.textContent = 'Center Face in Oval to Enable';
     }
   } catch (err) {
     console.error('Camera Check Error:', err);
-    setStatus('check-camera', 'fail', 'Camera access denied or not found.');
+    setStatus('check-camera', 'fail', 'Camera access denied or device not found.');
   }
 });
+
+if (btnCaptureCalibration) {
+  btnCaptureCalibration.addEventListener('click', async () => {
+    const video = document.getElementById('camera-preview');
+    const guideEllipse = document.getElementById('face-guide-ellipse');
+    const guideText = document.getElementById('camera-guide-text');
+    const successBadge = document.getElementById('calibration-success-badge');
+
+    if (!video || !activeCameraStream) {
+      alert('Camera is not active. Please turn on camera preview first.');
+      return;
+    }
+
+    if (!isFaceProperlyAligned) {
+      alert('Please position your face inside the green oval guide before capturing.');
+      return;
+    }
+
+    if (faceAlignmentInterval) {
+      clearInterval(faceAlignmentInterval);
+      faceAlignmentInterval = null;
+    }
+
+    btnCaptureCalibration.disabled = true;
+    btnCaptureCalibration.textContent = 'Calibrating Baseline...';
+
+    try {
+      // 1. Capture snapshot and upload for examiner verification photo
+      await uploadCameraVerificationSnapshot(video);
+
+      // 2. Save baseline reference pose metadata in storage
+      const baselineData = {
+        calibratedAt: new Date().toISOString(),
+        videoWidth: video.videoWidth || 640,
+        videoHeight: video.videoHeight || 480,
+        calibratedCenter: { x: (video.videoWidth || 640) / 2, y: (video.videoHeight || 480) / 2 },
+        status: 'calibrated'
+      };
+      localStorage.setItem('integrityflow_baseline_calibration', JSON.stringify(baselineData));
+      sessionStorage.setItem('integrityflow_baseline_calibration', JSON.stringify(baselineData));
+
+      // 3. Update UI to calibrated state
+      if (guideEllipse) {
+        guideEllipse.setAttribute('stroke', '#10b981');
+        guideEllipse.setAttribute('stroke-width', '4');
+        guideEllipse.removeAttribute('stroke-dasharray');
+      }
+
+      if (guideText) {
+        guideText.textContent = '✓ Calibration Complete & Photo Saved';
+        guideText.style.borderColor = '#10b981';
+        guideText.style.color = '#a7f3d0';
+      }
+
+      if (successBadge) {
+        successBadge.style.display = 'flex';
+      }
+
+      const instructionBox = document.getElementById('calibration-instruction-box');
+      if (instructionBox) {
+        instructionBox.style.display = 'block';
+      }
+
+      cameraPassed = true;
+      setStatus('check-camera', 'pass');
+      updateBeginButton();
+
+      btnCaptureCalibration.textContent = '✓ Camera & Face Calibrated';
+      btnCaptureCalibration.style.background = '#10b981';
+    } catch (err) {
+      console.error('Calibration error:', err);
+      btnCaptureCalibration.disabled = false;
+      btnCaptureCalibration.textContent = 'Retry Calibration';
+      setStatus('check-camera', 'fail', 'Failed to save baseline calibration.');
+    }
+  });
+}
 
 btnMic.addEventListener('click', async () => {
   try {
