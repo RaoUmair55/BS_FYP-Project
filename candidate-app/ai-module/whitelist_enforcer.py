@@ -32,6 +32,7 @@ class WhitelistEnforcer:
             "code.exe",
             "ollama.exe",
             "ollama_llama_server.exe",
+            "ai.exe",
             "chrome.exe",
             "msedge.exe",
             "firefox.exe",
@@ -67,6 +68,7 @@ class WhitelistEnforcer:
             "dwm.exe",
             "runtimebroker.exe",
             "startmenuexperiencehost.exe",
+            "shellexperiencehost.exe",
             "searchhost.exe",
             "searchapp.exe",
             "applicationframehost.exe",
@@ -118,7 +120,8 @@ class WhitelistEnforcer:
             "btwrsupportservice.exe", "ibtsiva.exe",
             "nvdisplay.container.exe", "nvcontainer.exe", "nvsphelper64.exe",
             "onedrive.sync.service.exe", "onedrive.exe", "wlanext.exe",
-            "applemobiledeviceprocess.exe", "chrome-native-host.exe",
+            "applemobiledeviceprocess.exe", "chrome-native-host.exe", "shellexperiencehost.exe",
+            "defendersessionhelper.exe",
             # Intel platform & graphics services
             "esif_uf.exe", "esif_assist.exe", "oneapp.igcc.winservice.exe", "jhi_service.exe",
             "ipfsvc.exe", "dptf.exe",
@@ -129,7 +132,9 @@ class WhitelistEnforcer:
             "docker.exe", "dockerd.exe",
             # Database and developer background daemons
             "postgres.exe", "pg_ctl.exe", "mysqld.exe", "sqlservr.exe", "mongod.exe", "redis-server.exe",
-            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe"
+            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe",
+            # Microsoft Office background telemetry
+            "msoia.exe", "msoadfs.exe"
         }
         
         # Protect this exact AI module process instance
@@ -399,17 +404,19 @@ class WhitelistEnforcer:
 
     def check_running_apps(self):
         """
-        One-off check to list currently running non-whitelisted apps using dev_whitelist rules + allowed applications.
+        One-off check to list currently running non-whitelisted apps.
+        Uses active mode (exam_whitelist vs dev_whitelist) and enforces EXAM_BLOCKED in exam mode.
         """
         config_path = os.path.join(os.path.dirname(__file__), 'config', 'whitelist.json')
-        dev_whitelist = set()
+        mode_whitelist = set()
         try:
             with open(config_path, 'r') as f:
                 data = json.load(f)
-                entries = data.get('dev_whitelist', [])
-                dev_whitelist = {app.lower() for app in entries}
+                key = f"{self.mode}_whitelist"
+                entries = data.get(key, [])
+                mode_whitelist = {app.lower() for app in entries}
         except Exception as e:
-            print(f"[WhitelistEnforcer] Error loading dev whitelist for check: {e}")
+            print(f"[WhitelistEnforcer] Error loading whitelist for check: {e}")
             
         unauthorized_apps = []
         current_user = os.environ.get('USERNAME', '').lower()
@@ -424,13 +431,11 @@ class WhitelistEnforcer:
                     continue
                     
                 name_lower = name.lower()
-                if pid == self.protected_pid: 
+                if pid == self.protected_pid or pid in self.protected_pids: 
                     continue
                 if name_lower in self.SAFETY_LIST: 
                     continue
-                if name_lower in self.KNOWN_BACKGROUND_SERVICES:
-                    continue
-                if name_lower in dev_whitelist or name_lower in self.allowed_apps: 
+                if name_lower in self.KNOWN_BACKGROUND_SERVICES or name_lower.startswith("antigravitysetup"):
                     continue
 
                 username = proc.info.get('username')
@@ -452,12 +457,37 @@ class WhitelistEnforcer:
                 if current_user and current_user not in username_lower:
                     continue
                 
+                # Check teacher-permitted tools first (takes precedence)
+                if name_lower in self.allowed_apps:
+                    continue
+
+                # In Exam mode, browsers and developer shells are strictly blocked
+                if self.mode == "exam" and name_lower in self.EXAM_BLOCKED:
+                    pass # Unauthorized! Fall through to record
+                elif name_lower in mode_whitelist:
+                    continue
+
                 if name_lower in seen_names:
                     continue
                 seen_names.add(name_lower)
                 
                 title = window_titles.get(pid)
-                display_name = f"{title} ({name})" if title else name
+                if not title:
+                    friendly_names = {
+                        "ai.exe": "Microsoft Office Copilot AI",
+                        "ollama.exe": "Ollama Local LLM AI",
+                        "ollama_llama_server.exe": "Ollama Llama Server",
+                        "cmd.exe": "Command Prompt",
+                        "powershell.exe": "Windows PowerShell",
+                        "pwsh.exe": "PowerShell Core",
+                        "wt.exe": "Windows Terminal",
+                        "code.exe": "Visual Studio Code"
+                    }
+                    display_name = friendly_names.get(name_lower, name)
+                    if display_name != name:
+                        display_name = f"{display_name} ({name})"
+                else:
+                    display_name = f"{title} ({name})"
                 unauthorized_apps.append({"name": name, "display": display_name})
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
@@ -465,3 +495,4 @@ class WhitelistEnforcer:
                 pass
                 
         return unauthorized_apps
+

@@ -106,6 +106,14 @@ router.get('/:examId/paper', async (req, res) => {
             return res.status(404).json({ error: 'Exam paper not found' });
         }
 
+        // Waiting Lobby Check: If examiner has not released the paper, lock delivery
+        if (exam.paperReleased === false) {
+            return res.status(423).json({
+                error: 'Question paper is locked in the waiting lobby. Waiting for examiner release.',
+                paperReleased: false
+            });
+        }
+
         // 1. Check if a local file exists on disk first (e.g. uploads/papers/...)
         const fs = require('fs');
         const path = require('path');

@@ -5,6 +5,9 @@ import { Users, Search, AlertCircle, Clock } from 'lucide-react';
 import './Components.css';
 
 export default function StudentList({ riskScores, onSelectStudent, selectedSessionId, examFilter, violations = [] }) {
+    const [sessions, setSessions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
     const [currentTime, setCurrentTime] = useState(Date.now());
 
     useEffect(() => {
@@ -13,7 +16,7 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
     }, []);
 
     const formatRemainingTime = (endTimeStr) => {
-        if (!endTimeStr) return null;
+        if (!endTimeStr) return { text: 'In Lobby', isUrgent: false, isLobby: true };
         const endMs = new Date(endTimeStr).getTime();
         const diffSecs = Math.floor((endMs - currentTime) / 1000);
         if (diffSecs <= 0) return { text: 'Expired', isUrgent: true };
@@ -139,8 +142,8 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                                                 padding: '1px 5px',
                                                 borderRadius: '8px',
                                                 fontWeight: 600,
-                                                background: timeInfo.isUrgent ? '#fee2e2' : '#f1f5f9',
-                                                color: timeInfo.isUrgent ? '#b91c1c' : '#475569'
+                                                background: timeInfo.isLobby ? '#e0f2fe' : timeInfo.isUrgent ? '#fee2e2' : '#f1f5f9',
+                                                color: timeInfo.isLobby ? '#0369a1' : timeInfo.isUrgent ? '#b91c1c' : '#475569'
                                             }}>
                                                 ⏱️ {timeInfo.text}
                                             </span>

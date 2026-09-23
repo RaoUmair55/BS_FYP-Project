@@ -117,8 +117,22 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
         };
 
         if (examData.status === 'active') {
-            examData.startedAt = new Date();
-            examData.endTime = new Date(Date.now() + (examData.durationMinutes) * 60 * 1000);
+            if (!examData.paperPath) {
+                // If no question paper is attached, start immediately
+                examData.startedAt = new Date();
+                examData.endTime = new Date(Date.now() + (examData.durationMinutes) * 60 * 1000);
+                examData.paperReleased = true;
+            } else {
+                // Question paper attached: enter waiting lobby by default
+                // Timer and startedAt will be established when examiner clicks 'Release Paper'
+                examData.paperReleased = false;
+                examData.startedAt = null;
+                examData.endTime = null;
+            }
+        } else {
+            examData.paperReleased = false;
+            examData.startedAt = null;
+            examData.endTime = null;
         }
 
         const newExam = new Exam(examData);
@@ -199,8 +213,8 @@ router.get('/code/:code', async (req, res) => {
             return res.status(404).json({ error: `Exam code "${examCode}" not found.` });
         }
 
-        // If exam is active but timing was not yet stamped, stamp it now
-        if (exam.status === 'active' && !exam.startedAt) {
+        // If exam is active and has no paper attached (untimed/immediate mode), stamp startedAt if not set
+        if (exam.status === 'active' && !exam.startedAt && (!exam.paperPath || exam.paperReleased !== false)) {
             exam.startedAt = new Date();
             exam.endTime = new Date(Date.now() + ((exam.durationMinutes || 60) + (exam.extraMinutes || 0)) * 60 * 1000);
             await exam.save();
@@ -458,6 +472,98 @@ router.post('/:examId/extend-time', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('Error extending exam time:', err);
         res.status(500).json({ error: 'Failed to extend exam time', details: err.message });
+    }
+});
+
+// POST /exams/:examId/release-paper — Release question paper to all candidates simultaneously (Teacher-facing)
+router.post('/:examId/release-paper', requireAuth, async (req, res) => {
+    try {
+        let exam = null;
+        if (req.params.examId.match(/^[0-9a-fA-F]{24}$/)) {
+            exam = await Exam.findById(req.params.examId);
+        }
+        if (!exam) {
+            exam = await Exam.findOne({
+                $or: [
+                    { examCode: new RegExp('^' + req.params.examId + '$', 'i') },
+                    { examId: new RegExp('^' + req.params.examId + '$', 'i') }
+                ]
+            });
+        }
+
+        if (!exam) {
+            return res.status(404).json({ error: 'Exam not found' });
+        }
+
+        if (!exam.paperPath) {
+            return res.status(400).json({ error: 'Cannot release paper: No question paper has been uploaded for this exam.' });
+        }
+
+        const now = new Date();
+        exam.paperReleased = true;
+        exam.paperReleasedAt = now;
+
+        // When paper is released, establish the official exam start and end times NOW
+        exam.startedAt = now;
+        exam.endTime = new Date(now.getTime() + ((exam.durationMinutes || 60) + (exam.extraMinutes || 0)) * 60 * 1000);
+
+        await exam.save();
+
+        // Update all active sessions
+        const code = exam.examCode || exam.examId;
+        await Session.updateMany(
+            {
+                $or: [
+                    { examId: new RegExp('^' + code + '$', 'i') },
+                    { examId: exam._id.toString() }
+                ],
+                status: 'active'
+            },
+            {
+                $set: {
+                    endTime: exam.endTime
+                }
+            }
+        );
+
+        // Broadcast to all connected candidate apps and dashboard clients
+        const io = req.app.locals.io;
+        if (io) {
+            io.emit('paperReleased', {
+                examId: code,
+                startedAt: exam.startedAt,
+                endTime: exam.endTime,
+                paperReleasedAt: exam.paperReleasedAt,
+                totalDurationMinutes: (exam.durationMinutes || 60) + (exam.extraMinutes || 0)
+            });
+        }
+
+        // Record in Teacher Audit Log
+        const { logTeacherAction } = require('../utils/auditLogger');
+        await logTeacherAction(req, {
+            action: 'PAPER_RELEASED',
+            targetType: 'exam',
+            targetId: exam._id,
+            targetSummary: `Released question paper for Exam: "${exam.title}" (${code}) to all candidates simultaneously.`,
+            details: {
+                examCode: code,
+                startedAt: exam.startedAt,
+                endTime: exam.endTime,
+                filename: exam.paperFilename
+            }
+        });
+
+        res.json({
+            message: 'Question paper released to all students successfully!',
+            exam: {
+                ...exam.toObject(),
+                totalDurationMinutes: (exam.durationMinutes || 60) + (exam.extraMinutes || 0),
+                serverTime: new Date()
+            }
+        });
+    } catch (err) {
+        console.error('Error releasing question paper:', err);
+        res.status(500).json({ error: 'Failed to release question paper', details: err.message });
     }
 });
 

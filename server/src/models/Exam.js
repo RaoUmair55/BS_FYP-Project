@@ -20,6 +20,8 @@ const examSchema = new mongoose.Schema({
     extraMinutes: { type: Number, default: 0 },
     startedAt: { type: Date, default: null },
     endTime: { type: Date, default: null },
+    paperReleased: { type: Boolean, default: false },
+    paperReleasedAt: { type: Date, default: null },
     rules: {
         detectCellPhone: { type: Boolean, default: true },
         detectMultiplePersons: { type: Boolean, default: true },

@@ -9,7 +9,7 @@ from usb_monitor import USBMonitor
 from ai_monitor import AIMonitor
 import server
 
-ELECTRON_RECEIVER_URL = "http://localhost:8766/violation"
+ELECTRON_RECEIVER_URL = "http://127.0.0.1:8766/violation"
 
 def send_violation_to_electron(payload):
     try:

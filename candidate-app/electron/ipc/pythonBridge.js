@@ -11,9 +11,13 @@ const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
 
 async function checkPythonHealth() {
   try {
-    const response = await axios.get(`http://localhost:${PYTHON_IPC_PORT}/health`, { timeout: 1000 });
+    const response = await axios.get(`http://127.0.0.1:${PYTHON_IPC_PORT}/health`, { 
+      timeout: 2000,
+      proxy: false
+    });
     return response.status === 200;
   } catch (error) {
+    console.log(`[Electron] Python health check waiting (${error.code || error.message})...`);
     return false;
   }
 }

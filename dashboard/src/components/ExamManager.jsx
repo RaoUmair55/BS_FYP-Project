@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Play, CheckCircle, Clock, Users, X, AlertCircle, Eye, BarChart2, Radio, Trash2, Lock, Sparkles } from 'lucide-react';
+import { FileText, Plus, Play, CheckCircle, Clock, Users, X, AlertCircle, Eye, BarChart2, Radio, Trash2, Lock, Sparkles, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
 
@@ -225,6 +225,28 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
         }
     };
 
+    const [releasingMap, setReleasingMap] = useState({});
+
+    const handleReleasePaper = async (examId) => {
+        if (!examId) return;
+        setReleasingMap(prev => ({ ...prev, [examId]: true }));
+        try {
+            const res = await authFetch(`${API_BASE}/exams/${examId}/release-paper`, {
+                method: 'POST'
+            });
+            if (res.ok) {
+                fetchExams();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Failed to release question paper');
+            }
+        } catch (err) {
+            console.error('Failed to release question paper:', err);
+        } finally {
+            setReleasingMap(prev => ({ ...prev, [examId]: false }));
+        }
+    };
+
     const activeExams = exams.filter(e => e.status === 'active' || e.status === 'draft');
     const completedExams = exams.filter(e => e.status === 'completed');
     const baseExams = activeTab === 'active' ? activeExams : completedExams;
@@ -396,6 +418,16 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             {exam.status === 'draft' && <Clock size={12} />}
                                             {exam.status === 'draft' && <span>DRAFT</span>}
                                         </span>
+                                        {isLive && exam.paperPath && !exam.paperReleased && (
+                                            <span className="md-badge" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
+                                                🔒 Lobby
+                                            </span>
+                                        )}
+                                        {isLive && exam.paperPath && exam.paperReleased && (
+                                            <span className="md-badge" style={{ background: '#ecfdf5', color: '#047857', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
+                                                ✓ Unlocked
+                                            </span>
+                                        )}
                                         <button 
                                             className="md-icon-btn btn-delete-icon"
                                             onClick={() => setDeleteExamModalData({ id: exam._id, title: exam.title, code: exam.examCode })}
@@ -462,6 +494,25 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                                     {isLive && (
                                         <>
+                                            {exam.paperPath && !exam.paperReleased && (
+                                                <button 
+                                                    className="md-btn md-btn-sm" 
+                                                    style={{ 
+                                                        background: '#2563eb', 
+                                                        color: '#ffffff', 
+                                                        fontWeight: 600,
+                                                        border: 'none',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '6px'
+                                                    }}
+                                                    disabled={releasingMap[exam.examCode || exam._id]}
+                                                    onClick={() => handleReleasePaper(exam.examCode || exam._id)}
+                                                >
+                                                    <Send size={14} />
+                                                    <span>{releasingMap[exam.examCode || exam._id] ? 'Releasing...' : '🚀 Release Paper & Start Exam'}</span>
+                                                </button>
+                                            )}
                                             <button 
                                                 className="md-btn md-btn-outlined md-btn-sm btn-end-exam" 
                                                 onClick={() => setEndExamModalData({ id: exam._id, title: exam.title })}

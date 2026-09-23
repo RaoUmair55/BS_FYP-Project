@@ -57,12 +57,12 @@ async function createWindow() {
 
 async function waitForPythonReady() {
   console.log('[Electron] Waiting for Python backend to be ready...');
-  const maxAttempts = 15;
+  const maxAttempts = 25;
   
   for (let i = 0; i < maxAttempts; i++) {
     const isReady = await checkPythonHealth();
     if (isReady) {
-      console.log('[Electron] Python backend is ready!');
+      console.log(`[Electron] Python backend is ready on attempt ${i + 1}!`);
       return true;
     }
     await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1 second
@@ -143,8 +143,10 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
 
   proc.stderr.on('data', (data) => {
     const msg = data.toString().trim();
-    lastPythonStderr = (lastPythonStderr + '\n' + msg).trim();
-    console.error(`[Python Error] ${msg}`);
+    if (!msg.includes('INFO:') && !msg.includes('WARNING:')) {
+      lastPythonStderr = (lastPythonStderr + '\n' + msg).trim();
+    }
+    console.log(`[Python Log] ${msg}`);
   });
 
   proc.on('exit', (code, signal) => {
@@ -157,25 +159,39 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   return proc;
 }
 
-app.whenReady().then(async () => {
-  // STARTUP ORDER 1: Start the local Express receiver first
-  try {
-    await startReceiver();
-  } catch (error) {
-    dialog.showErrorBox('Initialization Error', 'Failed to start local violation receiver. ' + error.message);
-    app.quit();
-    return;
-  }
+const gotTheLock = app.requestSingleInstanceLock();
 
-  // STARTUP ORDER 2: Create the BrowserWindow directly (Python spawns after login)
-  await createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+if (!gotTheLock) {
+  console.log('[Electron] Another instance is already running. Quitting duplicate instance...');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
   });
-});
+
+  app.whenReady().then(async () => {
+    // STARTUP ORDER 1: Start the local Express receiver first
+    try {
+      await startReceiver();
+    } catch (error) {
+      dialog.showErrorBox('Initialization Error', 'Failed to start local violation receiver. ' + error.message);
+      app.quit();
+      return;
+    }
+
+    // STARTUP ORDER 2: Create the BrowserWindow directly (Python spawns after login)
+    await createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -254,8 +270,16 @@ ipcMain.handle('get-session-info', () => {
   return activeSessionInfo;
 });
 
+let isLoggingIn = false;
+
 // Handle Login / Exam Code Entry
 ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber, allowedApplications }) => {
+  if (isLoggingIn) {
+    console.log('[Electron] Login already in progress, ignoring duplicate invoke');
+    return { success: false, error: 'Login in progress' };
+  }
+  isLoggingIn = true;
+
   console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Allowed Apps:`, allowedApplications);
   activeSessionInfo.examId = examId;
   if (studentId) activeSessionInfo.studentId = studentId;
@@ -265,6 +289,15 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
     activeSessionInfo.allowedApplications = allowedApplications;
   }
   
+  // Clean up any previously running Python child process before spawning a new one
+  if (pythonProcess) {
+    console.log('[Electron] Cleaning up existing Python process before spawning fresh one...');
+    pythonProcess.killedIntentional = true;
+    try { pythonProcess.kill('SIGTERM'); } catch (e) {}
+    pythonProcess = null;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
   // 1. Show splash/loading screen immediately while Python spawns and health-checks
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/splash.html'));
@@ -276,6 +309,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   
   const isPythonReady = await waitForPythonReady();
   if (!isPythonReady) {
+    isLoggingIn = false;
     const errorDetail = lastPythonStderr 
       ? `The AI module failed to start.\n\nDiagnostics / Error:\n${lastPythonStderr}`
       : 'The AI module failed to start.\n\nPlease verify that Python is in your system PATH and all dependencies are installed.';
@@ -301,6 +335,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/consent.html'));
   }
+  isLoggingIn = false;
   return { success: true };
 });
 

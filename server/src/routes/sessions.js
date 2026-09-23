@@ -80,20 +80,25 @@ router.post('/', async (req, res) => {
             examDuration = exam.durationMinutes || 60;
             examExtra = exam.extraMinutes || 0;
 
-            // If exam has not yet officially stamped startedAt, stamp it upon first candidate entering
-            if (!exam.startedAt) {
-                exam.startedAt = new Date();
-                exam.endTime = new Date(Date.now() + (examDuration + examExtra) * 60 * 1000);
-                await exam.save();
-            } else if (exam.endTime && new Date() >= new Date(exam.endTime)) {
-                return res.status(400).json({
-                    error: `Exam time for "${inputCode}" has already ended. Submission window is closed.`
-                });
+            // If exam has paper uploaded and paper is not yet released, exam is in Waiting Lobby
+            if (exam.paperPath && exam.paperReleased === false) {
+                examEndTime = null;
+            } else {
+                // If exam has not yet officially stamped startedAt and no lobby is pending
+                if (!exam.startedAt) {
+                    exam.startedAt = new Date();
+                    exam.endTime = new Date(Date.now() + (examDuration + examExtra) * 60 * 1000);
+                    await exam.save();
+                } else if (exam.endTime && new Date() >= new Date(exam.endTime)) {
+                    return res.status(400).json({
+                        error: `Exam time for "${inputCode}" has already ended. Submission window is closed.`
+                    });
+                }
+                examEndTime = exam.endTime;
             }
-            examEndTime = exam.endTime;
         }
 
-        if (!examEndTime) {
+        if (!examEndTime && (!examCount || (examCount > 0 && !inputCode))) {
             examEndTime = new Date(Date.now() + examDuration * 60 * 1000);
         }
 
@@ -294,9 +299,10 @@ router.get('/:sessionId/status', async (req, res) => {
         let examEndTime = session.endTime;
         let examExtra = session.extraMinutes || 0;
         let durationMinutes = 60;
+        let exam = null;
 
         if (session.examId) {
-            const exam = await Exam.findOne({
+            exam = await Exam.findOne({
                 $or: [
                     { examCode: new RegExp('^' + session.examId + '$', 'i') },
                     { examId: new RegExp('^' + session.examId + '$', 'i') }
@@ -324,6 +330,7 @@ router.get('/:sessionId/status', async (req, res) => {
             durationMinutes: durationMinutes,
             totalDurationMinutes: durationMinutes + examExtra,
             serverTime: new Date(),
+            paperReleased: exam ? (exam.paperReleased !== false) : true,
             autoSubmitted: session.autoSubmitted || false,
             terminationReason: session.terminationReason,
             warnings: session.warnings || [],

@@ -11,10 +11,127 @@ let autoSubmitting = false;
 let seenWarningCount = 0;
 let statusInterval = null;
 
-async function init() {
+let isPaperLoaded = false;
+let isPaperReleased = false;
+
+function renderWatermark() {
+  const overlay = document.getElementById('watermarkOverlay');
+  if (!overlay || !sessionInfo) return;
+  
+  const name = sessionInfo.studentName || sessionInfo.studentId || 'Candidate';
+  const roll = sessionInfo.rollNumber || sessionInfo.studentId || 'N/A';
+  const exam = sessionInfo.examId || 'EXAM';
+  const text = `CONFIDENTIAL • ${name} (${roll}) • ${exam} • IntegrityFlow`;
+  
+  overlay.innerHTML = '';
+  // Generate repeating diagonal watermark rows covering entire panel
+  for (let i = 0; i < 14; i++) {
+    const row = document.createElement('div');
+    row.className = 'watermark-row';
+    row.textContent = `${text}       ${text}       ${text}       ${text}`;
+    overlay.appendChild(row);
+  }
+  overlay.style.display = 'flex';
+}
+
+async function loadExamPaper() {
   const loadingEl = document.getElementById('loadingMessage');
   const paperViewer = document.getElementById('paperViewer');
-  
+  const waitingLobby = document.getElementById('waitingLobby');
+  const paperStatusPill = document.getElementById('paperStatusPill');
+
+  if (!sessionInfo || isPaperLoaded) return;
+
+  try {
+    const paperUrl = `${sessionInfo.serverUrl}/exam/${sessionInfo.examId}/paper`;
+    const response = await fetch(paperUrl);
+
+    // HTTP 423: Paper is locked in waiting lobby by examiner
+    if (response.status === 423) {
+      isPaperReleased = false;
+      if (waitingLobby) waitingLobby.style.display = 'flex';
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (paperViewer) paperViewer.style.display = 'none';
+      if (paperStatusPill) {
+        paperStatusPill.textContent = '🔒 Waiting Lobby';
+        paperStatusPill.style.background = '#e0f2fe';
+        paperStatusPill.style.color = '#0369a1';
+      }
+      const timerDisplay = document.getElementById('timerDisplay');
+      if (timerDisplay) {
+        timerDisplay.textContent = 'Standby (Lobby)';
+        timerDisplay.className = 'timer-badge';
+      }
+      return;
+    }
+
+    if (response.status === 404) {
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `<div class="info-message">Exam paper not yet available &mdash; please wait for your examiner.</div>`;
+      }
+      return;
+    }
+
+    if (response.status === 403) {
+      if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = `<div class="error-message">Session not active. Please ensure you have officially started the exam.</div>`;
+      }
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    // Paper is unlocked & available!
+    isPaperReleased = true;
+    isPaperLoaded = true;
+    if (waitingLobby) waitingLobby.style.display = 'none';
+    if (paperViewer) paperViewer.style.display = 'block';
+    if (paperStatusPill) {
+      paperStatusPill.textContent = '✓ Paper Active';
+      paperStatusPill.style.background = '#ecfdf5';
+      paperStatusPill.style.color = '#047857';
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const arrayBuffer = await response.arrayBuffer();
+
+    if (loadingEl) loadingEl.style.display = 'none';
+
+    if (contentType.includes('pdf')) {
+      await renderPdf(arrayBuffer, paperViewer);
+    } else if (contentType.includes('wordprocessingml') || contentType.includes('msword')) {
+      await renderDocx(arrayBuffer, paperViewer);
+    } else {
+      try {
+        await renderPdf(arrayBuffer, paperViewer);
+      } catch (e) {
+        if (loadingEl) {
+          loadingEl.style.display = 'block';
+          loadingEl.innerHTML = `<div class="error-message">Unsupported file format uploaded.</div>`;
+        }
+      }
+    }
+
+    // Render dynamic anti-leak watermark with candidate's details
+    renderWatermark();
+
+    // Start synchronized countdown timer
+    startTimer();
+
+  } catch (error) {
+    console.error('Error fetching/rendering paper:', error);
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = `<div class="error-message">Failed to load exam paper: ${error.message}</div>`;
+    }
+  }
+}
+
+async function init() {
   try {
     sessionInfo = await window.api.getSessionInfo();
     if (!sessionInfo || !sessionInfo.examId) {
@@ -31,7 +148,7 @@ async function init() {
     }
     if (examBadge) examBadge.textContent = `Exam: ${sessionInfo.examId}`;
 
-    // Fetch initial session timing and status
+    // Fetch initial session timing, lobby status, and warnings
     try {
       const statusRes = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`);
       if (statusRes.ok) {
@@ -46,65 +163,35 @@ async function init() {
         if (durationBadge && statusData.totalDurationMinutes) {
           durationBadge.textContent = `Total: ${statusData.totalDurationMinutes}m`;
         }
+        if (statusData.paperReleased !== undefined) {
+          isPaperReleased = statusData.paperReleased;
+        }
       }
     } catch (e) {
       console.warn("Initial status fetch error:", e);
     }
 
-    // Default targetEndTime fallback to 60 mins if not yet returned
-    if (!targetEndTime) {
+    // Default targetEndTime fallback only if paper is already released and timed
+    if (isPaperReleased && !targetEndTime) {
       targetEndTime = Date.now() + 60 * 60 * 1000;
     }
 
-    // Start Live Countdown Timer
-    startTimer();
-
-    // Start Polling for Examiner Warnings, Time Extensions & Termination Status
+    // Start status polling
     startSessionStatusPolling();
 
-    // Restore Draft typed answer from LocalStorage if present
+    // Restore draft answer from LocalStorage if present
     restoreDraft();
 
-    // Fetch and render exam paper
-    const paperUrl = `${sessionInfo.serverUrl}/exam/${sessionInfo.examId}/paper`;
-    const response = await fetch(paperUrl);
-    
-    if (response.status === 404) {
-      loadingEl.innerHTML = `<div class="info-message">Exam paper not yet available &mdash; please wait for your examiner.</div>`;
-      return;
-    }
-    
-    if (response.status === 403) {
-      loadingEl.innerHTML = `<div class="error-message">Session not active. Please ensure you have officially started the exam.</div>`;
-      return;
-    }
-    
-    if (!response.ok) {
-      throw new Error(`Failed to load paper (HTTP ${response.status})`);
-    }
+    // Load question paper (or show waiting lobby if locked)
+    await loadExamPaper();
 
-    const contentType = response.headers.get('content-type') || '';
-    const arrayBuffer = await response.arrayBuffer();
-
-    loadingEl.style.display = 'none';
-
-    if (contentType.includes('pdf')) {
-      await renderPdf(arrayBuffer, paperViewer);
-    } else if (contentType.includes('wordprocessingml') || contentType.includes('msword')) {
-      await renderDocx(arrayBuffer, paperViewer);
-    } else {
-      try {
-        await renderPdf(arrayBuffer, paperViewer);
-      } catch (e) {
-        loadingEl.style.display = 'block';
-        loadingEl.innerHTML = `<div class="error-message">Unsupported file format uploaded.</div>`;
-      }
-    }
-    
   } catch (error) {
-    console.error('Error fetching/rendering paper:', error);
-    loadingEl.style.display = 'block';
-    loadingEl.innerHTML = `<div class="error-message">Failed to load exam paper: ${error.message}</div>`;
+    console.error('Initialization error:', error);
+    const loadingEl = document.getElementById('loadingMessage');
+    if (loadingEl) {
+      loadingEl.style.display = 'block';
+      loadingEl.innerHTML = `<div class="error-message">Initialization failed: ${error.message}</div>`;
+    }
   }
 }
 
@@ -113,6 +200,12 @@ function startTimer() {
   if (!timerDisplay) return;
 
   if (timerInterval) clearInterval(timerInterval);
+  
+  if (!isPaperReleased || !targetEndTime) {
+    timerDisplay.textContent = 'Standby (Lobby)';
+    timerDisplay.className = 'timer-badge';
+    return;
+  }
   
   const updateCountdown = () => {
     if (isSubmitted) return;
@@ -171,6 +264,14 @@ function startSessionStatusPolling() {
       if (data.status === 'terminated') {
         handleSessionTerminated(data.terminationReason);
         return;
+      }
+
+      // Check if question paper was released by examiner to exit waiting lobby
+      if (data.paperReleased === true && !isPaperLoaded) {
+        if (data.endTime) {
+          targetEndTime = new Date(data.endTime).getTime();
+        }
+        await loadExamPaper();
       }
 
       // Check for global or session time extension from examiner

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { getActiveSessions } from '../services/api';
+import { getActiveSessions, getExams } from '../services/api';
 import RiskScoreBadge from './RiskScoreBadge';
 import { 
     Users, Camera, Eye, MessageSquare, UserX, AlertTriangle, 
-    ShieldCheck, Clock, RefreshCw, Grid, Check 
+    ShieldCheck, Clock, RefreshCw, Grid, Check, Lock, Unlock, Send
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
@@ -13,8 +13,10 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 export default function CandidateGrid({ riskScores = {}, violations = [], onSelectCandidate, examFilter }) {
     const { authFetch } = useAuth();
     const [sessions, setSessions] = useState([]);
+    const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [extendingMap, setExtendingMap] = useState({});
+    const [releasingMap, setReleasingMap] = useState({});
     const [currentTime, setCurrentTime] = useState(Date.now());
 
     // Update current time ticker every second for accurate countdown
@@ -22,6 +24,23 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
         return () => clearInterval(timer);
     }, []);
+
+    const handleReleasePaper = async (examId) => {
+        if (!examId) return;
+        setReleasingMap(prev => ({ ...prev, [examId]: true }));
+        try {
+            const res = await authFetch(`${API_BASE_URL}/exams/${examId}/release-paper`, {
+                method: 'POST'
+            });
+            if (res.ok) {
+                fetchSessions();
+            }
+        } catch (err) {
+            console.error('Failed to release question paper:', err);
+        } finally {
+            setReleasingMap(prev => ({ ...prev, [examId]: false }));
+        }
+    };
 
     const handleExtendTime = async (examId, addMinutes) => {
         if (!examId) return;
@@ -43,7 +62,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
     };
 
     const formatRemainingTime = (endTimeStr) => {
-        if (!endTimeStr) return { text: 'Untimed', isUrgent: false, isExpired: false, minutesLeft: 999 };
+        if (!endTimeStr) return { text: 'In Lobby (Standby)', isUrgent: false, isExpired: false, minutesLeft: 999, isLobby: true };
         const endMs = new Date(endTimeStr).getTime();
         const diffSecs = Math.floor((endMs - currentTime) / 1000);
         if (diffSecs <= 0) return { text: 'Time Expired', isUrgent: true, isExpired: true, minutesLeft: 0 };
@@ -63,6 +82,12 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         };
     };
 
+    // Find any active exams with unreleased papers (Waiting Lobby active)
+    const unreleasedExams = exams.filter(e => {
+        const isFiltered = examFilter ? (e.examCode === examFilter || e.examId === examFilter) : true;
+        return isFiltered && e.status === 'active' && !e.paperReleased && e.paperPath;
+    });
+
     // Find any active exams nearing completion (< 5 mins)
     const expiringExams = Array.from(new Set(
         filteredSessions
@@ -76,15 +101,19 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
     ));
 
     const fetchSessions = () => {
-        getActiveSessions()
-            .then(res => {
-                setSessions(res.data);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error("Error fetching candidate grid sessions:", err);
-                setLoading(false);
-            });
+        Promise.all([
+            getActiveSessions().catch(e => ({ data: [] })),
+            getExams().catch(e => ({ data: [] }))
+        ])
+        .then(([sessRes, examsRes]) => {
+            setSessions(sessRes.data || []);
+            setExams(examsRes.data || []);
+            setLoading(false);
+        })
+        .catch(err => {
+            console.error("Error fetching candidate grid sessions/exams:", err);
+            setLoading(false);
+        });
     };
 
     useEffect(() => {
@@ -175,6 +204,117 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                     <span>{filteredSessions.length} Active Candidates</span>
                 </span>
             </div>
+
+            {/* Waiting Lobby Paper Release Banner */}
+            {unreleasedExams.map(ex => {
+                const exCode = ex.examCode || ex.examId || '';
+                const lobbyStudents = sessions.filter(s => {
+                    const sExam = s.examId || '';
+                    return sExam.toUpperCase() === exCode.toUpperCase() && s.status === 'active';
+                });
+
+                return (
+                    <div key={exCode} style={{
+                        marginBottom: '16px',
+                        padding: '16px 20px',
+                        borderRadius: '10px',
+                        background: '#eff6ff',
+                        border: '1.5px solid #93c5fd',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.1)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ background: '#dbeafe', padding: '10px', borderRadius: '10px', color: '#1d4ed8' }}>
+                                    <Lock size={22} />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span>Waiting Lobby Active &mdash; {ex.title || ex.examCode} ({ex.examCode})</span>
+                                        <span style={{ 
+                                            background: lobbyStudents.length > 0 ? '#10b981' : '#f59e0b', 
+                                            color: '#ffffff', 
+                                            fontSize: '11px', 
+                                            padding: '2px 8px', 
+                                            borderRadius: '12px', 
+                                            fontWeight: 700 
+                                        }}>
+                                            {lobbyStudents.length} Students Joined
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: '12.5px', color: '#3b82f6', marginTop: '2px' }}>
+                                        Verify all enrolled students have joined the lobby below. When ready, click release to unlock the question paper and start the exam timer for everyone simultaneously.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                className="md-btn"
+                                style={{ 
+                                    background: '#2563eb', 
+                                    color: '#ffffff', 
+                                    fontSize: '13px', 
+                                    padding: '10px 20px', 
+                                    borderRadius: '8px', 
+                                    border: 'none', 
+                                    fontWeight: 700, 
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    boxShadow: '0 2px 4px rgba(37, 99, 235, 0.25)'
+                                }}
+                                disabled={releasingMap[exCode]}
+                                onClick={() => handleReleasePaper(exCode)}
+                            >
+                                <Send size={15} />
+                                <span>{releasingMap[exCode] ? 'Releasing Paper...' : `🚀 Release Paper & Start Exam (${lobbyStudents.length} Ready)`}</span>
+                            </button>
+                        </div>
+
+                        {/* Joined Students Quick Chips */}
+                        <div style={{ 
+                            background: '#ffffff', 
+                            border: '1px solid #bfdbfe', 
+                            borderRadius: '6px', 
+                            padding: '8px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '8px'
+                        }}>
+                            <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#475569' }}>
+                                Joined Candidates ({lobbyStudents.length}):
+                            </span>
+                            {lobbyStudents.length === 0 ? (
+                                <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    Waiting for candidates to enter the exam code and join lobby...
+                                </span>
+                            ) : (
+                                lobbyStudents.map(s => (
+                                    <span key={s.sessionId || s._id} style={{
+                                        fontSize: '11px',
+                                        background: '#f0fdf4',
+                                        color: '#15803d',
+                                        border: '1px solid #bbf7d0',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        fontWeight: 600,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}>
+                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>
+                                        {s.studentName || 'Candidate'} {s.rollNumber ? `(${s.rollNumber})` : ''}
+                                    </span>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
 
             {/* Expiring Exams Alert Banner (< 5 mins remaining) */}
             {expiringExams.length > 0 && (
@@ -286,9 +426,9 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                                 padding: '1px 6px',
                                                 borderRadius: '10px',
                                                 fontWeight: 600,
-                                                background: timeInfo.isExpired ? '#fee2e2' : timeInfo.isUrgent ? '#fef3c7' : '#ecfdf5',
-                                                color: timeInfo.isExpired ? '#b91c1c' : timeInfo.isUrgent ? '#92400e' : '#047857',
-                                                border: `1px solid ${timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`
+                                                background: timeInfo.isLobby ? '#e0f2fe' : timeInfo.isExpired ? '#fee2e2' : timeInfo.isUrgent ? '#fef3c7' : '#ecfdf5',
+                                                color: timeInfo.isLobby ? '#0369a1' : timeInfo.isExpired ? '#b91c1c' : timeInfo.isUrgent ? '#92400e' : '#047857',
+                                                border: `1px solid ${timeInfo.isLobby ? '#bae6fd' : timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`
                                             }}>
                                                 ⏱️ {timeInfo.text}
                                             </span>

@@ -1,4 +1,8 @@
+let isSubmitting = false;
+
 async function handleLogin() {
+  if (isSubmitting) return;
+
   const examIdInput = document.getElementById('examId');
   const examId = examIdInput.value.trim().toUpperCase();
   const btn = document.getElementById('loginBtn');
@@ -10,6 +14,7 @@ async function handleLogin() {
     return;
   }
   
+  isSubmitting = true;
   errorMsg.textContent = '';
   btn.disabled = true;
   btn.textContent = 'Validating Exam Code...';
@@ -55,14 +60,21 @@ async function handleLogin() {
       throw new Error(result.error || 'Internal app initialization error');
     }
   } catch (error) {
+    isSubmitting = false;
     errorMsg.textContent = error.message;
     btn.disabled = false;
     btn.textContent = 'Enter Exam ➔';
   }
 }
 
-document.getElementById('loginBtn').addEventListener('click', handleLogin);
+document.getElementById('loginBtn').addEventListener('click', (e) => {
+  e.preventDefault();
+  handleLogin();
+});
 
 document.getElementById('examId').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') handleLogin();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    handleLogin();
+  }
 });

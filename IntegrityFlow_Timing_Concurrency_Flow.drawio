@@ -1,0 +1,278 @@
+<mxfile host="app.diagrams.net" modified="2026-09-23T02:55:00.000Z" agent="Antigravity" version="21.0.0" type="device">
+  <diagram id="integrityflow-concurrency-flow" name="IntegrityFlow Concurrency &amp; Timing Flowchart">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1800" background="#0f172a" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- TITLE BLOCK -->
+        <mxCell id="title" value="INTEGRITYFLOW: COMPREHENSIVE CONCURRENCY, TIMING &amp; EXECUTION FLOW&lt;br&gt;&lt;font style=&quot;font-size:13px; font-weight:normal; color:#94a3b8;&quot;&gt;Detailed Threading, Non-Blocking Event Loops, Polling Frequencies &amp; Multi-Process Interoperability&lt;/font&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#f8fafc;" vertex="1" parent="1">
+          <mxGeometry x="600" y="20" width="1200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 1: CANDIDATE RENDERER -->
+        <mxCell id="lane_renderer" value="CANDIDATE APP (Renderer UI - Chromium)" style="swimlane;whiteSpace=wrap;html=1;startSize=40;fillColor=#1e293b;strokeColor=#3b82f6;fontColor=#60a5fa;fontStyle=1;fontSize=14;rounded=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="420" height="1520" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 2: ELECTRON MAIN & IPC -->
+        <mxCell id="lane_electron" value="ELECTRON MAIN PROCESS (Node.js)" style="swimlane;whiteSpace=wrap;html=1;startSize=40;fillColor=#1e293b;strokeColor=#8b5cf6;fontColor=#a78bfa;fontStyle=1;fontSize=14;rounded=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="500" y="110" width="420" height="1520" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 3: PYTHON AI MONITORING MODULE -->
+        <mxCell id="lane_python" value="PYTHON AI ENGINE (Multithreaded Daemon)" style="swimlane;whiteSpace=wrap;html=1;startSize=40;fillColor=#1e293b;strokeColor=#f59e0b;fontColor=#fbbf24;fontStyle=1;fontSize=14;rounded=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="960" y="110" width="460" height="1520" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 4: BACKEND & DATABASE -->
+        <mxCell id="lane_server" value="INTEGRITYFLOW BACKEND (Express / Socket.IO / MongoDB)" style="swimlane;whiteSpace=wrap;html=1;startSize=40;fillColor=#1e293b;strokeColor=#10b981;fontColor=#34d399;fontStyle=1;fontSize=14;rounded=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="110" width="440" height="1520" as="geometry" />
+        </mxCell>
+
+        <!-- SWIMLANE 5: TEACHER DASHBOARD -->
+        <mxCell id="lane_dashboard" value="TEACHER DASHBOARD (React UI)" style="swimlane;whiteSpace=wrap;html=1;startSize=40;fillColor=#1e293b;strokeColor=#ec4899;fontColor=#f472b6;fontStyle=1;fontSize=14;rounded=1;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1940" y="110" width="420" height="1520" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- PHASE 1: LOGIN & PRE-FLIGHT INITIALIZATION -->
+        <!-- ========================================== -->
+        <mxCell id="p1_box" value="PHASE 1: AUTHENTICATION &amp; INITIALIZATION" style="text;html=1;strokeColor=#38bdf8;fillColor=#0369a1;fontColor=#ffffff;fontStyle=1;fontSize=12;align=center;verticalAlign=middle;rounded=1;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="20" y="50" width="380" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_login" value="Candidate enters Exam Code &amp;amp; Roll No&#xa;[POST /auth/login or /exams/code/:code]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#38bdf8;fontColor=#e2e8f0;fontSize=11;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="100" width="340" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="el_spawn_pre" value="ipcMain.handle('login')&#xa;1. Displays splash.html&#xa;2. Spawns Python (isSelfCheck=True)&#xa;3. Polls Python /health every 1.0s (max 15s)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#8b5cf6;fontColor=#e2e8f0;fontSize=11;" vertex="1" parent="lane_electron">
+          <mxGeometry x="40" y="100" width="340" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="py_init_self" value="main.py (Pre-Exam Mode)&#xa;• Starts FastAPI on 127.0.0.1:8000&#xa;• WhitelistEnforcer (is_self_check=True)&#xa;• USBMonitor (is_self_check=True)&#xa;• Camera AIMonitor DORMANT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#f59e0b;fontColor=#e2e8f0;fontSize=11;" vertex="1" parent="lane_python">
+          <mxGeometry x="40" y="100" width="380" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- PHASE 2: SYSTEM SELF-CHECK                 -->
+        <!-- ========================================== -->
+        <mxCell id="p2_box" value="PHASE 2: HARDWARE &amp; SECURITY SELF-CHECK (On-Demand)" style="text;html=1;strokeColor=#38bdf8;fillColor=#0369a1;fontColor=#ffffff;fontStyle=1;fontSize=12;align=center;verticalAlign=middle;rounded=1;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="20" y="180" width="380" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_selfcheck_items" value="Self-Check Verification Suite:&#xa;1. Camera: getUserMedia + Upload initial photo&#xa;2. Mic: Web Audio Analyser (RAF loop)&#xa;3. Apps Check: IPC check-apps&#xa;4. USB Check: IPC check-usb&#xa;5. Display Check: IPC get-display-count" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#38bdf8;fontColor=#e2e8f0;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="225" width="340" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="el_selfcheck_handlers" value="Electron Self-Check Bridges:&#xa;• check-apps -&gt; GET :8000/check-apps&#xa;• check-usb-drives -&gt; GET :8000/check-usb&#xa;• get-display-count -&gt; screen.getAllDisplays()&#xa;• kill-app -&gt; POST :8000/kill-app" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#8b5cf6;fontColor=#e2e8f0;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_electron">
+          <mxGeometry x="40" y="225" width="340" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="py_selfcheck_resp" value="Python Self-Check Endpoints:&#xa;• /check-apps: Non-blocking psutil scan&#xa;• /check-usb: Win32 GetDriveTypeW (DriveType==2)&#xa;• Violations &amp; Auto-kill PAUSED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f172a;strokeColor=#f59e0b;fontColor=#e2e8f0;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_python">
+          <mxGeometry x="40" y="225" width="380" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- PHASE 3: ACTIVE EXAM & CONCURRENT LOOPS    -->
+        <!-- ========================================== -->
+        <mxCell id="p3_box" value="PHASE 3: ACTIVE EXAM CONCURRENT EXECUTION (Running in Parallel)" style="text;html=1;strokeColor=#10b981;fillColor=#065f46;fontColor=#ffffff;fontStyle=1;fontSize=12;align=center;verticalAlign=middle;rounded=1;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="20" y="340" width="380" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- CANDIDATE RENDERER CONCURRENT TASKS -->
+        <mxCell id="cr_timer_loop" value="LOOP A: Countdown Timer Ticker&#xa;• Cadence: Every 1.0s (setInterval)&#xa;• State: In-Memory Drift Math (0ms lag)&#xa;• Condition: Active until 00:00 or submitted&#xa;• Alert styles: &lt;5m (urgent), &lt;1m (critical)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#6366f1;fontColor=#e0e7ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="385" width="340" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_status_loop" value="LOOP B: Status &amp; Sync Poller&#xa;• Cadence: Every 3.0s (setInterval async)&#xa;• Target: GET /sessions/:sessionId/status&#xa;• Actions checked:&#xa;   1. Session Terminated by Teacher?&#xa;   2. Paper Released by Teacher?&#xa;   3. Time Extended (+5m, +10m)?&#xa;   4. New Teacher Warning Messages?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#6366f1;fontColor=#e0e7ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="475" width="340" height="115" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_lobby_screen" value="SCREEN STATE 1: Waiting Lobby&#xa;• Trigger: Paper not yet released (HTTP 423)&#xa;• Visual: Pulsing Standby + Locked Paper&#xa;• Security: Zero questions in client memory&#xa;• Timer state: 'Standby (Lobby)'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0c4a6e;strokeColor=#0284c7;fontColor=#f0f9ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="605" width="340" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_paper_active" value="SCREEN STATE 2: Exam Paper &amp; Watermark&#xa;• Trigger: Examiner releases paper (Status=200)&#xa;• Watermark: 10 diagonal repeating rows:&#xa;   'CONFIDENTIAL • [Name] • [Roll] • [Code]'&#xa;• Protection: pointer-events:none, opacity:0.12&#xa;• PDF / Word viewer rendered into DOM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#ecfdf5;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="695" width="340" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_draft_autosave" value="EVENT C: Answer Workspace &amp; Draft Autosave&#xa;• Cadence: On typing (input event listener)&#xa;• Target: LocalStorage key integrityflow_draft&#xa;• Latency: Local write (&lt;1ms), zero network lag&#xa;• File Upload: Drag &amp; drop or click (PDF/DOCX/ZIP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#6366f1;fontColor=#e0e7ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="800" width="340" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- ELECTRON MAIN CONCURRENT TASKS -->
+        <mxCell id="el_screen_listener" value="MONITOR 1: Hardware Display Watcher&#xa;• Cadence: Event-Driven (Electron screen module)&#xa;• Events: screen.on('display-added')&#xa;• Action: Instantly reports violation if secondary&#xa;  monitor is plugged in during exam&#xa;• CPU Overhead: 0% idle (pure event callback)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e1065;strokeColor=#8b5cf6;fontColor=#f3e8ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_electron">
+          <mxGeometry x="40" y="385" width="340" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="el_violation_receiver" value="RECEIVER 2: Express IPC Violation Receiver&#xa;• Port: 127.0.0.1:8766/violation&#xa;• Latency: Returns 202 Accepted in &lt;5ms&#xa;• Non-Blocking: Does NOT block Python thread&#xa;• Forwarder: Asynchronously sends violation +&#xa;  evidence screenshot to Backend (3 retries, 2s backoff)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e1065;strokeColor=#8b5cf6;fontColor=#f3e8ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_electron">
+          <mxGeometry x="40" y="485" width="340" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="el_exam_bridge" value="CONFIG 3: Dynamic Whitelist Injection&#xa;• Source: Teacher allowedApplications list&#xa;• Delivery: POST :8000/configure-whitelist&#xa;• Result: Python dynamically unlocks VSCode,&#xa;  Dev-C++, etc., without restarting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2e1065;strokeColor=#8b5cf6;fontColor=#f3e8ff;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_electron">
+          <mxGeometry x="40" y="595" width="340" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- PYTHON AI ENGINE CONCURRENT TASKS -->
+        <mxCell id="py_camera_thread" value="THREAD 1: Camera AI Proctoring (AIMonitor)&#xa;• Runtime: Background daemon thread (OpenCV)&#xa;• Video Loop: ~30 FPS (sleep 0.03s)&#xa;• Head Pose (Yaw): Evaluated every 1 frame (~33ms)&#xa;• Face Count Check: Evaluated every 10 frames (~330ms)&#xa;• YOLO ONNX (Phone/Book): Every 15 frames (~500ms)&#xa;• Evidence: Captures screenshot before reporting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#451a03;strokeColor=#f59e0b;fontColor=#fef3c7;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_python">
+          <mxGeometry x="40" y="385" width="380" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="py_whitelist_thread" value="THREAD 2: Whitelist Process Enforcer&#xa;• Runtime: Background daemon thread (psutil)&#xa;• Cadence: Every 2.5s (time.sleep(2.5))&#xa;• Safety: Protects OS, Drivers, IDE/Terminal PIDs&#xa;• Exam Hard Block: Chrome, Edge, Powershell, etc.&#xa;• Teacher Allowed: Dynamically permitted tools bypassed&#xa;• Action: Captures screenshot, terminates app, posts violation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#451a03;strokeColor=#f59e0b;fontColor=#fef3c7;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_python">
+          <mxGeometry x="40" y="500" width="380" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="py_usb_thread" value="THREAD 3: Removable Storage Monitor&#xa;• Runtime: Background daemon thread (Win32 API)&#xa;• Cadence: Every 3.0s (time.sleep(3.0))&#xa;• Inspection: GetDriveTypeW (DriveType==2) &amp; WMI&#xa;• Scope: Detects USB flash drives / external hard drives&#xa;• Exclusion: Mice, keyboards, webcams excluded (HID)&#xa;• Action: Captures screenshot, posts violation to IPC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#451a03;strokeColor=#f59e0b;fontColor=#fef3c7;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_python">
+          <mxGeometry x="40" y="615" width="380" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="py_cpu_thread" value="THREAD 4: CPU Budget Telemetry Reporter&#xa;• Cadence: Every 30.0s (time.sleep(30))&#xa;• Action: Logs process &amp; system CPU % (Target: &lt;35%)&#xa;• Independence: Zero impact on monitoring loops" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#451a03;strokeColor=#f59e0b;fontColor=#fef3c7;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_python">
+          <mxGeometry x="40" y="730" width="380" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- BACKEND SERVER TASKS -->
+        <mxCell id="srv_rest_api" value="REST API ENDPOINTS (Express 5000):&#xa;• POST /violation (Multipart screenshot upload)&#xa;• GET /sessions/:sessionId/status (Fast in-memory DB read)&#xa;• GET /exam/:examId/paper (Locked 423 until released)&#xa;• POST /exams/:examId/release-paper&#xa;• POST /exams/:examId/extend-time&#xa;• POST /submissions (Exam packaging &amp; grading)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#ecfdf5;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_server">
+          <mxGeometry x="40" y="385" width="360" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srv_socket_hub" value="SOCKET.IO REAL-TIME EVENT HUB:&#xa;• io.emit('newViolation', data)&#xa;• io.emit('timeExtended', { examId, addedMinutes, ... })&#xa;• io.emit('paperReleased', { examId, startedAt, endTime })&#xa;• Latency: &lt;20ms push to connected dashboards" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#ecfdf5;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_server">
+          <mxGeometry x="40" y="510" width="360" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srv_risk_engine" value="REAL-TIME RISK SCORING ENGINE:&#xa;• Calculates composite severity: sum(weights * freq)&#xa;• Updates candidate card badge (Safe, Moderate, High)&#xa;• Logs permanent timestamped audit trail in MongoDB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#ecfdf5;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_server">
+          <mxGeometry x="40" y="610" width="360" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- TEACHER DASHBOARD TASKS -->
+        <mxCell id="dash_live_clock" value="TICKER 1: Dashboard Live Timer&#xa;• Cadence: Every 1.0s (setInterval)&#xa;• Calculates remaining time per exam &amp; candidate&#xa;• Displays remaining time pill (⏱️ Xm left)&#xa;• Triggers 5-minute global warning alert banner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#831843;strokeColor=#ec4899;fontColor=#fdf2f8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_dashboard">
+          <mxGeometry x="40" y="385" width="340" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dash_session_poll" value="POLLER 2: Active Candidate Sync&#xa;• Cadence: Every 5.0s (setInterval)&#xa;• Calls: Promise.all([getActiveSessions(), getExams()])&#xa;• Syncs candidate cards, scores, and camera status" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#831843;strokeColor=#ec4899;fontColor=#fdf2f8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_dashboard">
+          <mxGeometry x="40" y="480" width="340" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dash_socket_listen" value="LISTENER 3: WebSocket Live Feeds&#xa;• Receives 'newViolation' (instant sound &amp; card update)&#xa;• Receives 'timeExtended' &amp; 'paperReleased'&#xa;• Zero refresh needed by teacher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#831843;strokeColor=#ec4899;fontColor=#fdf2f8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_dashboard">
+          <mxGeometry x="40" y="565" width="340" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dash_controls" value="ACTIONS 4: Teacher Command Suite&#xa;• [🚀 Release Paper to All Students] (Unlocks Lobby)&#xa;• [+5m / +10m / +15m] (Quick Time Extensions)&#xa;• [Send Warning Message] (Pops up modal on student UI)&#xa;• [Terminate Session] (Immediately locks student exam)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#831843;strokeColor=#ec4899;fontColor=#fdf2f8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_dashboard">
+          <mxGeometry x="40" y="650" width="340" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- PHASE 4: TIME EXPIRY & SUBMISSION FLOW     -->
+        <!-- ========================================== -->
+        <mxCell id="p4_box" value="PHASE 4: EXPIRY &amp; AUTOMATIC SUBMISSION FLOW" style="text;html=1;strokeColor=#ef4444;fillColor=#991b1b;fontColor=#ffffff;fontStyle=1;fontSize=12;align=center;verticalAlign=middle;rounded=1;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="20" y="900" width="380" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_expiry_trigger" value="TIMER REACHES 00:00&#xa;1. clearInterval(timerInterval) &amp; statusInterval&#xa;2. Opens #autoSubmitModal overlay&#xa;3. Packages answers with autoSubmitted=true&#xa;4. POST /submissions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#450a0a;strokeColor=#ef4444;fontColor=#fee2e2;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="945" width="340" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="srv_save_submission" value="SUBMISSION INGESTION:&#xa;• Accepts answers even if empty/draft on expiry&#xa;• Archives uploaded files to /uploads/submissions&#xa;• Marks session status = 'submitted'&#xa;• Emits final exam status to Teacher Dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#ecfdf5;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_server">
+          <mxGeometry x="40" y="945" width="360" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cr_submitted_screen" value="COMPLETION SCREEN:&#xa;• Clears draft from localStorage&#xa;• Displays success confirmation&#xa;• Locks all editor inputs &amp; file attachments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#064e3b;strokeColor=#10b981;fontColor=#ecfdf5;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="lane_renderer">
+          <mxGeometry x="40" y="1040" width="340" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- CONNECTING EDGES / DATA FLOWS              -->
+        <!-- ========================================== -->
+
+        <!-- 1. Renderer to Electron Login -->
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#38bdf8;strokeWidth=2;" edge="1" parent="1" source="cr_login" target="el_spawn_pre">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 2. Electron to Python Spawn -->
+        <mxCell id="edge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8b5cf6;strokeWidth=2;" edge="1" parent="1" source="el_spawn_pre" target="py_init_self">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 3. Self Check Electron to Python -->
+        <mxCell id="edge3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8b5cf6;strokeWidth=2;" edge="1" parent="1" source="el_selfcheck_handlers" target="py_selfcheck_resp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 4. Python Violations to Electron IPC Receiver (Fast <5ms) -->
+        <mxCell id="edge4" value="POST :8766/violation&#xa;Fast ACK (202 Accepted &lt;5ms)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f59e0b;strokeWidth=2;fontColor=#fbbf24;fontSize=10;" edge="1" parent="1" source="py_whitelist_thread" target="el_violation_receiver">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="660" />
+              <mxPoint x="980" y="660" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 5. Camera Violation to Electron IPC Receiver -->
+        <mxCell id="edge5" value="Evidence Screenshot + Violation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f59e0b;strokeWidth=2;fontColor=#fbbf24;fontSize=10;" edge="1" parent="1" source="py_camera_thread" target="el_violation_receiver">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 6. USB Violation to Electron IPC Receiver -->
+        <mxCell id="edge6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#f59e0b;strokeWidth=2;" edge="1" parent="1" source="py_usb_thread" target="el_violation_receiver">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 7. Electron Forwarder to Backend Server -->
+        <mxCell id="edge7" value="Async Forward (Retries=3)&#xa;POST :5000/violation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8b5cf6;strokeWidth=2;fontColor=#c084fc;fontSize=10;" edge="1" parent="1" source="el_violation_receiver" target="srv_rest_api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="940" y="620" />
+              <mxPoint x="940" y="520" />
+              <mxPoint x="1480" y="520" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 8. Display Change Direct Forward -->
+        <mxCell id="edge8" value="Secondary Display Violation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8b5cf6;strokeWidth=2;fontColor=#c084fc;fontSize=10;" edge="1" parent="1" source="el_screen_listener" target="srv_rest_api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="920" y="510" />
+              <mxPoint x="920" y="470" />
+              <mxPoint x="1480" y="470" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 9. Backend Socket.IO to Dashboard -->
+        <mxCell id="edge9" value="WebSocket Push: newViolation &lt;20ms" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#10b981;strokeWidth=2;fontColor=#6ee7b7;fontSize=10;" edge="1" parent="1" source="srv_socket_hub" target="dash_socket_listen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 10. Dashboard Release Paper to Backend -->
+        <mxCell id="edge10" value="POST /exams/:id/release-paper" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#ec4899;strokeWidth=2;fontColor=#f472b6;fontSize=10;" edge="1" parent="1" source="dash_controls" target="srv_rest_api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1920" y="800" />
+              <mxPoint x="1920" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 11. Backend Status Poller from Candidate App -->
+        <mxCell id="edge11" value="GET /sessions/:id/status (Every 3s)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6366f1;strokeWidth=2;fontColor=#818cf8;fontSize=10;" edge="1" parent="1" source="cr_status_loop" target="srv_rest_api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460" y="600" />
+              <mxPoint x="460" y="450" />
+              <mxPoint x="1480" y="450" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 12. Candidate Auto-Submit to Backend -->
+        <mxCell id="edge12" value="POST /submissions (Auto-Submit on 00:00)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#ef4444;strokeWidth=2;fontColor=#f87171;fontSize=10;" edge="1" parent="1" source="cr_expiry_trigger" target="srv_save_submission">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
