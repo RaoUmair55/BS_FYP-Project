@@ -872,3 +872,69 @@
   cursor: pointer;
   padding: 0 4px;
 }
+
+/* ==========================================================================
+   Responsive Utilities & Layout Breakpoints for Material Components
+   ========================================================================== */
+
+@media screen and (max-width: 992px) {
+  .exam-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .summary-stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .summary-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .summary-actions-row {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .md-modal-card {
+    max-width: 94vw !important;
+    width: 94vw !important;
+    max-height: 90vh !important;
+  }
+  .student-list-container {
+    max-height: 340px;
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .exam-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .summary-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .section-header .md-btn {
+    width: 100%;
+  }
+  .exam-tabs-bar {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+  .summary-table-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .evidence-header-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}

@@ -4,11 +4,12 @@ import ExamManager from '../components/ExamManager';
 import ExamSummary from '../components/ExamSummary';
 import StudentList from '../components/StudentList';
 import AlertFeed from '../components/AlertFeed';
+import PriorityQueue from '../components/PriorityQueue';
 import EvidenceViewer from '../components/EvidenceViewer';
 import CandidateGrid from '../components/CandidateGrid';
 import AdminDashboard from '../components/AdminDashboard/AdminDashboard';
 import LiveExamChat from '../components/LiveExamChat';
-import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban, MessageSquare } from 'lucide-react';
+import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban, MessageSquare, Menu, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AuthModal from '../components/AuthModal';
 import './Dashboard.css';
@@ -74,11 +75,12 @@ export default function Dashboard() {
     const { teacher, showAuthModal, setShowAuthModal, logout, demoLogin, authFetch } = useAuth();
     const [selectedSessionId, setSelectedSessionId] = useState(null);
     const [activeTab, setActiveTab] = useState('exams'); // 'exams' or 'monitoring'
-    const [rightPanelView, setRightPanelView] = useState('feed'); // 'feed' or 'evidence'
+    const [rightPanelView, setRightPanelView] = useState('priority'); // 'priority', 'feed', 'grid', 'evidence', 'chat'
     const [selectedExamFilter, setSelectedExamFilter] = useState(null);
     const [selectedSummaryExamId, setSelectedSummaryExamId] = useState(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [chatSessionId, setChatSessionId] = useState(null);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     const lastSeenViolationIdRef = React.useRef(null);
     const isInitialMountRef = React.useRef(true);
@@ -136,11 +138,13 @@ export default function Dashboard() {
         setSelectedExamFilter(exam.examCode);
         setSelectedSummaryExamId(null);
         setActiveTab('monitoring');
+        setMobileMenuOpen(false);
     };
 
     const handleSelectExamSummary = (examId) => {
         setSelectedSummaryExamId(examId);
         setActiveTab('exams');
+        setMobileMenuOpen(false);
     };
 
     const handleEndCurrentExam = async () => {
@@ -169,19 +173,23 @@ export default function Dashboard() {
         <div className="dashboard-container">
             {/* Header Bar */}
             <header className="dashboard-header">
-                <div className="header-brand">
-                    <img src="/logo.svg" alt="IntegrityFlow Logo" className="brand-logo-img" />
-                    <div className="brand-text-container">
-                        <h1 className="brand-title">IntegrityFlow</h1>
-                        <span className="brand-subtitle-tag">Examiner Dashboard</span>
+                <div className="header-brand-container">
+                    <div className="header-brand" onClick={() => { setActiveTab('exams'); setSelectedSummaryExamId(null); }} style={{ cursor: 'pointer' }}>
+                        <img src="/logo.svg" alt="IntegrityFlow Logo" className="brand-logo-img" />
+                        <div className="brand-text-container">
+                            <h1 className="brand-title">IntegrityFlow</h1>
+                            <span className="brand-subtitle-tag">Examiner Dashboard</span>
+                        </div>
                     </div>
                 </div>
 
-                <div className="header-controls">
-                    <div className="nav-tabs">
+                {/* Desktop Navigation & Actions */}
+                <div className="header-controls desktop-only-controls">
+                    <nav className="nav-tabs" aria-label="Main Navigation">
                         <button 
                             className={`nav-tab-btn ${activeTab === 'exams' ? 'active' : ''}`}
                             onClick={() => {
+                                setSelectedSummaryExamId(null);
                                 setActiveTab('exams');
                             }}
                         >
@@ -207,165 +215,222 @@ export default function Dashboard() {
                                 }}
                             >
                                 <FolderKanban size={16} />
-                                <span>Admin & Storage Console</span>
+                                <span>Admin & Storage</span>
                             </button>
                         )}
+                    </nav>
+
+                    <div className="header-actions-group">
+                        <button 
+                            className={`header-sound-btn ${soundEnabled ? 'active' : ''}`}
+                            onClick={() => setSoundEnabled(!soundEnabled)}
+                            title={soundEnabled ? "Alert Sound Enabled (Click to Mute)" : "Alert Sound Muted (Click to Unmute)"}
+                        >
+                            {soundEnabled ? <Volume2 size={16} className="sound-icon-on" /> : <VolumeX size={16} className="sound-icon-off" />}
+                            <span className="sound-btn-text">{soundEnabled ? 'Sound ON' : 'Muted'}</span>
+                        </button>
+
+                        <div className="connection-status">
+                            <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
+                            <span className="connection-text">{connected ? 'Online' : 'Connecting...'}</span>
+                        </div>
+
+                        {/* Teacher Auth Controls */}
+                        {teacher ? (
+                            <div className="teacher-profile-badge">
+                                <div className={`teacher-avatar ${teacher.role === 'admin' ? 'admin' : 'examiner'}`}>
+                                    {teacher.name ? teacher.name.charAt(0).toUpperCase() : 'T'}
+                                </div>
+                                <div className="teacher-info">
+                                    <span className="teacher-name">{teacher.name}</span>
+                                    <span className={`teacher-role ${teacher.role === 'admin' ? 'admin' : 'examiner'}`}>
+                                        {teacher.role === 'admin' ? '🛡️ Administrator' : 'Examiner'}
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={logout}
+                                    title="Sign Out"
+                                    className="teacher-logout-btn"
+                                >
+                                    <LogOut size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="auth-header-group">
+                                {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => demoLogin('admin')}
+                                            title="Sign in as Administrator"
+                                            className="demo-auth-btn admin-demo"
+                                        >
+                                            <Shield size={14} />
+                                            <span>Demo Admin</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => demoLogin('teacher')}
+                                            title="Sign in as Regular Teacher"
+                                            className="demo-auth-btn teacher-demo"
+                                        >
+                                            <Sparkles size={14} />
+                                            <span>Demo Teacher</span>
+                                        </button>
+                                    </>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAuthModal(true)}
+                                    className="signin-header-btn"
+                                >
+                                    <Lock size={14} />
+                                    <span>Sign In</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Mobile Quick Header Actions & Hamburger Toggle */}
+                <div className="mobile-header-actions">
+                    <button 
+                        className={`header-sound-btn-compact ${soundEnabled ? 'active' : ''}`}
+                        onClick={() => setSoundEnabled(!soundEnabled)}
+                        title={soundEnabled ? "Alert Sound ON" : "Alert Sound Muted"}
+                    >
+                        {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                    </button>
+
+                    <div className="connection-status-compact" title={connected ? 'System Online' : 'Connecting...'}>
+                        <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
                     </div>
 
                     <button 
-                        className={`nav-tab-btn ${soundEnabled ? 'active' : ''}`}
-                        onClick={() => setSoundEnabled(!soundEnabled)}
-                        title={soundEnabled ? "Alert Sound Enabled (Click to Mute)" : "Alert Sound Muted (Click to Unmute)"}
-                        style={{ padding: '6px 12px' }}
+                        className="mobile-menu-toggle-btn"
+                        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                        aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
                     >
-                        {soundEnabled ? <Volume2 size={16} style={{ color: '#137333' }} /> : <VolumeX size={16} style={{ color: '#70757a' }} />}
-                        <span>{soundEnabled ? 'Sound ON' : 'Muted'}</span>
+                        {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
                     </button>
-
-                    <div className="connection-status">
-                        <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
-                        <span>{connected ? 'System Online' : 'Connecting...'}</span>
-                    </div>
-
-                    {/* Teacher Auth Controls */}
-                    {teacher ? (
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            background: 'var(--surface-color)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '8px',
-                            padding: '4px 10px'
-                        }}>
-                            <div style={{
-                                width: 26,
-                                height: 26,
-                                borderRadius: '50%',
-                                background: teacher.role === 'admin' ? 'linear-gradient(135deg, #1a73e8, #7c3aed)' : 'linear-gradient(135deg, #188038, #34a853)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#fff',
-                                fontSize: 12,
-                                fontWeight: 700
-                            }}>
-                                {teacher.name ? teacher.name.charAt(0).toUpperCase() : 'T'}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                                    {teacher.name}
-                                </span>
-                                <span style={{ 
-                                    fontSize: 10, 
-                                    fontWeight: 700, 
-                                    color: teacher.role === 'admin' ? '#1a73e8' : '#188038', 
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px'
-                                }}>
-                                    {teacher.role === 'admin' ? '🛡️ Administrator' : 'Examiner'}
-                                </span>
-                            </div>
-                            <button
-                                onClick={logout}
-                                title="Sign Out"
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'var(--text-secondary)',
-                                    cursor: 'pointer',
-                                    padding: '4px',
-                                    borderRadius: '4px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    marginLeft: 4
-                                }}
-                            >
-                                <LogOut size={14} />
-                            </button>
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={() => demoLogin('admin')}
-                                        title="Sign in as Administrator"
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 6,
-                                            padding: '6px 14px',
-                                            backgroundColor: '#ffffff',
-                                            border: '1px solid #1a73e8',
-                                            borderRadius: '4px',
-                                            color: '#1a73e8',
-                                            fontSize: '13px',
-                                            fontWeight: 600,
-                                            cursor: 'pointer',
-                                            transition: 'background-color 0.15s ease'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(26, 115, 232, 0.08)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
-                                    >
-                                        <Shield size={14} color="#1a73e8" />
-                                        <span>Demo Admin</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => demoLogin('teacher')}
-                                        title="Sign in as Regular Teacher"
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 6,
-                                            padding: '6px 12px',
-                                            backgroundColor: '#ffffff',
-                                            border: '1px solid #dadce0',
-                                            borderRadius: '4px',
-                                            color: '#3c4043',
-                                            fontSize: '13px',
-                                            fontWeight: 500,
-                                            cursor: 'pointer',
-                                            transition: 'background-color 0.15s ease'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
-                                    >
-                                        <Sparkles size={14} color="#5f6368" />
-                                        <span>Demo Teacher</span>
-                                    </button>
-                                </>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => setShowAuthModal(true)}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    padding: '6px 16px',
-                                    backgroundColor: '#1a73e8',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    color: '#ffffff',
-                                    fontSize: '13px',
-                                    fontWeight: 500,
-                                    cursor: 'pointer',
-                                    boxShadow: '0 1px 2px rgba(60,64,67,0.3)',
-                                    transition: 'background-color 0.15s ease'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1557d0'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#1a73e8'}
-                            >
-                                <Lock size={14} color="#ffffff" />
-                                <span>Sign In</span>
-                            </button>
-                        </div>
-                    )}
                 </div>
             </header>
+
+            {/* Responsive Mobile Navigation Drawer */}
+            {mobileMenuOpen && (
+                <div className="mobile-nav-overlay" onClick={() => setMobileMenuOpen(false)}>
+                    <div className="mobile-nav-drawer" onClick={(e) => e.stopPropagation()}>
+                        <div className="mobile-nav-section">
+                            <div className="mobile-nav-label">Navigation</div>
+                            <button 
+                                className={`mobile-nav-item ${activeTab === 'exams' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setSelectedSummaryExamId(null);
+                                    setActiveTab('exams');
+                                    setMobileMenuOpen(false);
+                                }}
+                            >
+                                <Layers size={18} />
+                                <span>Exams & Analytics</span>
+                            </button>
+                            <button 
+                                className={`mobile-nav-item ${activeTab === 'monitoring' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setSelectedSummaryExamId(null);
+                                    setActiveTab('monitoring');
+                                    setMobileMenuOpen(false);
+                                }}
+                            >
+                                <Radio size={18} />
+                                <span>Live Monitoring</span>
+                            </button>
+                            {teacher?.role === 'admin' && (
+                                <button 
+                                    className={`mobile-nav-item ${activeTab === 'admin' ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setSelectedSummaryExamId(null);
+                                        setActiveTab('admin');
+                                        setMobileMenuOpen(false);
+                                    }}
+                                >
+                                    <FolderKanban size={18} />
+                                    <span>Admin & Storage Console</span>
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="mobile-nav-divider"></div>
+
+                        {/* Mobile Auth / Profile Section */}
+                        <div className="mobile-nav-section">
+                            <div className="mobile-nav-label">Account & Access</div>
+                            {teacher ? (
+                                <div className="mobile-user-card">
+                                    <div className="mobile-user-top">
+                                        <div className={`teacher-avatar ${teacher.role === 'admin' ? 'admin' : 'examiner'}`}>
+                                            {teacher.name ? teacher.name.charAt(0).toUpperCase() : 'T'}
+                                        </div>
+                                        <div className="teacher-info">
+                                            <span className="teacher-name">{teacher.name}</span>
+                                            <span className="teacher-role">{teacher.role === 'admin' ? '🛡️ Administrator' : 'Examiner'}</span>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            logout();
+                                            setMobileMenuOpen(false);
+                                        }}
+                                        className="mobile-logout-btn"
+                                    >
+                                        <LogOut size={16} />
+                                        <span>Sign Out</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="mobile-auth-actions">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowAuthModal(true);
+                                            setMobileMenuOpen(false);
+                                        }}
+                                        className="signin-header-btn mobile-full-btn"
+                                    >
+                                        <Lock size={16} />
+                                        <span>Sign In / Create Account</span>
+                                    </button>
+                                    {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                                        <div className="mobile-demo-row">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    demoLogin('admin');
+                                                    setMobileMenuOpen(false);
+                                                }}
+                                                className="demo-auth-btn admin-demo mobile-half-btn"
+                                            >
+                                                <Shield size={14} />
+                                                <span>Demo Admin</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    demoLogin('teacher');
+                                                    setMobileMenuOpen(false);
+                                                }}
+                                                className="demo-auth-btn teacher-demo mobile-half-btn"
+                                            >
+                                                <Sparkles size={14} />
+                                                <span>Demo Teacher</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Main Content Areas */}
             {activeTab === 'admin' ? (
@@ -422,11 +487,13 @@ export default function Dashboard() {
                         />
                     </div>
                     
-                    {/* Right Column: Alert Feed / Evidence Timeline / Candidate Grid */}
+                    {/* Right Column: Priority Queue / Alert Feed / Evidence Timeline / Candidate Grid / Chat */}
                     <div className="dashboard-right">
                         <div className="right-panel-header">
                             <h2>
-                                {rightPanelView === 'feed' 
+                                {rightPanelView === 'priority'
+                                    ? 'Cross-Student Priority Queue'
+                                    : rightPanelView === 'feed' 
                                     ? 'Real-Time Alert Feed' 
                                     : rightPanelView === 'grid' 
                                     ? 'Candidate Webcam Grid' 
@@ -435,6 +502,14 @@ export default function Dashboard() {
                                     : `Evidence Review: ${selectedSessionId || ''}`}
                             </h2>
                             <div className="sub-tabs">
+                                <button 
+                                    className={`sub-tab-btn ${rightPanelView === 'priority' ? 'active' : ''}`}
+                                    onClick={() => setRightPanelView('priority')}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <Zap size={13} style={{ color: rightPanelView === 'priority' ? '#d93025' : '#5f6368' }} />
+                                    <span>Priority Queue</span>
+                                </button>
                                 <button 
                                     className={`sub-tab-btn ${rightPanelView === 'feed' ? 'active' : ''}`}
                                     onClick={() => setRightPanelView('feed')}
@@ -463,7 +538,17 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        {rightPanelView === 'feed' ? (
+                        {rightPanelView === 'priority' ? (
+                            <PriorityQueue 
+                                socket={socket}
+                                examFilter={selectedExamFilter}
+                                onSelectExamFilter={setSelectedExamFilter}
+                                onSelectStudentForReview={(sid) => {
+                                    setSelectedSessionId(sid);
+                                    setRightPanelView('evidence');
+                                }}
+                            />
+                        ) : rightPanelView === 'feed' ? (
                             <AlertFeed 
                                 violations={violations} 
                                 onSelectViolation={(v) => {

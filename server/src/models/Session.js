@@ -30,4 +30,8 @@ const sessionSchema = new mongoose.Schema({
     }]
 });
 
+// Compound index to support active session monitoring and historical exam queries
+sessionSchema.index({ examId: 1, status: 1 });
+
 module.exports = mongoose.model('Session', sessionSchema);
+

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { getViolations } from '../services/api';
 import { 
     Check, X, Clock, CheckCircle, XCircle, Eye, Camera, AlertTriangle, 
     ShieldCheck, FileText, Download, Paperclip, AlertOctagon, MessageSquare, 
-    Send, UserX, AlertCircle 
+    Send, UserX, AlertCircle, Image, Maximize2, ChevronDown, ChevronUp,
+    Layers, Filter, Sparkles, Smartphone, Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
@@ -43,6 +44,36 @@ function formatType(typeStr, details = {}) {
     return typeStr.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+function getCategoryInfo(typeStr, details = {}) {
+    if (!typeStr) return { key: 'other', label: 'General Alert', icon: '⚠️', color: '#5f6368', badgeBg: '#f1f3f4' };
+    if (typeStr.includes('object') || typeStr.includes('phone') || details?.object_class) {
+        const item = details?.object_class ? details.object_class.toLowerCase() : 'Mobile / Object';
+        return { 
+            key: 'objects',
+            label: `📱 ${item.charAt(0).toUpperCase() + item.slice(1)}`, 
+            icon: '📱', 
+            color: '#b91c1c', 
+            badgeBg: '#fee2e2' 
+        };
+    }
+    if (typeStr.includes('head') || typeStr.includes('turn') || typeStr.includes('gaze')) {
+        return { key: 'head', label: '👤 Head / Gaze Turn', icon: '👤', color: '#b45309', badgeBg: '#fef3c7' };
+    }
+    if (typeStr.includes('second_person') || typeStr.includes('multiple_faces')) {
+        return { key: 'people', label: '👥 Second Person', icon: '👥', color: '#b91c1c', badgeBg: '#fee2e2' };
+    }
+    if (typeStr.includes('no_face')) {
+        return { key: 'noface', label: '👁️ Face Missing', icon: '👁️', color: '#c2410c', badgeBg: '#ffedd5' };
+    }
+    if (typeStr.includes('app') || typeStr.includes('window')) {
+        return { key: 'app', label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: '#e0e7ff' };
+    }
+    if (typeStr.includes('camera') || typeStr.includes('dark')) {
+        return { key: 'camera', label: '🌑 Camera Feed Dark', icon: '🌑', color: '#4b5563', badgeBg: '#f3f4f6' };
+    }
+    return { key: 'other', label: '⚠️ Suspicious Activity', icon: '⚠️', color: '#b45309', badgeBg: '#fef3c7' };
+}
+
 export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const { authFetch } = useAuth();
     const [history, setHistory] = useState([]);
@@ -51,6 +82,12 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const [submissions, setSubmissions] = useState([]);
     const [cameraActionLoading, setCameraActionLoading] = useState(false);
     const [showDismissedLogs, setShowDismissedLogs] = useState(false);
+
+    // Filtering & Categorized Accordion States
+    const [categoryFilter, setCategoryFilter] = useState('all'); // 'all', 'objects', 'head', 'people', 'noface', 'app'
+    const [groupByCategory, setGroupByCategory] = useState(true);
+    const [expandedCategoryKeys, setExpandedCategoryKeys] = useState(new Set());
+    const [modalImageSrc, setModalImageSrc] = useState(null);
 
     // Live Candidate Action States
     const [showWarnModal, setShowWarnModal] = useState(false);
@@ -118,18 +155,10 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             let hasChanges = false;
 
             liveViolations.forEach(liveV => {
-                const liveSid = String(liveV.sessionId || liveV.session_id || '');
-                if (liveSid === String(sessionId)) {
-                    const liveId = String(liveV._id || liveV.id);
-                    const index = updated.findIndex(item => String(item._id || item.id) === liveId);
-
-                    if (index >= 0) {
-                        if (JSON.stringify(updated[index]) !== JSON.stringify(liveV)) {
-                            updated[index] = { ...updated[index], ...liveV };
-                            hasChanges = true;
-                        }
-                    } else {
-                        updated = [liveV, ...updated];
+                if (String(liveV.sessionId) === String(sessionId)) {
+                    const existingIdx = updated.findIndex(item => String(item._id) === String(liveV._id));
+                    if (existingIdx === -1) {
+                        updated.unshift(liveV);
                         hasChanges = true;
                     }
                 }
@@ -139,63 +168,8 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
         });
     }, [liveViolations, sessionId]);
 
-    const handleSendWarning = async (e) => {
-        e.preventDefault();
-        if (!sessionId || !warnMessage.trim()) return;
-
-        setActionSubmitting(true);
-        try {
-            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/warn`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: warnMessage.trim() })
-            });
-
-            if (res.ok) {
-                setWarnSuccess(true);
-                setTimeout(() => {
-                    setShowWarnModal(false);
-                    setWarnSuccess(false);
-                    setWarnMessage('');
-                }, 1200);
-                fetchSessionData();
-            }
-        } catch (err) {
-            console.error('Failed to send warning:', err);
-        } finally {
-            setActionSubmitting(false);
-        }
-    };
-
-    const handleTerminateCandidate = async (e) => {
-        e.preventDefault();
-        if (!sessionId) return;
-
-        setActionSubmitting(true);
-        try {
-            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/terminate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    reason: terminateReason.trim() || 'Terminated by examiner for integrity policy violation' 
-                })
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setSessionData(data.session);
-                setShowTerminateModal(false);
-                fetchSessionData();
-            }
-        } catch (err) {
-            console.error('Failed to terminate candidate:', err);
-        } finally {
-            setActionSubmitting(false);
-        }
-    };
-
     const handleReviewAction = async (violationId, decision) => {
-        // Optimistically update local history immediately
+        // Optimistically update local timeline state
         setHistory(prev => prev.map(v => {
             if (v._id === violationId) {
                 return {
@@ -230,7 +204,6 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
         if (!sessionId) return;
         setCameraActionLoading(true);
 
-        // Optimistically update session camera verification status
         setSessionData(prev => prev ? ({ ...prev, cameraVerificationStatus: status }) : prev);
 
         try {
@@ -243,7 +216,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             if (res.ok) {
                 const data = await res.json();
                 setSessionData(data.session);
-                fetchHistory(); // Refresh violations in case camera issue was flagged
+                fetchHistory();
             }
         } catch (err) {
             console.error('Error updating camera verification:', err);
@@ -251,6 +224,123 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             setCameraActionLoading(false);
         }
     };
+
+    const handleSendWarning = async (e) => {
+        e.preventDefault();
+        if (!warnMessage.trim() || !sessionId) return;
+
+        setActionSubmitting(true);
+        try {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/warn`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: warnMessage })
+            });
+
+            if (res.ok) {
+                setWarnSuccess(true);
+                setTimeout(() => {
+                    setWarnSuccess(false);
+                    setShowWarnModal(false);
+                    setWarnMessage('');
+                    fetchSessionData();
+                }, 1200);
+            }
+        } catch (err) {
+            console.error('Failed to send warning:', err);
+        } finally {
+            setActionSubmitting(false);
+        }
+    };
+
+    const handleTerminate = async (e) => {
+        e.preventDefault();
+        if (!terminateReason.trim() || !sessionId) return;
+
+        setActionSubmitting(true);
+        try {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/terminate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: terminateReason })
+            });
+
+            if (res.ok) {
+                setShowTerminateModal(false);
+                setTerminateReason('');
+                fetchSessionData();
+            }
+        } catch (err) {
+            console.error('Failed to terminate candidate:', err);
+        } finally {
+            setActionSubmitting(false);
+        }
+    };
+
+    const toggleCategoryExpand = (catKey) => {
+        setExpandedCategoryKeys(prev => {
+            const next = new Set(prev);
+            if (next.has(catKey)) next.delete(catKey);
+            else next.add(catKey);
+            return next;
+        });
+    };
+
+    // Filter active and dismissed violations
+    const activeViolations = useMemo(() => {
+        return history.filter(v => v.decision !== 'dismissed');
+    }, [history]);
+
+    const dismissedViolations = useMemo(() => {
+        return history.filter(v => v.decision === 'dismissed');
+    }, [history]);
+
+    // Apply Category Filter
+    const filteredActiveViolations = useMemo(() => {
+        if (categoryFilter === 'all') return activeViolations;
+        return activeViolations.filter(v => {
+            const cat = getCategoryInfo(v.type, v.details);
+            return cat.key === categoryFilter;
+        });
+    }, [activeViolations, categoryFilter]);
+
+    // Group active violations into Category Bundles
+    const categorizedBundles = useMemo(() => {
+        const bundleMap = new Map();
+
+        filteredActiveViolations.forEach(v => {
+            const cat = getCategoryInfo(v.type, v.details);
+            const bundleKey = cat.key;
+
+            if (!bundleMap.has(bundleKey)) {
+                bundleMap.set(bundleKey, {
+                    key: bundleKey,
+                    label: cat.label,
+                    icon: cat.icon,
+                    color: cat.color,
+                    badgeBg: cat.badgeBg,
+                    items: [],
+                    maxSeverity: v.severity || 1,
+                    unreviewedCount: 0,
+                    latestTimestamp: v.timestamp
+                });
+            }
+
+            const bundle = bundleMap.get(bundleKey);
+            bundle.items.push(v);
+            if (Number(v.severity) > Number(bundle.maxSeverity)) {
+                bundle.maxSeverity = v.severity;
+            }
+            if (!v.reviewed) {
+                bundle.unreviewedCount += 1;
+            }
+            if (new Date(v.timestamp) > new Date(bundle.latestTimestamp)) {
+                bundle.latestTimestamp = v.timestamp;
+            }
+        });
+
+        return Array.from(bundleMap.values()).sort((a, b) => b.maxSeverity - a.maxSeverity);
+    }, [filteredActiveViolations]);
 
     if (!sessionId) {
         return (
@@ -281,8 +371,8 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const rollDisplay = sessionData?.rollNumber ? ` (${sessionData.rollNumber})` : (sessionData?.studentId && sessionData.studentId !== sessionData.studentName ? ` (${sessionData.studentId})` : '');
 
     return (
-        <div className="md-card evidence-card" style={{ overflowY: 'auto' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="md-card evidence-card" style={{ overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
 
                 {/* Candidate Action Control Bar Header */}
                 <div style={{ background: isTerminated ? '#fce8e6' : '#e8f0fe', border: isTerminated ? '1px solid #fad2cf' : '1px solid #c2e7ff', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
@@ -326,18 +416,18 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                     ) : (
                         <div style={{ color: '#d93025', fontSize: '12px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <AlertCircle size={14} />
-                            <span>Session Terminated by Examiner: "{sessionData?.terminationReason || 'Integrity Violation'}"</span>
+                            <span>Session Terminated: "{sessionData?.terminationReason || 'Integrity Violation'}"</span>
                         </div>
                     )}
                 </div>
 
                 {/* Candidate Exam Submissions Section */}
                 {submissions.length > 0 && (
-                    <div className="alert-item" style={{ background: '#f8f9fa', border: '1px solid #1a73e8', borderRadius: '8px', padding: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div className="alert-item" style={{ background: '#f8f9fa', border: '1px solid #1a73e8', borderRadius: '8px', padding: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <FileText size={18} style={{ color: '#1a73e8' }} />
-                                <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
+                                <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
                                     Candidate Answer Submission
                                 </span>
                             </div>
@@ -347,271 +437,428 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                             </span>
                         </div>
 
-                        {submissions.map((sub, idx) => {
-                            const fileUrl = sub.filePath 
-                                ? `${API_BASE_URL.replace(/\/$/, '')}/${sub.filePath.replace(/^\//, '')}`
-                                : null;
+                        {submissions.map((sub, idx) => (
+                            <div key={sub._id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12.5px', background: '#fff', border: '1px solid #dadce0', borderRadius: '6px', padding: '8px 12px' }}>
+                                <span>📄 {sub.originalName || 'answer_script.pdf'}</span>
+                                {sub.fileUrl && (
+                                    <a 
+                                        href={sub.fileUrl.startsWith('http') ? sub.fileUrl : `${API_BASE_URL}${sub.fileUrl}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ color: '#1a73e8', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontWeight: 500 }}
+                                    >
+                                        <Download size={13} />
+                                        <span>Download Script</span>
+                                    </a>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Categorized Filter & Accordion Toolbar */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: '#f8f9fa',
+                    border: '1px solid #dadce0',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    flexWrap: 'wrap',
+                    gap: '8px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Filter size={15} style={{ color: '#5f6368' }} />
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#202124' }}>
+                            Evidence Timeline ({activeViolations.length} Active Incidents)
+                        </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {/* Group By Category Toggle */}
+                        <button
+                            type="button"
+                            onClick={() => setGroupByCategory(!groupByCategory)}
+                            className={`md-btn md-btn-sm ${groupByCategory ? 'md-btn-primary' : 'md-btn-outlined'}`}
+                            style={{ fontSize: '11.5px', padding: '3px 8px' }}
+                            title="Group repeated evidence by category dropdowns (e.g. Mobile, Head Turn) so you are not overwhelmed"
+                        >
+                            <Layers size={13} />
+                            <span>{groupByCategory ? 'Group by Category: ON' : 'Category Accordions: OFF'}</span>
+                        </button>
+
+                        {/* Category Filter Pills */}
+                        <div className="sub-tabs">
+                            <button
+                                className={`sub-tab-btn ${categoryFilter === 'all' ? 'active' : ''}`}
+                                onClick={() => setCategoryFilter('all')}
+                            >
+                                All ({activeViolations.length})
+                            </button>
+                            <button
+                                className={`sub-tab-btn ${categoryFilter === 'objects' ? 'active' : ''}`}
+                                onClick={() => setCategoryFilter('objects')}
+                            >
+                                📱 Mobile/Object
+                            </button>
+                            <button
+                                className={`sub-tab-btn ${categoryFilter === 'head' ? 'active' : ''}`}
+                                onClick={() => setCategoryFilter('head')}
+                            >
+                                👤 Head Turn
+                            </button>
+                            <button
+                                className={`sub-tab-btn ${categoryFilter === 'people' ? 'active' : ''}`}
+                                onClick={() => setCategoryFilter('people')}
+                            >
+                                👥 2nd Person
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Evidence Content */}
+                {filteredActiveViolations.length === 0 ? (
+                    <div className="md-empty-card" style={{ border: 'none', background: 'transparent', padding: '30px 20px' }}>
+                        <CheckCircle size={36} style={{ color: '#188038', marginBottom: '8px' }} />
+                        <h4 style={{ margin: 0, fontSize: '15px', color: '#202124' }}>No Active Violations Found</h4>
+                        <p style={{ margin: '4px 0 0 0', color: '#5f6368', fontSize: '12.5px' }}>
+                            {dismissedViolations.length > 0 
+                                ? `${dismissedViolations.length} alert(s) were dismissed as false positives.` 
+                                : 'This candidate has maintained clean monitoring status.'}
+                        </p>
+                    </div>
+                ) : groupByCategory ? (
+                    /* Categorized Accordion Dropdowns (Mobile vs Mobile, Head vs Head) */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {categorizedBundles.map(bundle => {
+                            // Default all expanded or let user toggle
+                            const isExpanded = !expandedCategoryKeys.has(bundle.key); // Default OPEN
+                            const snapshots = bundle.items.filter(i => Boolean(i.screenshotPath));
 
                             return (
-                                <div key={sub._id || idx} style={{ background: '#ffffff', border: '1px solid #dadce0', borderRadius: '6px', padding: '12px', marginBottom: idx < submissions.length - 1 ? '10px' : '0' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#5f6368' }}>
-                                        <span>Type: <strong style={{ color: '#202124', textTransform: 'capitalize' }}>{sub.submissionType}</strong></span>
-                                        <span>Uploaded: {new Date(sub.uploadedAt).toLocaleString()}</span>
-                                    </div>
-
-                                    {/* Typed Answer Text */}
-                                    {sub.answerText && (
-                                        <div style={{ marginBottom: sub.filename ? '12px' : '0' }}>
-                                            <div style={{ fontSize: '12px', fontWeight: 600, color: '#3c4043', marginBottom: '4px' }}>Typed Answer:</div>
-                                            <div style={{ background: '#f8f9fa', border: '1px solid #e8eaed', padding: '10px 12px', borderRadius: '6px', fontSize: '13px', color: '#202124', whiteSpace: 'pre-wrap', fontFamily: 'inherit', maxHeight: '200px', overflowY: 'auto' }}>
-                                                {sub.answerText}
+                                <div 
+                                    key={bundle.key}
+                                    className="md-card"
+                                    style={{
+                                        border: `1px solid ${bundle.maxSeverity >= 4 ? '#f5c2c7' : '#dadce0'}`,
+                                        borderLeft: `5px solid ${bundle.color}`,
+                                        padding: 0,
+                                        overflow: 'hidden',
+                                        background: '#fff'
+                                    }}
+                                >
+                                    {/* Accordion Category Header */}
+                                    <div 
+                                        onClick={() => toggleCategoryExpand(bundle.key)}
+                                        style={{
+                                            padding: '12px 16px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            cursor: 'pointer',
+                                            background: bundle.badgeBg,
+                                            borderBottom: isExpanded ? '1px solid #dadce0' : 'none',
+                                            userSelect: 'none'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <span style={{ fontSize: '18px' }}>{bundle.icon}</span>
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontSize: '14.5px', fontWeight: 600, color: '#202124' }}>
+                                                        {bundle.label}
+                                                    </span>
+                                                    <span style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 700,
+                                                        color: bundle.color,
+                                                        background: '#fff',
+                                                        padding: '2px 8px',
+                                                        borderRadius: '10px',
+                                                        border: `1px solid ${bundle.color}`
+                                                    }}>
+                                                        {bundle.items.length} Incident{bundle.items.length > 1 ? 's' : ''}
+                                                    </span>
+                                                    {bundle.unreviewedCount > 0 && (
+                                                        <span className="md-badge status-draft" style={{ fontSize: '10px' }}>
+                                                            {bundle.unreviewedCount} Needs Review
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: '11.5px', color: '#5f6368', marginTop: '2px' }}>
+                                                    Latest: {new Date(bundle.latestTimestamp).toLocaleTimeString()} &bull; Severity: {bundle.maxSeverity} &bull; {snapshots.length} Snapshots
+                                                </div>
                                             </div>
                                         </div>
-                                    )}
 
-                                    {/* Attached File Download */}
-                                    {sub.filename && fileUrl && (
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#e8f0fe', padding: '10px 12px', borderRadius: '6px', border: '1px solid #c2e7ff' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                                                <Paperclip size={16} style={{ color: '#1a73e8', flexShrink: 0 }} />
-                                                <span style={{ fontSize: '13px', fontWeight: 500, color: '#1a73e8', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                                    {sub.filename}
-                                                </span>
-                                            </div>
-                                            <a 
-                                                href={fileUrl} 
-                                                target="_blank" 
-                                                rel="noreferrer" 
-                                                className="md-btn md-btn-primary md-btn-sm"
-                                                style={{ textDecoration: 'none', flexShrink: 0 }}
-                                            >
-                                                <Download size={13} />
-                                                <span>Download File</span>
-                                            </a>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: 500, color: '#1a73e8' }}>
+                                                {isExpanded ? 'Collapse Category' : `Expand (${bundle.items.length})`}
+                                            </span>
+                                            {isExpanded ? <ChevronUp size={16} color="#1a73e8" /> : <ChevronDown size={16} color="#1a73e8" />}
+                                        </div>
+                                    </div>
+
+                                    {/* Accordion Body: Evidence Snapshots & Decisions */}
+                                    {isExpanded && (
+                                        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#fafbfc' }}>
+                                            {bundle.items.map((v, vIdx) => {
+                                                const isReviewed = Boolean(v.reviewed);
+                                                const decision = v.decision || 'pending';
+                                                const imageSrc = v.screenshotPath 
+                                                    ? (v.screenshotPath.startsWith('http://') || v.screenshotPath.startsWith('https://')
+                                                        ? v.screenshotPath
+                                                        : `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`)
+                                                    : null;
+
+                                                return (
+                                                    <div 
+                                                        key={v._id || vIdx}
+                                                        style={{
+                                                            background: isReviewed ? '#f8f9fa' : '#ffffff',
+                                                            border: isReviewed ? '1px solid #e8eaed' : '1px solid #1a73e8',
+                                                            borderRadius: '6px',
+                                                            padding: '10px 14px'
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <span style={{ fontWeight: 600, fontSize: '13.5px', color: '#202124' }}>
+                                                                    #{vIdx + 1} &bull; {formatType(v.type, v.details)}
+                                                                </span>
+                                                                <span className="md-badge" style={{ fontSize: '10.5px' }}>
+                                                                    Sev {v.severity}
+                                                                </span>
+                                                                {v.details?.confidence && (
+                                                                    <span style={{ fontSize: '11px', color: '#5f6368' }}>
+                                                                        ({Math.round(v.details.confidence * 100)}% conf)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <span style={{ fontSize: '11.5px', color: '#70757a' }}>
+                                                                    {new Date(v.timestamp).toLocaleTimeString()}
+                                                                </span>
+                                                                {isReviewed ? (
+                                                                    <span className={`md-badge ${decision === 'confirmed' ? 'status-active' : 'status-completed'}`} style={{ fontSize: '10.5px' }}>
+                                                                        {decision === 'confirmed' ? <CheckCircle size={11} /> : <XCircle size={11} />}
+                                                                        <span style={{ textTransform: 'capitalize' }}>{decision}</span>
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="md-badge status-draft" style={{ fontSize: '10.5px' }}>
+                                                                        Needs Review
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {v.details?.reason && (
+                                                            <div style={{ fontSize: '11.5px', color: '#5f6368', marginBottom: '6px' }}>
+                                                                Detail: {v.details.reason}
+                                                            </div>
+                                                        )}
+
+                                                        {imageSrc && (
+                                                            <div 
+                                                                style={{ 
+                                                                    marginTop: '6px', 
+                                                                    marginBottom: '8px', 
+                                                                    borderRadius: '6px', 
+                                                                    overflow: 'hidden', 
+                                                                    border: '1px solid #dadce0', 
+                                                                    background: '#000',
+                                                                    position: 'relative',
+                                                                    cursor: 'pointer',
+                                                                    maxHeight: '220px'
+                                                                }}
+                                                                onClick={() => setModalImageSrc(imageSrc)}
+                                                                title="Click to zoom full screenshot"
+                                                            >
+                                                                <img 
+                                                                    src={imageSrc} 
+                                                                    alt="Violation Evidence" 
+                                                                    style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', display: 'block' }} 
+                                                                />
+                                                                <span style={{
+                                                                    position: 'absolute',
+                                                                    bottom: 6,
+                                                                    right: 6,
+                                                                    background: 'rgba(0,0,0,0.7)',
+                                                                    color: '#fff',
+                                                                    padding: '2px 6px',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '11px',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '3px'
+                                                                }}>
+                                                                    <Maximize2 size={11} /> Click to Enlarge
+                                                                </span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Inline Review Decision Controls */}
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '6px' }}>
+                                                            <button 
+                                                                className="md-btn md-btn-sm" 
+                                                                style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0', fontSize: '11.5px', padding: '3px 8px' }}
+                                                                onClick={() => handleReviewAction(v._id, 'confirmed')}
+                                                            >
+                                                                <Check size={12} />
+                                                                <span>Confirm</span>
+                                                            </button>
+                                                            <button 
+                                                                className="md-btn md-btn-sm" 
+                                                                style={{ background: '#ffffff', color: '#d93025', border: '1px solid #fad2cf', fontSize: '11.5px', padding: '3px 8px' }}
+                                                                onClick={() => handleReviewAction(v._id, 'dismissed')}
+                                                            >
+                                                                <X size={12} />
+                                                                <span>Dismiss</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
                             );
                         })}
                     </div>
-                )}
+                ) : (
+                    /* Flat Chronological Timeline */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {filteredActiveViolations.map(v => {
+                            const isReviewed = Boolean(v.reviewed);
+                            const decision = v.decision || 'pending';
+                            const imageSrc = v.screenshotPath 
+                                ? (v.screenshotPath.startsWith('http://') || v.screenshotPath.startsWith('https://')
+                                    ? v.screenshotPath
+                                    : `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`)
+                                : null;
 
-                {/* Candidate Camera Start Verification Photo Card (disappears completely once verified) */}
-                {cameraPhotoUrl && cameraStatus !== 'verified' && (
-                    <div className="alert-item" style={{ background: '#f8f9fa', border: '1px solid #dadce0', borderRadius: '8px', padding: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <Camera size={18} style={{ color: '#1a73e8' }} />
-                                <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
-                                    Initial Camera Check Photo (Pending Identity Confirmation)
-                                </span>
-                            </div>
-
-                            <span className="md-badge status-draft">
-                                <Clock size={12} />
-                                <span>Self-Check Snapshot</span>
-                            </span>
-                        </div>
-
-                        <div style={{ borderRadius: '6px', overflow: 'hidden', border: '1px solid #dadce0', background: '#000', marginBottom: '12px' }}>
-                            <img 
-                                src={cameraPhotoUrl} 
-                                alt="Candidate Initial Camera Check" 
-                                style={{ width: '100%', maxHeight: '240px', objectFit: 'contain', display: 'block' }} 
-                            />
-                        </div>
-
-                        {/* Teacher Camera Verification Action Controls */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid #e8eaed', paddingTop: '10px' }}>
-                            <span style={{ fontSize: '12px', color: '#5f6368' }}>
-                                Confirm student identity to verify candidate and clear photo from screen.
-                            </span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <button 
-                                    className="md-btn md-btn-sm"
-                                    style={{ background: '#e6f4ea', color: '#137333', border: '1px solid #ceead6' }}
-                                    onClick={() => handleCameraVerificationAction('verified')}
-                                    disabled={cameraActionLoading}
+                            return (
+                                <div 
+                                    key={v._id} 
+                                    className={`alert-item alert-severity-${v.severity}`}
+                                    style={{
+                                        background: isReviewed ? '#f8f9fa' : '#ffffff',
+                                        border: isReviewed ? '1px solid #dadce0' : '1px solid #1a73e8'
+                                    }}
                                 >
-                                    <Check size={14} />
-                                    <span>{cameraActionLoading ? 'Verifying...' : 'Confirm Identity & Camera'}</span>
-                                </button>
-                                <button 
-                                    className="md-btn md-btn-sm"
-                                    style={{ background: '#fce8e6', color: '#d93025', border: '1px solid #fad2cf' }}
-                                    onClick={() => handleCameraVerificationAction('flagged', 'Camera covered, dark, or invalid feed')}
-                                    disabled={cameraActionLoading}
-                                >
-                                    <AlertTriangle size={14} />
-                                    <span>Flag Camera Issue</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* If already verified, show a clean, compact confirmation banner */}
-                {cameraStatus === 'verified' && (
-                    <div style={{ background: '#e6f4ea', border: '1px solid #ceead6', borderRadius: '6px', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#137333', fontSize: '13px', fontWeight: 500 }}>
-                            <ShieldCheck size={18} />
-                            <span>Candidate Identity & Webcam Verified</span>
-                        </div>
-                        <span style={{ fontSize: '11px', color: '#137333', background: '#ffffff', padding: '2px 8px', borderRadius: '10px', border: '1px solid #ceead6' }}>
-                            Verified Active
-                        </span>
-                    </div>
-                )}
-
-                {/* Active Violations Timeline (excludes dismissed violations from active view) */}
-                {(() => {
-                    const activeViolations = history.filter(v => v.decision !== 'dismissed');
-                    const dismissedViolations = history.filter(v => v.decision === 'dismissed');
-
-                    return (
-                        <>
-                            {activeViolations.length === 0 ? (
-                                <div className="md-empty-card" style={{ border: 'none', background: 'transparent' }}>
-                                    <CheckCircle size={36} style={{ color: '#188038', marginBottom: '12px' }} />
-                                    <h3 style={{ margin: 0 }}>No Active Violations</h3>
-                                    <p style={{ margin: '4px 0 0 0', color: '#5f6368', fontSize: '13px' }}>
-                                        {dismissedViolations.length > 0 
-                                            ? `${dismissedViolations.length} alert(s) were dismissed as false positives.` 
-                                            : 'This candidate has maintained clean monitoring status.'}
-                                    </p>
-                                </div>
-                            ) : (
-                                activeViolations.map(v => {
-                                    const isReviewed = Boolean(v.reviewed);
-                                    const decision = v.decision || 'pending';
-                                    const imageSrc = v.screenshotPath 
-                                        ? (v.screenshotPath.startsWith('http://') || v.screenshotPath.startsWith('https://')
-                                            ? v.screenshotPath
-                                            : `${API_BASE_URL.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`)
-                                        : null;
-
-                                    return (
-                                        <div 
-                                            key={v._id} 
-                                            className={`alert-item alert-severity-${v.severity}`}
-                                            style={{
-                                                background: isReviewed ? '#f8f9fa' : '#ffffff',
-                                                border: isReviewed ? '1px solid #dadce0' : '1px solid #1a73e8'
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                                <div>
-                                                    <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
-                                                        {formatType(v.type, v.details)}
-                                                    </span>
-                                                    <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', marginLeft: '8px' }}>
-                                                        Severity {v.severity}
-                                                    </span>
-                                                </div>
-
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ fontSize: '12px', color: '#70757a' }}>
-                                                        {new Date(v.timestamp).toLocaleTimeString()}
-                                                    </span>
-                                                    {isReviewed ? (
-                                                        <span className={`md-badge ${decision === 'confirmed' ? 'status-active' : 'status-completed'}`}>
-                                                            {decision === 'confirmed' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                                                            <span style={{ textTransform: 'capitalize' }}>{decision}</span>
-                                                        </span>
-                                                    ) : (
-                                                        <span className="md-badge status-draft">
-                                                            <Clock size={12} />
-                                                            <span>Needs Review</span>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {v.details && (
-                                                <div style={{ fontSize: '12px', color: '#5f6368', fontFamily: 'monospace', marginBottom: '10px' }}>
-                                                    {v.details.confidence && <span>Confidence: {Math.round(v.details.confidence * 100)}% • </span>}
-                                                    {v.details.duration && <span>Duration: {v.details.duration.toFixed(1)}s • </span>}
-                                                    {v.details.object_class && <span>Target: {v.details.object_class} • </span>}
-                                                    {v.details.reason && <span>Details: {v.details.reason}</span>}
-                                                </div>
-                                            )}
-
-                                            {v.reviewNote && (
-                                                <div style={{ fontSize: '12px', color: '#3c4043', background: '#f1f3f4', padding: '6px 10px', borderRadius: '4px', marginBottom: '10px', fontStyle: 'italic' }}>
-                                                    Review Note: "{v.reviewNote}"
-                                                </div>
-                                            )}
-
-                                            {imageSrc && (
-                                                <div style={{ marginTop: '8px', marginBottom: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #dadce0', background: '#000' }}>
-                                                    <img 
-                                                        src={imageSrc} 
-                                                        alt="Violation Evidence Screenshot" 
-                                                        style={{ width: '100%', maxHeight: '320px', objectFit: 'contain', display: 'block' }} 
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* Triage controls inside timeline */}
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '8px' }}>
-                                                <button 
-                                                    className="md-btn md-btn-sm" 
-                                                    style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0' }}
-                                                    onClick={() => handleReviewAction(v._id, 'confirmed')}
-                                                    title="Confirm that this alert is a valid violation"
-                                                >
-                                                    <Check size={14} />
-                                                    <span>Confirm Violation</span>
-                                                </button>
-                                                <button 
-                                                    className="md-btn md-btn-sm" 
-                                                    style={{ background: '#ffffff', color: '#d93025', border: '1px solid #fad2cf' }}
-                                                    onClick={() => handleReviewAction(v._id, 'dismissed')}
-                                                    title="Dismiss this alert as false positive and reduce candidate risk score"
-                                                >
-                                                    <X size={14} />
-                                                    <span>Dismiss Alert (Reduce Score)</span>
-                                                </button>
-                                            </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                        <div>
+                                            <span style={{ fontWeight: 600, fontSize: '14.5px', color: '#202124' }}>
+                                                {formatType(v.type, v.details)}
+                                            </span>
+                                            <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', marginLeft: '8px' }}>
+                                                Severity {v.severity}
+                                            </span>
                                         </div>
-                                    );
-                                })
-                            )}
+                                        <span style={{ fontSize: '12px', color: '#70757a' }}>
+                                            {new Date(v.timestamp).toLocaleTimeString()}
+                                        </span>
+                                    </div>
 
-                            {/* Dismissed / False Positive Audit Logs */}
-                            {dismissedViolations.length > 0 && (
-                                <div style={{ marginTop: '16px', borderTop: '1px solid #e8eaed', paddingTop: '12px' }}>
-                                    <button 
-                                        type="button"
-                                        className="md-btn md-btn-sm md-btn-text"
-                                        onClick={() => setShowDismissedLogs(!showDismissedLogs)}
-                                        style={{ color: '#5f6368', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', cursor: 'pointer' }}
-                                    >
-                                        <Clock size={13} />
-                                        <span>{showDismissedLogs ? 'Hide' : 'View'} Dismissed / False Positive Logs ({dismissedViolations.length})</span>
-                                    </button>
-
-                                    {showDismissedLogs && (
-                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                            {dismissedViolations.map(dv => (
-                                                <div key={dv._id} style={{ background: '#f8f9fa', border: '1px dashed #dadce0', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#5f6368', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                    <div>
-                                                        <strong>{formatType(dv.type, dv.details)}</strong> (Severity {dv.severity}) • {new Date(dv.timestamp).toLocaleTimeString()}
-                                                        {dv.details?.object_class && ` • Target: ${dv.details.object_class}`}
-                                                    </div>
-                                                    <span className="md-badge" style={{ background: '#e8eaed', color: '#5f6368', fontSize: '10px' }}>
-                                                        Dismissed by Examiner
-                                                    </span>
-                                                </div>
-                                            ))}
+                                    {imageSrc && (
+                                        <div 
+                                            style={{ marginTop: '8px', marginBottom: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #dadce0', background: '#000', cursor: 'pointer' }}
+                                            onClick={() => setModalImageSrc(imageSrc)}
+                                        >
+                                            <img 
+                                                src={imageSrc} 
+                                                alt="Evidence Snapshot" 
+                                                style={{ width: '100%', maxHeight: '280px', objectFit: 'contain', display: 'block' }} 
+                                            />
                                         </div>
                                     )}
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                        <button 
+                                            className="md-btn md-btn-sm" 
+                                            style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0' }}
+                                            onClick={() => handleReviewAction(v._id, 'confirmed')}
+                                        >
+                                            <Check size={14} />
+                                            <span>Confirm</span>
+                                        </button>
+                                        <button 
+                                            className="md-btn md-btn-sm" 
+                                            style={{ background: '#ffffff', color: '#d93025', border: '1px solid #fad2cf' }}
+                                            onClick={() => handleReviewAction(v._id, 'dismissed')}
+                                        >
+                                            <X size={14} />
+                                            <span>Dismiss</span>
+                                        </button>
+                                    </div>
                                 </div>
-                            )}
-                        </>
-                    );
-                })()}
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Dismissed / False Positive Audit Logs */}
+                {dismissedViolations.length > 0 && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid #e8eaed', paddingTop: '12px' }}>
+                        <button 
+                            type="button"
+                            className="md-btn md-btn-sm md-btn-text"
+                            onClick={() => setShowDismissedLogs(!showDismissedLogs)}
+                            style={{ color: '#5f6368', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', cursor: 'pointer' }}
+                        >
+                            <Clock size={13} />
+                            <span>{showDismissedLogs ? 'Hide' : 'View'} Dismissed Logs ({dismissedViolations.length})</span>
+                        </button>
+
+                        {showDismissedLogs && (
+                            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {dismissedViolations.map(dv => (
+                                    <div key={dv._id} style={{ background: '#f8f9fa', border: '1px dashed #dadce0', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#5f6368', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div>
+                                            <strong>{formatType(dv.type, dv.details)}</strong> (Severity {dv.severity}) • {new Date(dv.timestamp).toLocaleTimeString()}
+                                        </div>
+                                        <span className="md-badge" style={{ background: '#e8eaed', color: '#5f6368', fontSize: '10px' }}>
+                                            Dismissed
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
+
+            {/* High-Resolution Modal Screenshot Preview */}
+            {modalImageSrc && (
+                <div 
+                    className="modal-backdrop" 
+                    onClick={() => setModalImageSrc(null)}
+                    style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)' }}
+                >
+                    <div 
+                        className="md-card" 
+                        onClick={(e) => e.stopPropagation()} 
+                        style={{ maxWidth: '90vw', maxHeight: '90vh', padding: '12px', background: '#0f172a', borderRadius: '8px' }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', color: '#fff' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>High-Resolution Evidence Snapshot</span>
+                            <button 
+                                onClick={() => setModalImageSrc(null)}
+                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px' }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <img 
+                            src={modalImageSrc} 
+                            alt="Zoom Evidence" 
+                            style={{ maxWidth: '86vw', maxHeight: '78vh', objectFit: 'contain', display: 'block', borderRadius: '4px' }} 
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* Send Warning Modal */}
             {showWarnModal && (
@@ -638,32 +885,40 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     <select 
                                         className="md-select" 
                                         style={{ marginBottom: '8px' }}
-                                        onChange={(e) => {
-                                            if (e.target.value) setWarnMessage(e.target.value);
-                                        }}
+                                        onChange={(e) => setWarnMessage(e.target.value)}
+                                        defaultValue="Please remain facing the camera directly at all times."
                                     >
-                                        <option value="Please remain facing the camera directly at all times.">📷 Face Camera Warning</option>
-                                        <option value="Close all unauthorized background applications immediately.">🖥️ Unauthorized App Warning</option>
-                                        <option value="Remove mobile phones and unauthorized items from your workstation.">📱 Mobile Device Warning</option>
-                                        <option value="Multiple persons detected in your camera field of view. Please ensure you are alone.">👥 Second Person Warning</option>
+                                        <option value="Please remain facing the camera directly at all times.">Please remain facing camera</option>
+                                        <option value="Suspicious head movement detected. Focus on your exam screen.">Suspicious movement detected</option>
+                                        <option value="Unauthorized object detected in view. Remove it immediately.">Unauthorized object detected</option>
+                                        <option value="Second person detected in your room. Ensure you are alone.">Second person detected</option>
+                                        <option value="Your exam environment is too dark. Improve lighting immediately.">Camera feed too dark</option>
                                     </select>
-                                    <textarea 
-                                        className="md-input" 
-                                        rows="3" 
-                                        value={warnMessage} 
-                                        onChange={(e) => setWarnMessage(e.target.value)} 
-                                        placeholder="Type warning message for candidate..."
-                                        required 
+                                    <textarea
+                                        className="md-input"
+                                        rows="3"
+                                        value={warnMessage}
+                                        onChange={(e) => setWarnMessage(e.target.value)}
+                                        placeholder="Type custom warning message..."
+                                        required
+                                        style={{ width: '100%', resize: 'vertical' }}
                                     />
                                 </div>
-
                                 <div className="md-modal-actions">
-                                    <button type="button" className="md-btn md-btn-text" onClick={() => setShowWarnModal(false)}>
+                                    <button 
+                                        type="button" 
+                                        className="md-btn md-btn-outlined" 
+                                        onClick={() => setShowWarnModal(false)}
+                                        disabled={actionSubmitting}
+                                    >
                                         Cancel
                                     </button>
-                                    <button type="submit" className="md-btn md-btn-primary" disabled={actionSubmitting}>
-                                        <Send size={14} />
-                                        <span>{actionSubmitting ? 'Sending...' : 'Send Warning'}</span>
+                                    <button 
+                                        type="submit" 
+                                        className="md-btn md-btn-primary"
+                                        disabled={actionSubmitting || !warnMessage.trim()}
+                                    >
+                                        {actionSubmitting ? 'Sending...' : 'Send Warning Toast'}
                                     </button>
                                 </div>
                             </form>
@@ -676,41 +931,46 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             {showTerminateModal && (
                 <div className="md-modal-overlay">
                     <div className="md-modal-card" style={{ maxWidth: '460px' }}>
-                        <div className="md-modal-header" style={{ borderBottom: 'none', paddingBottom: '0' }}>
+                        <div className="md-modal-header">
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d93025' }}>
-                                <AlertOctagon size={20} /> Terminate Candidate Session?
+                                <AlertOctagon size={18} /> Terminate Candidate Session
                             </h3>
                             <button className="md-icon-btn" onClick={() => setShowTerminateModal(false)}>
                                 <X size={20} />
                             </button>
                         </div>
-
-                        <form onSubmit={handleTerminateCandidate}>
-                            <div style={{ padding: '12px 0 16px 0', fontSize: '14px', color: '#5f6368', lineHeight: '1.5' }}>
-                                Terminate candidate <strong>"{sessionData?.studentId || 'Candidate'}"</strong>?
-                                <p style={{ marginTop: '6px', color: '#d93025', fontWeight: 500 }}>
-                                    This will immediately lock the candidate's exam screen and prevent further answer submission.
-                                </p>
-                            </div>
-
+                        <form onSubmit={handleTerminate}>
+                            <p style={{ color: '#5f6368', fontSize: '13px', margin: '0 0 16px 0' }}>
+                                Are you sure you want to terminate <strong>{studentDisplayName}</strong>'s exam session? The candidate app will be immediately locked out.
+                            </p>
                             <div className="md-form-group">
-                                <label>Termination Reason *</label>
-                                <textarea 
-                                    className="md-input" 
-                                    rows="2" 
-                                    value={terminateReason} 
-                                    onChange={(e) => setTerminateReason(e.target.value)} 
-                                    placeholder="e.g. Unresponsive to multiple warnings / Confirmed unauthorized phone usage..."
+                                <label>Termination Reason / Violation Evidence *</label>
+                                <textarea
+                                    className="md-input"
+                                    rows="3"
+                                    value={terminateReason}
+                                    onChange={(e) => setTerminateReason(e.target.value)}
+                                    placeholder="e.g. Repeated unauthorized phone usage confirmed on camera."
+                                    required
+                                    style={{ width: '100%', resize: 'vertical' }}
                                 />
                             </div>
-
                             <div className="md-modal-actions">
-                                <button type="button" className="md-btn md-btn-text" onClick={() => setShowTerminateModal(false)}>
+                                <button 
+                                    type="button" 
+                                    className="md-btn md-btn-outlined" 
+                                    onClick={() => setShowTerminateModal(false)}
+                                    disabled={actionSubmitting}
+                                >
                                     Cancel
                                 </button>
-                                <button type="submit" className="md-btn md-btn-danger" disabled={actionSubmitting}>
-                                    <UserX size={14} />
-                                    <span>{actionSubmitting ? 'Terminating...' : 'Confirm Termination'}</span>
+                                <button 
+                                    type="submit" 
+                                    className="md-btn"
+                                    style={{ background: '#d93025', color: '#ffffff' }}
+                                    disabled={actionSubmitting || !terminateReason.trim()}
+                                >
+                                    {actionSubmitting ? 'Terminating...' : 'Confirm Termination'}
                                 </button>
                             </div>
                         </form>

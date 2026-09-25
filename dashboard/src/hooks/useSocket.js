@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
+import api from '../services/api';
 
 export default function useSocket() {
     const [connected, setConnected] = useState(false);
@@ -17,9 +18,23 @@ export default function useSocket() {
         socketRef.current = io(serverUrl);
         const socket = socketRef.current;
 
+        // Fetch recent initial violations so Live Feed is populated immediately
+        const fetchInitialViolations = async () => {
+            try {
+                const res = await api.get('/violations');
+                if (res.data && Array.isArray(res.data)) {
+                    setViolations(res.data.slice(0, 50));
+                }
+            } catch (err) {
+                // Silent fallback if unauthenticated or offline
+            }
+        };
+        fetchInitialViolations();
+
         socket.on('connect', () => {
             console.log('Socket connected:', socket.id);
             setConnected(true);
+            fetchInitialViolations();
         });
 
         socket.on('disconnect', () => {

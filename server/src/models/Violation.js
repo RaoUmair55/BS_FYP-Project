@@ -33,4 +33,10 @@ const violationSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+// Compound and single-field performance indexes for high-concurrency proctoring queries
+violationSchema.index({ sessionId: 1, timestamp: -1 });
+violationSchema.index({ reviewed: 1 });
+violationSchema.index({ sessionId: 1, reviewed: 1 });
+
 module.exports = mongoose.model('Violation', violationSchema);
+

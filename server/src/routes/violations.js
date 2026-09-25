@@ -95,6 +95,79 @@ router.get('/violations', requireAuth, async (req, res) => {
     }
 });
 
+// GET /violations/priority-queue — Priority Queue for Cross-Student Unreviewed Violations (Teacher-facing, protected)
+router.get('/violations/priority-queue', requireAuth, async (req, res) => {
+    try {
+        const sessionFilter = { status: 'active' };
+        if (req.query.examId) {
+            sessionFilter.examId = req.query.examId;
+        }
+
+        // 1. Fetch active sessions (scoped to optional examId filter)
+        const activeSessions = await Session.find(sessionFilter).lean();
+        
+        // If an examId filter was requested and no active sessions exist, return empty list immediately
+        if (req.query.examId && activeSessions.length === 0) {
+            return res.json([]);
+        }
+
+        const activeSessionMap = new Map();
+        activeSessions.forEach(s => {
+            activeSessionMap.set(String(s._id), s);
+            if (s.studentId) activeSessionMap.set(String(s.studentId), s);
+        });
+
+        const activeSessionIds = Array.from(activeSessionMap.keys());
+        
+        let violationQuery = { reviewed: { $ne: true } };
+        if (activeSessionIds.length > 0) {
+            violationQuery.sessionId = { $in: activeSessionIds };
+        } else if (req.query.examId) {
+            return res.json([]);
+        }
+
+        // 2. Fetch unreviewed violations sorted by severity descending, then timestamp descending
+        const rawViolations = await Violation.find(violationQuery)
+            .sort({ severity: -1, timestamp: -1 })
+            .lean();
+
+        // 3. Fallback lookup for any session IDs not cached
+        const missingSessionIds = rawViolations
+            .map(v => String(v.sessionId))
+            .filter(id => !activeSessionMap.has(id));
+
+        if (missingSessionIds.length > 0) {
+            const validObjectIds = missingSessionIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+            const extraSessions = await Session.find({
+                $or: [
+                    { _id: { $in: validObjectIds } },
+                    { studentId: { $in: missingSessionIds } }
+                ]
+            }).lean();
+            extraSessions.forEach(s => {
+                activeSessionMap.set(String(s._id), s);
+                if (s.studentId) activeSessionMap.set(String(s.studentId), s);
+            });
+        }
+
+        // 4. Enrich with student details for immediate display
+        const enrichedViolations = rawViolations.map(v => {
+            const session = activeSessionMap.get(String(v.sessionId));
+            return {
+                ...v,
+                studentName: session?.studentName || 'Candidate',
+                rollNumber: session?.rollNumber || 'N/A',
+                examId: session?.examId || 'Unknown'
+            };
+        });
+
+        res.json(enrichedViolations);
+    } catch (err) {
+        console.error('Error fetching priority queue violations:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // GET /violations/:sessionId — Get violations for specific session (Teacher-facing, protected)
 router.get('/violations/:sessionId', requireAuth, async (req, res) => {
     try {

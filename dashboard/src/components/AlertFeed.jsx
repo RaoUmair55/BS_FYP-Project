@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
     AlertCircle, AlertTriangle, Info, CheckCircle, XCircle, Clock, 
     ExternalLink, MessageSquare, Check, X, ShieldAlert, Sparkles, 
-    Filter, Video, Users, Smartphone, Eye, Globe 
+    Filter, Video, Users, Smartphone, Eye, Globe, Layers, ChevronDown, ChevronUp 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { groupViolationsList } from './PriorityQueue';
 import './Components.css';
 
 const API_BASE = 'http://localhost:5000';
@@ -54,32 +55,46 @@ function timeAgo(dateString) {
 export default function AlertFeed({ violations, onSelectViolation, onReviewViolation }) {
     const { authFetch } = useAuth();
     const [filter, setFilter] = useState('all'); // 'all', 'unreviewed', 'reviewed'
+    const [enableGrouping, setEnableGrouping] = useState(true);
+    const [expandedGroupIds, setExpandedGroupIds] = useState(new Set());
     const [selectedViolationForNote, setSelectedViolationForNote] = useState(null);
     const [noteText, setNoteText] = useState('');
     const [noteDecision, setNoteDecision] = useState('confirmed');
     const [submitting, setSubmitting] = useState(false);
 
-    const handleQuickReview = async (v, decision, note = '') => {
-        const id = v._id || v.id;
-        if (!id) return;
-
-        try {
-            const res = await authFetch(`${API_BASE}/violations/${id}/review`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    reviewed: true,
-                    decision: decision,
-                    reviewNote: note
-                })
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                if (onReviewViolation) {
-                    onReviewViolation(data.violation);
-                }
+    const toggleGroupExpand = (groupId) => {
+        setExpandedGroupIds(prev => {
+            const next = new Set(prev);
+            if (next.has(groupId)) {
+                next.delete(groupId);
+            } else {
+                next.add(groupId);
             }
+            return next;
+        });
+    };
+
+    const handleQuickReview = async (vOrGroup, decision, note = '') => {
+        const items = vOrGroup.items || [vOrGroup];
+        
+        try {
+            await Promise.all(items.map(async (item) => {
+                const id = item._id || item.id;
+                if (!id) return;
+                const res = await authFetch(`${API_BASE}/violations/${id}/review`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        reviewed: true,
+                        decision: decision,
+                        reviewNote: note
+                    })
+                });
+                if (res.ok && onReviewViolation) {
+                    const data = await res.json();
+                    onReviewViolation(data.violation || item);
+                }
+            }));
         } catch (err) {
             console.error('Error reviewing violation:', err);
         }
@@ -97,20 +112,28 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
     };
 
     // Filter violations (exclude dismissed from active live feed)
-    const filteredViolations = (violations || []).filter(v => {
-        const isReviewed = Boolean(v.reviewed);
-        const isDismissed = v.decision === 'dismissed';
-        if (filter === 'unreviewed') return !isReviewed && !isDismissed;
-        if (filter === 'reviewed') return isReviewed;
-        return !isDismissed;
-    });
+    const filteredViolations = useMemo(() => {
+        return (violations || []).filter(v => {
+            const isReviewed = Boolean(v.reviewed);
+            const isDismissed = v.decision === 'dismissed';
+            if (filter === 'unreviewed') return !isReviewed && !isDismissed;
+            if (filter === 'reviewed') return isReviewed;
+            return !isDismissed;
+        });
+    }, [violations, filter]);
+
+    // Apply Client-Side 2-Minute Grouping
+    const displayItems = useMemo(() => {
+        if (!enableGrouping) return filteredViolations.map(v => ({ ...v, count: 1, items: [v] }));
+        return groupViolationsList(filteredViolations, 2 * 60 * 1000);
+    }, [filteredViolations, enableGrouping]);
 
     const unreviewedCount = (violations || []).filter(v => !v.reviewed && v.decision !== 'dismissed').length;
 
     return (
         <div className="md-card alert-feed-card">
             {/* Header & Filter Bar */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #dadce0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8f9fa' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #dadce0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8f9fa', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Filter size={16} style={{ color: '#5f6368' }} />
                     <span style={{ fontSize: '14px', fontWeight: 500, color: '#202124' }}>Alert Triage</span>
@@ -121,62 +144,91 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                     )}
                 </div>
 
-                <div className="sub-tabs">
-                    <button 
-                        className={`sub-tab-btn ${filter === 'all' ? 'active' : ''}`}
-                        onClick={() => setFilter('all')}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {/* 2-Min Grouping Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setEnableGrouping(!enableGrouping)}
+                        className={`md-btn md-btn-sm ${enableGrouping ? 'md-btn-primary' : 'md-btn-outlined'}`}
+                        style={{ fontSize: '11.5px', padding: '4px 8px' }}
+                        title="Collapse consecutive alerts of the same type within 2 minutes"
                     >
-                        All
+                        <Layers size={13} />
+                        <span>{enableGrouping ? '2m Grouping: ON' : 'Grouping: OFF'}</span>
                     </button>
-                    <button 
-                        className={`sub-tab-btn ${filter === 'unreviewed' ? 'active' : ''}`}
-                        onClick={() => setFilter('unreviewed')}
-                    >
-                        Needs Review ({unreviewedCount})
-                    </button>
-                    <button 
-                        className={`sub-tab-btn ${filter === 'reviewed' ? 'active' : ''}`}
-                        onClick={() => setFilter('reviewed')}
-                    >
-                        Reviewed
-                    </button>
+
+                    <div className="sub-tabs">
+                        <button 
+                            className={`sub-tab-btn ${filter === 'all' ? 'active' : ''}`}
+                            onClick={() => setFilter('all')}
+                        >
+                            All
+                        </button>
+                        <button 
+                            className={`sub-tab-btn ${filter === 'unreviewed' ? 'active' : ''}`}
+                            onClick={() => setFilter('unreviewed')}
+                        >
+                            Needs Review ({unreviewedCount})
+                        </button>
+                        <button 
+                            className={`sub-tab-btn ${filter === 'reviewed' ? 'active' : ''}`}
+                            onClick={() => setFilter('reviewed')}
+                        >
+                            Reviewed
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* List Content */}
-            {!filteredViolations || filteredViolations.length === 0 ? (
+            {!displayItems || displayItems.length === 0 ? (
                 <div className="md-empty-card" style={{ border: 'none', background: 'transparent', flex: 1 }}>
                     <AlertCircle size={36} className="md-empty-icon" />
                     <p style={{ margin: 0 }}>No {filter === 'all' ? '' : filter} violations recorded.</p>
                 </div>
             ) : (
                 <div className="alert-items">
-                    {filteredViolations.map((v, i) => {
-                        const isReviewed = Boolean(v.reviewed);
-                        const decision = v.decision || 'pending';
+                    {displayItems.map((group, i) => {
+                        const isReviewed = Boolean(group.reviewed);
+                        const decision = group.decision || 'pending';
+                        const isGrouped = group.count > 1;
+                        const isExpanded = expandedGroupIds.has(group._id);
 
                         return (
                             <div 
-                                key={v._id || i} 
-                                className={`alert-item alert-severity-${v.severity}`}
+                                key={group._id || i} 
+                                className={`alert-item alert-severity-${group.severity}`}
                                 style={{
                                     opacity: isReviewed ? 0.75 : 1.0,
                                     background: isReviewed ? '#f8f9fa' : '#ffffff',
                                     border: isReviewed ? '1px solid #e8eaed' : '1px solid #1a73e8'
                                 }}
                             >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                         <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
-                                            {formatType(v.type, v.details)}
+                                            {formatType(group.type, group.details)}
                                         </span>
+                                        {isGrouped && (
+                                            <span style={{
+                                                fontSize: '11px',
+                                                fontWeight: 700,
+                                                color: '#b45309',
+                                                backgroundColor: '#fef7e0',
+                                                border: '1px solid #ffeeba',
+                                                padding: '2px 6px',
+                                                borderRadius: '10px'
+                                            }}>
+                                                {group.count}× in 2m
+                                            </span>
+                                        )}
                                         <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', color: '#3c4043' }}>
-                                            Sev {v.severity}
+                                            Sev {group.severity}
                                         </span>
                                     </div>
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '12px', color: '#70757a' }}>{timeAgo(v.timestamp)}</span>
+                                        <span style={{ fontSize: '12px', color: '#70757a' }}>{timeAgo(group.timestamp)}</span>
                                         {isReviewed ? (
                                             <span className={`md-badge ${decision === 'confirmed' ? 'status-active' : 'status-completed'}`} style={{ fontSize: '11px' }}>
                                                 {decision === 'confirmed' ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -192,12 +244,12 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                 </div>
 
                                 <div style={{ fontSize: '12px', color: '#5f6368', fontFamily: 'monospace', marginBottom: '8px' }}>
-                                    Session: {v.sessionId ? (v.sessionId.substring(0, 16) + '...') : 'Unknown'}
-                                    {v.details?.object_class && ` • Item: ${v.details.object_class}`}
-                                    {v.details?.duration && ` • Duration: ${v.details.duration.toFixed(1)}s`}
+                                    Session: {group.sessionId ? (group.sessionId.substring(0, 16) + '...') : 'Unknown'}
+                                    {group.details?.object_class && ` • Item: ${group.details.object_class}`}
+                                    {group.details?.duration && ` • Duration: ${group.details.duration.toFixed(1)}s`}
                                 </div>
 
-                                {v.screenshotPath && (
+                                {group.screenshotPath && (
                                     <div 
                                         style={{ 
                                             marginTop: '6px', 
@@ -209,22 +261,22 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                             background: '#0f172a',
                                             cursor: onSelectViolation ? 'pointer' : 'default'
                                         }}
-                                        onClick={() => onSelectViolation && onSelectViolation(v)}
+                                        onClick={() => onSelectViolation && onSelectViolation(group)}
                                         title={onSelectViolation ? "Click to open candidate Evidence Review" : "Violation screenshot"}
                                     >
                                         <img 
-                                            src={v.screenshotPath.startsWith('http://') || v.screenshotPath.startsWith('https://') 
-                                                ? v.screenshotPath 
-                                                : `${API_BASE.replace(/\/$/, '')}/${v.screenshotPath.replace(/^\//, '')}`} 
+                                            src={group.screenshotPath.startsWith('http://') || group.screenshotPath.startsWith('https://') 
+                                                ? group.screenshotPath 
+                                                : `${API_BASE.replace(/\/$/, '')}/${group.screenshotPath.replace(/^\//, '')}`} 
                                             alt="Alert Evidence Snapshot" 
                                             style={{ width: '100%', maxHeight: '180px', objectFit: 'contain', display: 'block' }} 
                                         />
                                     </div>
                                 )}
 
-                                {v.reviewNote && (
+                                {group.reviewNote && (
                                     <div style={{ fontSize: '12px', color: '#3c4043', background: '#f1f3f4', padding: '6px 10px', borderRadius: '4px', marginBottom: '8px', fontStyle: 'italic' }}>
-                                        Note: "{v.reviewNote}"
+                                        Note: "{group.reviewNote}"
                                     </div>
                                 )}
 
@@ -235,26 +287,26 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                             <button 
                                                 className="md-btn md-btn-sm" 
                                                 style={{ background: '#e6f4ea', color: '#137333', border: '1px solid #a7f3d0' }}
-                                                onClick={() => handleQuickReview(v, 'confirmed')}
+                                                onClick={() => handleQuickReview(group, 'confirmed')}
                                             >
                                                 <Check size={14} />
-                                                <span>Confirm</span>
+                                                <span>Confirm {isGrouped ? `(${group.count})` : ''}</span>
                                             </button>
 
                                             <button 
                                                 className="md-btn md-btn-sm" 
                                                 style={{ background: '#f1f3f4', color: '#5f6368', border: '1px solid #dadce0' }}
-                                                onClick={() => handleQuickReview(v, 'dismissed')}
+                                                onClick={() => handleQuickReview(group, 'dismissed')}
                                             >
                                                 <X size={14} />
-                                                <span>Dismiss</span>
+                                                <span>Dismiss {isGrouped ? `(${group.count})` : ''}</span>
                                             </button>
 
                                             <button 
                                                 className="md-btn md-btn-sm md-btn-text"
                                                 onClick={() => {
-                                                    setSelectedViolationForNote(v);
-                                                    setNoteText(v.reviewNote || '');
+                                                    setSelectedViolationForNote(group);
+                                                    setNoteText(group.reviewNote || '');
                                                     setNoteDecision('confirmed');
                                                 }}
                                             >
@@ -268,9 +320,9 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                                 className="md-btn md-btn-text md-btn-sm"
                                                 style={{ fontSize: '11px', padding: '2px 6px' }}
                                                 onClick={() => {
-                                                    setSelectedViolationForNote(v);
-                                                    setNoteText(v.reviewNote || '');
-                                                    setNoteDecision(v.decision || 'confirmed');
+                                                    setSelectedViolationForNote(group);
+                                                    setNoteText(group.reviewNote || '');
+                                                    setNoteDecision(group.decision || 'confirmed');
                                                 }}
                                             >
                                                 <span>Edit Decision</span>
@@ -278,18 +330,101 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                         </div>
                                     )}
 
-                                    {onSelectViolation && v.sessionId && (
-                                        <button 
-                                            className="md-btn md-btn-sm md-btn-outlined"
-                                            style={{ fontSize: '11px', padding: '3px 8px', marginLeft: 'auto' }}
-                                            onClick={() => onSelectViolation(v)}
-                                            title="Open candidate evidence timeline"
-                                        >
-                                            <Eye size={12} />
-                                            <span>Review Candidate</span>
-                                        </button>
-                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                                        {isGrouped && (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleGroupExpand(group._id)}
+                                                className="md-btn md-btn-outlined md-btn-sm"
+                                                style={{ fontSize: '11px', padding: '3px 8px' }}
+                                                title={isExpanded ? "Collapse instances" : "Expand all instances"}
+                                            >
+                                                <span>{isExpanded ? "Collapse" : `Expand (${group.count})`}</span>
+                                                {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                            </button>
+                                        )}
+
+                                        {onSelectViolation && group.sessionId && (
+                                            <button 
+                                                className="md-btn md-btn-sm md-btn-outlined"
+                                                style={{ fontSize: '11px', padding: '3px 8px' }}
+                                                onClick={() => onSelectViolation(group)}
+                                                title="Open candidate evidence timeline"
+                                            >
+                                                <Eye size={12} />
+                                                <span>Review Candidate</span>
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
+
+                                {/* Expanded Nested Instances */}
+                                {isGrouped && isExpanded && (
+                                    <div style={{
+                                        marginTop: '10px',
+                                        paddingTop: '10px',
+                                        borderTop: '1px dashed #dadce0',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px',
+                                        background: '#f8f9fa',
+                                        padding: '8px 12px',
+                                        borderRadius: '6px'
+                                    }}>
+                                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#5f6368', textTransform: 'uppercase' }}>
+                                            Grouped Instances ({group.items.length})
+                                        </span>
+                                        {group.items.map((item, idx) => (
+                                            <div 
+                                                key={item._id || item.id || idx}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    fontSize: '12px',
+                                                    padding: '4px 0',
+                                                    borderBottom: idx < group.items.length - 1 ? '1px solid #e8eaed' : 'none'
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontWeight: 600, color: '#5f6368' }}>#{idx + 1}</span>
+                                                    <Clock size={12} color="#5f6368" />
+                                                    <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                                    {item.details?.confidence && (
+                                                        <span style={{ color: '#5f6368' }}>({(item.details.confidence * 100).toFixed(0)}% conf)</span>
+                                                    )}
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {item.screenshotPath && (
+                                                        <a 
+                                                            href={item.screenshotPath.startsWith('http') ? item.screenshotPath : `${API_BASE}${item.screenshotPath}`}
+                                                            target="_blank" 
+                                                            rel="noreferrer"
+                                                            style={{ color: '#1a73e8', textDecoration: 'none', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '2px' }}
+                                                        >
+                                                            <ExternalLink size={11} />
+                                                            <span>Snapshot</span>
+                                                        </a>
+                                                    )}
+                                                    <button
+                                                        className="md-btn md-btn-sm"
+                                                        style={{ padding: '2px 6px', fontSize: '11px', background: '#e6f4ea', color: '#137333', border: 'none' }}
+                                                        onClick={() => handleQuickReview(item, 'confirmed')}
+                                                    >
+                                                        Confirm
+                                                    </button>
+                                                    <button
+                                                        className="md-btn md-btn-sm"
+                                                        style={{ padding: '2px 6px', fontSize: '11px', background: '#f1f3f4', color: '#5f6368', border: 'none' }}
+                                                        onClick={() => handleQuickReview(item, 'dismissed')}
+                                                    >
+                                                        Dismiss
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
