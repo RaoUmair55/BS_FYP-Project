@@ -37,6 +37,9 @@ function formatType(typeStr, details = {}) {
         }
         return "Unauthorized Application";
     }
+    if (typeStr === 'camera_occluded_or_dark') {
+        return "Camera Occluded / Feed Dark";
+    }
     return typeStr.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 

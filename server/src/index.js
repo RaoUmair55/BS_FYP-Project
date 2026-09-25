@@ -46,6 +46,7 @@ app.use('/exam', require('./routes/examPaper'));
 app.use('/exams', require('./routes/exams'));
 app.use('/risk-score', require('./routes/riskScore'));
 app.use('/submissions', require('./routes/submissions'));
+app.use('/', require('./routes/messages'));
 app.use('/admin', require('./routes/admin'));
 
 // Test Route: /health

@@ -75,5 +75,5 @@ export default function useSocket() {
         };
     }, []);
 
-    return { connected, violations, setViolations, riskScores, cameraVerifications };
+    return { connected, violations, setViolations, riskScores, cameraVerifications, socket: socketRef.current };
 }

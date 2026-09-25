@@ -3,11 +3,16 @@ const dotenv = require('dotenv');
 const path = require('path');
 const FormData = require('form-data');
 const fs = require('fs');
+const violationBuffer = require('./violationBuffer');
 
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const PYTHON_IPC_PORT = process.env.PYTHON_IPC_PORT || 8000;
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
+
+let retryIntervalTimer = null;
+let wasOffline = false;
+let statusChangeCallback = null;
 
 async function checkPythonHealth() {
   try {
@@ -22,49 +27,172 @@ async function checkPythonHealth() {
   }
 }
 
+/**
+ * Direct single-shot HTTP transport to POST /violation.
+ * Preserves the exact original timestamp in the payload.
+ *
+ * @param {Object} violationPayload 
+ * @returns {Promise<boolean>}
+ */
+async function sendViolationDirect(violationPayload) {
+  let requestData = violationPayload;
+  let requestHeaders = {};
+
+  const screenshot = violationPayload.screenshotPath;
+  if (screenshot && typeof screenshot === 'string' && fs.existsSync(screenshot)) {
+    const form = new FormData();
+    form.append('sessionId', violationPayload.sessionId);
+    form.append('type', violationPayload.type);
+    form.append('severity', String(violationPayload.severity));
+    form.append('timestamp', violationPayload.timestamp || new Date().toISOString());
+    if (violationPayload.details) {
+      form.append('details', typeof violationPayload.details === 'string' ? violationPayload.details : JSON.stringify(violationPayload.details));
+    }
+    form.append('screenshot', fs.createReadStream(screenshot));
+
+    requestData = form;
+    requestHeaders = form.getHeaders();
+  }
+
+  const response = await axios.post(`${SERVER_URL}/violation`, requestData, {
+    timeout: 8000,
+    headers: requestHeaders
+  });
+
+  return response.status >= 200 && response.status < 300;
+}
+
+/**
+ * Forwards a violation event to the backend. If network transport fails,
+ * the event is automatically enqueued into the SQLite disk-backed offline buffer.
+ *
+ * @param {Object} violationPayload 
+ * @returns {Promise<boolean>}
+ */
 async function forwardViolationToServer(violationPayload) {
-  const maxRetries = 3;
-  const retryDelay = 2000; // 2 seconds
+  try {
+    console.log(`[PythonBridge] Forwarding violation to backend:`, violationPayload);
+    const success = await sendViolationDirect(violationPayload);
+    if (success) {
+      console.log(`[PythonBridge] Successfully forwarded violation to backend.`);
+      return true;
+    }
+  } catch (error) {
+    console.warn(`[PythonBridge] Network delivery failed (${error.code || error.message}). Buffering to local SQLite database...`);
+  }
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  // Network transport failed -> Save to local SQLite disk buffer
+  try {
+    const rowId = violationBuffer.enqueue(violationPayload, violationPayload.screenshotPath);
+    console.log(`[PythonBridge] Violation safely stored in offline buffer (Row ID: ${rowId}).`);
+    notifyStatusChange();
+  } catch (dbErr) {
+    console.error(`[PythonBridge] Failed to enqueue violation to disk buffer:`, dbErr);
+  }
+
+  return false;
+}
+
+/**
+ * Executes a single drainage pass over the offline buffer, oldest first.
+ */
+async function processOfflineBuffer() {
+  try {
+    const pending = violationBuffer.getPending();
+    const currentCount = pending.length;
+
+    // Log clear state transitions for observability & viva demonstration
+    if (currentCount > 0 && !wasOffline) {
+      console.log(`[ViolationBuffer] Connectivity lost. ${currentCount} violation(s) waiting in local disk buffer.`);
+      wasOffline = true;
+      notifyStatusChange();
+    } else if (currentCount === 0 && wasOffline) {
+      console.log(`[ViolationBuffer] Connectivity fully restored. All buffered violations have been successfully delivered!`);
+      wasOffline = false;
+      notifyStatusChange();
+    }
+
+    if (currentCount === 0) {
+      return;
+    }
+
+    console.log(`[ViolationBuffer] Attempting retry delivery for ${currentCount} buffered violation(s)...`);
+
+    for (const item of pending) {
+      let payload;
       try {
-        console.log(`[PythonBridge] Forwarding violation to backend (attempt ${attempt}/${maxRetries}):`, violationPayload);
-        
-        let requestData = violationPayload;
-        let requestHeaders = {};
-        
-        if (violationPayload.screenshotPath && fs.existsSync(violationPayload.screenshotPath)) {
-          const form = new FormData();
-          form.append('sessionId', violationPayload.sessionId);
-          form.append('type', violationPayload.type);
-          form.append('severity', violationPayload.severity);
-          form.append('timestamp', violationPayload.timestamp);
-          if (violationPayload.details) {
-            form.append('details', JSON.stringify(violationPayload.details));
-          }
-          form.append('screenshot', fs.createReadStream(violationPayload.screenshotPath));
-          
-          requestData = form;
-          requestHeaders = form.getHeaders();
-        }
+        payload = JSON.parse(item.payload_json);
+      } catch (parseErr) {
+        console.error(`[ViolationBuffer] Corrupted JSON in violation #${item.id}, discarding:`, parseErr);
+        violationBuffer.markSent(item.id);
+        continue;
+      }
 
-        const response = await axios.post(`${SERVER_URL}/violation`, requestData, { 
-          timeout: 10000, 
-          headers: requestHeaders 
-        });
-        
-        console.log(`[PythonBridge] Successfully forwarded to backend. Status:`, response.status);
-        return true;
-    } catch (error) {
-      console.error(`[PythonBridge] Failed to forward to backend on attempt ${attempt}:`, error.message);
-      if (attempt < maxRetries) {
-        console.log(`[PythonBridge] Waiting ${retryDelay}ms before retrying...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      } else {
-        console.error(`[PythonBridge] Max retries reached. Violation forwarding failed permanently.`);
-        return false;
+      // Strictly preserve the violation's ORIGINAL timestamp
+      payload.timestamp = item.original_timestamp;
+      if (item.screenshot_path) {
+        payload.screenshotPath = item.screenshot_path;
+      }
+
+      try {
+        const success = await sendViolationDirect(payload);
+        if (success) {
+          violationBuffer.markSent(item.id);
+          console.log(`[ViolationBuffer] Delivered buffered violation #${item.id} (${payload.type}) [Original Time: ${item.original_timestamp}].`);
+          notifyStatusChange();
+        } else {
+          violationBuffer.incrementAttempt(item.id);
+          break; // Stop loop until next interval to avoid aggressive spamming
+        }
+      } catch (sendErr) {
+        console.warn(`[ViolationBuffer] Retry failed for #${item.id} (${sendErr.code || sendErr.message}). Attempts: ${item.attempts + 1}.`);
+        violationBuffer.incrementAttempt(item.id);
+        break; // Network still unavailable, pause until next retry cycle
       }
     }
+  } catch (err) {
+    console.error(`[ViolationBuffer] Error processing buffer retry pass:`, err);
+  }
+}
+
+function notifyStatusChange() {
+  if (statusChangeCallback) {
+    try {
+      const status = violationBuffer.getBufferStatus();
+      statusChangeCallback(status);
+    } catch (e) {}
+  }
+}
+
+/**
+ * Starts the background retry loop that periodically flushes buffered events.
+ *
+ * @param {number} intervalMs - Interval in milliseconds (default 12s)
+ * @param {Function|null} onStatus - Optional callback on buffer state change
+ */
+function startBufferRetryLoop(intervalMs = 12000, onStatus = null) {
+  if (onStatus) {
+    statusChangeCallback = onStatus;
+  }
+  if (retryIntervalTimer) {
+    clearInterval(retryIntervalTimer);
+  }
+
+  // Run initial pass immediately
+  processOfflineBuffer();
+
+  retryIntervalTimer = setInterval(() => {
+    processOfflineBuffer();
+  }, intervalMs);
+
+  console.log(`[ViolationBuffer] Background offline retry loop started (interval: ${intervalMs / 1000}s).`);
+}
+
+function stopBufferRetryLoop() {
+  if (retryIntervalTimer) {
+    clearInterval(retryIntervalTimer);
+    retryIntervalTimer = null;
+    console.log(`[ViolationBuffer] Background retry loop stopped.`);
   }
 }
 
@@ -81,5 +209,9 @@ async function killApp(name) {
 module.exports = {
   checkPythonHealth,
   forwardViolationToServer,
+  sendViolationDirect,
+  processOfflineBuffer,
+  startBufferRetryLoop,
+  stopBufferRetryLoop,
   killApp
 };

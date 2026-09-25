@@ -161,17 +161,31 @@ Both `AuthContext.authFetch` and Axios `api.js` implement automatic response int
 - `dashboard/src/components/StudentList.jsx`: Updated candidate list items to render `studentName` as primary text and `rollNumber` as secondary subtitle. Retained `sessionId` in hover tooltip and updated search filtering to match name, roll number, exam code, and session ID.
 - `dashboard/src/components/EvidenceViewer.jsx`: Updated header title to `"Viewing: [studentName] ([rollNumber])"`, fixed endpoint URL in `fetchSessionData`, and retained debug metadata.
 - `dashboard/src/components/ExamSummary.jsx`: Updated historical exam summary candidate roster table to show `studentName` (primary) and `rollNumber` (secondary). Updated CSV export generation with `Student Name` and `Roll Number` columns.
-- `dashboard/src/components/CandidateGrid.jsx`: Updated card header to show `studentName` and `rollNumber`.
-- `dashboard/src/context/AuthContext.jsx`: Implemented secure in-memory access token storage, `currentTeacher`, `isLoading`, `login()`, `signup()`, `logout()`, `forgotPassword()`, `resetPassword()`, `demoLogin()`, silent refresh on mount, and automatic 401 retry fetch wrapper.
-- `dashboard/src/services/api.js`: Updated Axios client to attach in-memory tokens dynamically, enforce `withCredentials: true`, and automatically intercept 401s to perform silent refresh and request replay.
-- `dashboard/src/pages/Login.jsx`: Material Design centered login card with email/password authentication, generic error handling, and links to Signup/Forgot Password.
-- `dashboard/src/pages/Signup.jsx`: Material Design signup card with client-side password validation (min 8 chars, 1 number), confirmation matching, and immediate dashboard redirect.
-- `dashboard/src/pages/ForgotPassword.jsx`: Form consuming `POST /auth/forgot-password` with standard success feedback.
-- `dashboard/src/pages/ResetPassword.jsx`: Form consuming `POST /auth/reset-password` with query parameter token extraction (`?token=...`).
-- `dashboard/src/pages/Auth.css`: Material Design stylesheet for authentication views, input containers, error banners, and loading spinners.
-- `dashboard/src/App.jsx`: Updated with route protection, silent refresh loading splash, unauthenticated view routing (`Login`, `Signup`, `ForgotPassword`, `ResetPassword`), and browser URL synchronization.
-- `dashboard/src/pages/Dashboard.jsx`: Integrated persistent header with logged-in examiner badge, name, role, and "Log Out" action.
+- `dashboard/src/components/CandidateGrid.jsx`: Real-time candidate gallery with verification photos, live connection indicators, dynamic risk gauges, 1-click +5m/+10m exam extensions, direct evidence review, and 1-on-1 chat launcher.
+- `dashboard/src/components/LiveExamChat.jsx`: Zoom/Meet-style proctored exam communication center supporting exam-wide broadcast announcements, candidate channels with student Name & Roll Number, unread counters, and instant responses.
+- `dashboard/src/pages/Dashboard.jsx`: Top navigation toolbar integration with "Exam Chat & Broadcast" trigger and `LiveExamChat` modal lifecycle management.
 - `dashboard/DASHBOARD.md`: Updated with candidate identity flow notes, UI component specs, file manifest, and testing procedures.
+
+---
+
+## Live Multi-Candidate Gallery & In-Exam Chat Features
+
+### 1. Live Multi-Candidate Grid (`CandidateGrid.jsx`)
+- **Card Layout**: Shows real-time candidate cards with student name, roll number, verification selfie thumbnail, and active connection status dot.
+- **Dynamic Risk Gauge**: Color-coded risk badge (Low: Green `#166534`, Moderate: Amber `#b45309`, High: Red `#b91c1c`).
+- **1-Click Direct Proctor Actions**:
+  - 🔍 **Review**: Instantly transitions to the evidence timeline.
+  - 💬 **Chat**: Opens direct live chat on that candidate's channel.
+  - ⏱️ **+5m / +10m**: Extends active exam duration across candidate sessions.
+  - 🚀 **Batch Release**: Waiting lobby paper release countdown and trigger.
+
+### 2. Live Exam Chat & Broadcast Center (`LiveExamChat.jsx`)
+- **Dedicated 4th Sub-Tab Inside Live Monitoring**: Situated directly alongside **Live Feed**, **Webcam Grid**, and **Evidence Review** as the 4th tab (`Exam Chat`), strictly scoped to the active exam (`selectedExamFilter`) rather than cluttering the global navbar.
+- **Inline Right-Panel Integration**: When selected (`rightPanelView === 'chat'`), seamlessly renders full-height within the dashboard right pane with zero modal obstruction or backdrop freezing.
+- **Zoom / Meet Style Direct Inquiries**: Displays incoming student inquiries grouped into channels by candidate **Full Name & Roll Number** (e.g. `Muhammad Ali (FA20-BCS-042)`).
+- **Broadcast Channel**: Send urgent paper announcements (e.g. clarification on question 3 or time reminders) to all students simultaneously taking that active exam.
+- **Direct Chat Launcher from Candidate Grid**: Clicking **"Chat"** on any candidate card in the Webcam Grid automatically focuses that student's channel and transitions to the Exam Chat tab.
+- **Candidate App Floating Drawer**: Candidate receives instant toast alerts and can chat directly with the proctor without interrupting their exam workspace.
 
 ---
 
@@ -191,12 +205,11 @@ Both `AuthContext.authFetch` and Axios `api.js` implement automatic response int
    - Click on the student item: Verify the **EvidenceViewer** header displays `"Viewing: John Doe (2022-CS-101)"`.
    - Submit or complete the exam: Navigate to **Completed Exams** -> **View Summary & Analytics** in `ExamManager`. Verify `"John Doe"` and `"2022-CS-101"` appear in the candidate roster table and in the exported CSV report.
 
-### 2. Backend Validation Rejection Test
-1. Make a `POST /sessions` request omitting `studentName` or `rollNumber`:
-   ```bash
-   node -e "fetch('http://localhost:5000/sessions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({examId: 'CS401-MID'})}).then(r => r.json()).then(console.log)"
-   ```
-2. Verify HTTP `400 Bad Request` is returned with `{ error: "studentName and rollNumber are required to create a session." }`.
+### 2. Live Grid & In-Exam Chat Verification
+1. Open the Examiner Dashboard and click **"Webcam Grid"** in live monitoring mode.
+2. Verify candidate cards appear with student verification photos and risk badges.
+3. Click the **"Chat"** button on a student card: confirm the **Exam Chat & Broadcast** modal opens with that student's channel selected.
+4. Send a broadcast announcement: confirm all candidate apps receive the golden announcement toast.
 
 ### 3. Examiner Authentication & Silent Refresh
 1. Open `http://localhost:5173`, log in or click **"1-Click Demo Login"**.

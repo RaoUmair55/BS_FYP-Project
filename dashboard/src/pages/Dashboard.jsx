@@ -7,7 +7,8 @@ import AlertFeed from '../components/AlertFeed';
 import EvidenceViewer from '../components/EvidenceViewer';
 import CandidateGrid from '../components/CandidateGrid';
 import AdminDashboard from '../components/AdminDashboard/AdminDashboard';
-import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban } from 'lucide-react';
+import LiveExamChat from '../components/LiveExamChat';
+import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AuthModal from '../components/AuthModal';
 import './Dashboard.css';
@@ -69,7 +70,7 @@ function playAlertChime() {
 }
 
 export default function Dashboard() {
-    const { connected, violations, riskScores } = useSocket();
+    const { connected, violations, riskScores, socket } = useSocket();
     const { teacher, showAuthModal, setShowAuthModal, logout, demoLogin, authFetch } = useAuth();
     const [selectedSessionId, setSelectedSessionId] = useState(null);
     const [activeTab, setActiveTab] = useState('exams'); // 'exams' or 'monitoring'
@@ -77,6 +78,7 @@ export default function Dashboard() {
     const [selectedExamFilter, setSelectedExamFilter] = useState(null);
     const [selectedSummaryExamId, setSelectedSummaryExamId] = useState(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
+    const [chatSessionId, setChatSessionId] = useState(null);
 
     const lastSeenViolationIdRef = React.useRef(null);
     const isInitialMountRef = React.useRef(true);
@@ -428,6 +430,8 @@ export default function Dashboard() {
                                     ? 'Real-Time Alert Feed' 
                                     : rightPanelView === 'grid' 
                                     ? 'Candidate Webcam Grid' 
+                                    : rightPanelView === 'chat'
+                                    ? `Exam Chat & Inquiries (${selectedExamFilter || 'Active Exam'})`
                                     : `Evidence Review: ${selectedSessionId || ''}`}
                             </h2>
                             <div className="sub-tabs">
@@ -449,6 +453,12 @@ export default function Dashboard() {
                                     disabled={!selectedSessionId}
                                 >
                                     Evidence Review
+                                </button>
+                                <button 
+                                    className={`sub-tab-btn ${rightPanelView === 'chat' ? 'active' : ''}`}
+                                    onClick={() => setRightPanelView('chat')}
+                                >
+                                    Exam Chat
                                 </button>
                             </div>
                         </div>
@@ -472,6 +482,18 @@ export default function Dashboard() {
                                     setSelectedSessionId(sid);
                                     setRightPanelView('evidence');
                                 }} 
+                                onOpenChat={(sid) => {
+                                    setChatSessionId(sid);
+                                    setRightPanelView('chat');
+                                }}
+                            />
+                        ) : rightPanelView === 'chat' ? (
+                            <LiveExamChat 
+                                isInline={true}
+                                examId={selectedExamFilter}
+                                initialSessionId={chatSessionId}
+                                activeSessions={Object.values(riskScores || {})}
+                                socket={socket}
                             />
                         ) : (
                             <EvidenceViewer 

@@ -13,6 +13,7 @@ const violationSchema = new mongoose.Schema({
             "unauthorized_app", 
             "cell_phone", 
             "camera_issue",
+            "camera_occluded_or_dark",
             "usb_device_detected",
             "multiple_displays_detected"
         ]

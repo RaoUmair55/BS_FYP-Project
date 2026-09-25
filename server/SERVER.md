@@ -106,6 +106,16 @@ This modular design guarantees that:
 - `src/services/scoring/DecayScoringStrategy.js` — Concrete decay scoring strategy preserving the 15-minute half-life exponential formula.
 - `src/services/scoring/index.js` — Scoring strategy singleton exporter / swap point.
 - `src/scoring/severityEngine.js` — Refactored to delegate mathematical scoring to `scoringStrategy`.
+### Part D — Real-Time In-Exam Chat & Broadcast Subsystem
+- `src/models/Message.js` — Schema for in-exam student paper inquiries and teacher broadcast announcements (`sessionId`, `examId`, `sender`, `senderName`, `rollNumber`, `studentId`, `text`, `isBroadcast`, `timestamp`, `read`).
+- `src/routes/messages.js` — Chat endpoints (`POST /messages`, `GET /messages/:sessionId`, `GET /exams/:examId/messages`, `PATCH /messages/:messageId/read`) with automated session enrichment (attaches student Full Name & Roll Number) and Socket.io event emissions (`chatMessage`, `examAnnouncement`).
+- `src/index.js` — Mounted messages router.
+
+### Part E — Modular Camera Occlusion & Lighting Check Violation Type
+- `src/models/Violation.js` — Registered `camera_occluded_or_dark` (Severity 3) violation type in the Mongoose schema.
+- `CONTRACT.md` — Updated canonical violation contract schema with `camera_occluded_or_dark`.
+
+### Part F — Testing & Verification Suites
 - `scripts/test_auth_system.js` — Automated unit/integration test suite for Part A.
 - `scripts/test_verification_system.js` — Automated integration test suite for Part B.
 - `scripts/test_http_endpoints.js` — HTTP end-to-end endpoint test suite.

@@ -26,18 +26,35 @@ IntegrityFlow is composed of three main components:
 - **Module 1: Whitelist Enforcement**
   - Actively polls running system processes and enforces a strict whitelist.
   - Gracefully handles Dev vs. Exam modes, allowing developers to work safely without the AI module terminating their IDEs, while ruthlessly blocking cheating vectors during a real exam.
+
+- **Module 2: AI Computer Vision Monitoring & Lens Defense**
+  - Instant camera occlusion and dark feed detection (`camera_occluded_or_dark`) in 1.2s via photometric luminance and spatial variance checking.
+  - High-accuracy head pose yaw, desk gaze, multiple face counting, and unauthorized object (cell phone, book) detection.
+  - CPU-bounded execution (<5% load) with 2-thread ONNX clamping and C++ SIMD blob extraction.
   
 - **Module 3: Evidence Capture (Screenshots)**
-  - Automatically captures lightweight, compressed screenshots (<200KB) the moment a violation (like opening an unauthorized app) is detected.
+  - Automatically captures lightweight, compressed screenshots (<200KB) the moment a violation is detected.
   - Evidence is instantly uploaded to the backend and viewable in the teacher dashboard.
 
-- **Module 4: Pre-Exam Self-Check**
-  - A staging area before the exam begins that validates camera, microphone, and scans for currently running unauthorized background apps.
-  - Safely transitions the AI module from relaxed `dev` mode to strict `exam` mode only when the student is ready.
+- **Module 4: Pre-Exam Self-Check & Identity Verification**
+  - Staging area validating candidate camera, microphone, external storage drives, displays, and background apps.
+  - Enforces student identity capture (Full Name + Roll Number) and explicit informed consent.
 
-- **Module 7B: Secure In-App Paper Viewer**
-  - Question papers (PDF and DOCX) are fetched and rendered entirely inside the Electron app using `pdf.js` and `mammoth.js`.
-  - Prevents the need to open external viewers (which would be immediately terminated by the Whitelist Enforcer and otherwise act as massive cheating vectors).
+- **Module 5: Dynamic Exponential Severity Decay Engine**
+  - Mathematical risk scoring algorithm with a 15-minute half-life, ensuring transient single violations decay smoothly while repeated violations escalate student risk scores.
+
+- **Module 6: Live Multi-Candidate Grid Gallery**
+  - Visual dashboard gallery with candidate reference photos, real-time risk gauge indicators (Green/Amber/Red), and 1-click proctoring tools (+5m/+10m exam extensions, direct evidence review).
+
+- **Module 7B: Secure In-App Paper Viewer & Answer Workspace**
+  - Question papers (PDF/DOCX) rendered entirely inside Electron with dynamic anti-leak watermark overlays.
+  - Supports auto-saved typed text answers and direct file submissions (.pdf, .docx, .zip, etc.).
+
+- **Module 8: In-Exam Live Chat & Proctor Broadcasts**
+  - Zoom/Meet-style bidirectional communication allowing candidates to ask question paper clarifications and examiners to broadcast global alerts or reply directly.
+
+- **Module 9: Disk-Backed Offline Buffering (SQLite FIFO Queue)**
+  - Crash-proof offline buffer preserving all violation payloads and screenshots during network outages, replaying events with original microsecond timestamps once connectivity resumes.
 
 ---
 

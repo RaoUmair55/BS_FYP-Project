@@ -2,11 +2,9 @@
 
 This folder contains `whitelist.json`, which defines the allowed applications that will not be terminated during an active exam session.
 
-## Whitelisted Entries Explained
-- `electron.exe`: The base Electron binary, required for the candidate app to run.
-- `candidate-app-electron.exe`: The packaged executable name for the candidate app.
-- `explorer.exe`: The Windows shell, necessary for the OS to function normally without crashing to a black screen.
-- `notepad.exe`: Allowed strictly for taking quick, plain-text notes if permitted by the exam.
-- `taskmgr.exe`: Allowed for system troubleshooting (though could be disabled in stricter configurations).
+## Whitelist Profiles
+- **`exam_whitelist`**: Active strictly during actual exam sessions (`APP_MODE=exam`). Contains only the bare essentials (`electron.exe`, `candidate-app-electron.exe`, `python.exe`) to prevent unauthorized applications, browsers, or external cheat tools.
+- **`dev_whitelist`**: Active during development and testing (`APP_MODE=dev`). Permits developer tools such as VS Code, Antigravity IDE, terminals, Node.js, and browsers without triggering enforcement kills.
 
-Note: Critical Windows services (like `svchost.exe`, `system`, etc.) are hardcoded into the `whitelist_enforcer.py` safety list and do not need to be added here.
+## Critical Notes
+- Hardcoded safety exclusions for critical Windows OS kernel services (e.g. `System`, `svchost.exe`, `csrss.exe`, `dwm.exe`, `lsass.exe`, `services.exe`) are enforced directly inside `whitelist_enforcer.py` to prevent any possibility of OS instability.

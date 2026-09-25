@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
-const { checkPythonHealth, forwardViolationToServer, killApp } = require('./ipc/pythonBridge');
+const { checkPythonHealth, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop } = require('./ipc/pythonBridge');
+const violationBuffer = require('./ipc/violationBuffer');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // --- Added for development: Handle EPIPE / Broken pipe errors ---
@@ -46,13 +47,21 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      plugins: true,
       preload: path.join(__dirname, 'preload.js')
     }
   });
 
-  await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
-  // mainWindow.webContents.openDevTools();
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[Electron] Renderer process crashed/gone:', details);
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('[Electron] did-fail-load:', errorCode, errorDescription, validatedURL);
+  });
+
+  const targetUrl = path.join(__dirname, '../renderer/login.html');
+  console.log('[Electron] Loading file:', targetUrl);
+  await mainWindow.loadFile(targetUrl);
 }
 
 async function waitForPythonReady() {
@@ -159,6 +168,10 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   return proc;
 }
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Electron] Unhandled Rejection:', reason);
+});
+
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
@@ -173,23 +186,39 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
-    // STARTUP ORDER 1: Start the local Express receiver first
     try {
-      await startReceiver();
-    } catch (error) {
-      dialog.showErrorBox('Initialization Error', 'Failed to start local violation receiver. ' + error.message);
-      app.quit();
-      return;
-    }
-
-    // STARTUP ORDER 2: Create the BrowserWindow directly (Python spawns after login)
-    await createWindow();
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+      console.log('[Electron] app.whenReady entered');
+      // STARTUP ORDER 1: Start the local Express receiver first
+      try {
+        await startReceiver();
+      } catch (error) {
+        console.error('[Electron] Failed to start receiver:', error);
+        dialog.showErrorBox('Initialization Error', 'Failed to start local violation receiver. ' + error.message);
+        app.quit();
+        return;
       }
-    });
+
+      console.log('[Electron] Calling createWindow()...');
+      // STARTUP ORDER 2: Create the BrowserWindow directly (Python spawns after login)
+      await createWindow();
+      console.log('[Electron] createWindow() completed.');
+
+      // STARTUP ORDER 3: Start disk buffer background retry loop for offline resilience
+      startBufferRetryLoop(12000, (status) => {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+          mainWindow.webContents.send('buffer-status-changed', status);
+        }
+      });
+      console.log('[Electron] startBufferRetryLoop() initialized.');
+
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          createWindow();
+        }
+      });
+    } catch (err) {
+      console.error('[Electron] Fatal error during startup:', err);
+    }
   });
 }
 
@@ -201,6 +230,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   console.log('[Electron] Cleaning up processes before quit...');
+  stopBufferRetryLoop();
   if (pythonProcess) {
     pythonProcess.killedIntentional = true;
     pythonProcess.kill('SIGTERM'); // kill python child process cleanly
@@ -214,6 +244,11 @@ app.on('before-quit', () => {
     displayRemovedListener = null;
   }
   stopReceiver();
+});
+
+// Returns current count of pending offline buffered violations
+ipcMain.handle('get-buffer-status', () => {
+  return violationBuffer.getBufferStatus();
 });
 
 // Listen for test violations from renderer

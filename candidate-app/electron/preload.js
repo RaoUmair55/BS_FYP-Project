@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   startExamMode: async () => ipcRenderer.invoke('start-exam-mode'),
   getSessionInfo: async () => ipcRenderer.invoke('get-session-info'),
   checkUsbDrives: async () => ipcRenderer.invoke('check-usb-drives'),
-  getDisplayCount: async () => ipcRenderer.invoke('get-display-count')
+  getDisplayCount: async () => ipcRenderer.invoke('get-display-count'),
+  getBufferStatus: async () => ipcRenderer.invoke('get-buffer-status'),
+  onBufferStatusChanged: (callback) => ipcRenderer.on('buffer-status-changed', (_event, value) => callback(value))
 });

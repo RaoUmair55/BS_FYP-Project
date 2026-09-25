@@ -10,13 +10,14 @@ import './Components.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export default function CandidateGrid({ riskScores = {}, violations = [], onSelectCandidate, examFilter }) {
+export default function CandidateGrid({ riskScores = {}, violations = [], onSelectCandidate, onOpenChat, examFilter }) {
     const { authFetch } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [extendingMap, setExtendingMap] = useState({});
     const [releasingMap, setReleasingMap] = useState({});
+    const [verifyingMap, setVerifyingMap] = useState({});
     const [currentTime, setCurrentTime] = useState(Date.now());
 
     // Update current time ticker every second for accurate countdown
@@ -24,6 +25,14 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
         return () => clearInterval(timer);
     }, []);
+
+    // Filter sessions by examFilter if selected
+    const filteredSessions = sessions.filter(s => {
+        if (examFilter && s.examId && s.examId.toUpperCase() !== examFilter.toUpperCase()) {
+            return false;
+        }
+        return true;
+    });
 
     const handleReleasePaper = async (examId) => {
         if (!examId) return;
@@ -162,14 +171,6 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
             setVerifyingMap(prev => ({ ...prev, [sid]: false }));
         }
     };
-
-    // Filter sessions by examFilter if selected
-    const filteredSessions = sessions.filter(s => {
-        if (examFilter && s.examId && s.examId.toUpperCase() !== examFilter.toUpperCase()) {
-            return false;
-        }
-        return true;
-    });
 
     // Count unreviewed violations per candidate
     const unreviewedBySession = (violations || []).reduce((acc, v) => {
@@ -499,6 +500,18 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                         <Eye size={12} />
                                         <span>Review</span>
                                     </button>
+
+                                    {onOpenChat && (
+                                        <button
+                                            className="md-btn md-btn-sm"
+                                            style={{ fontSize: '11px', padding: '4px 8px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}
+                                            onClick={() => onOpenChat(sid)}
+                                            title="Open direct live chat with this student"
+                                        >
+                                            <MessageSquare size={12} />
+                                            <span>Chat</span>
+                                        </button>
+                                    )}
 
                                     <button
                                         className="md-btn md-btn-sm"

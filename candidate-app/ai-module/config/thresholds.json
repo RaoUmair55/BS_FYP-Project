@@ -1,6 +1,6 @@
 {
-  "yaw_threshold_degrees": 25,
-  "sustained_lateral_seconds": 1.5,
-  "sustained_downward_seconds": 3.0,
+  "yaw_threshold_degrees": 24,
+  "sustained_lateral_seconds": 1.2,
+  "sustained_downward_seconds": 2.2,
   "object_detection_confidence": 0.25
 }

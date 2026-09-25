@@ -66,10 +66,35 @@ async function loadExamPaper() {
     }
 
     if (response.status === 404) {
-      if (loadingEl) {
-        loadingEl.style.display = 'block';
-        loadingEl.innerHTML = `<div class="info-message">Exam paper not yet available &mdash; please wait for your examiner.</div>`;
+      // No paper file attached to this exam — start exam workspace and countdown immediately
+      isPaperReleased = true;
+      isPaperLoaded = true;
+      if (waitingLobby) waitingLobby.style.display = 'none';
+      if (paperViewer) {
+        paperViewer.style.display = 'block';
+        paperViewer.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 36px 24px; text-align: center; color: #475569;">
+            <div style="font-size: 40px; margin-bottom: 14px;">📝</div>
+            <div style="font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">No External Paper File Attached</div>
+            <div style="font-size: 13.5px; color: #64748b; max-width: 360px; line-height: 1.5;">
+              This exam does not require a separate PDF/Word paper. Please write your typed answer or attach your solution file in the right-hand panel.
+            </div>
+            <div class="badge" style="margin-top: 16px; background: #ecfdf5; color: #047857; font-weight: 600;">
+              ✓ Workspace Active & Proctoring
+            </div>
+          </div>
+        `;
       }
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (paperStatusPill) {
+        paperStatusPill.textContent = '● Workspace Active';
+        paperStatusPill.style.background = '#ecfdf5';
+        paperStatusPill.style.color = '#047857';
+      }
+      if (!targetEndTime) {
+        targetEndTime = Date.now() + 60 * 60 * 1000;
+      }
+      startTimer();
       return;
     }
 
@@ -250,11 +275,41 @@ function startTimer() {
   timerInterval = setInterval(updateCountdown, 1000);
 }
 
+function updateBufferStatusUI(pendingCount) {
+  if (isSubmitted) return;
+  const badge = document.getElementById('monitoringBadge');
+  if (!badge) return;
+
+  if (pendingCount > 0) {
+    badge.className = 'monitoring-badge offline';
+    badge.innerHTML = `
+      <span class="pulse-dot offline"></span>
+      <span>Offline &mdash; ${pendingCount} event${pendingCount === 1 ? '' : 's'} queued</span>
+    `;
+    badge.title = 'Network disconnected. Violations are safely queued in local SQLite disk buffer and will auto-sync upon reconnection.';
+  } else {
+    badge.className = 'monitoring-badge';
+    badge.innerHTML = `
+      <span class="pulse-dot"></span>
+      <span>● Monitoring Active</span>
+    `;
+    badge.title = 'Integrity monitoring connected and streaming to backend.';
+  }
+}
+
 function startSessionStatusPolling() {
   if (!sessionInfo || !sessionInfo.sessionId) return;
   if (statusInterval) clearInterval(statusInterval);
 
   statusInterval = setInterval(async () => {
+    // 1. Poll offline violation buffer state from Electron IPC
+    if (window.api && typeof window.api.getBufferStatus === 'function') {
+      try {
+        const bufferStatus = await window.api.getBufferStatus();
+        updateBufferStatusUI(bufferStatus ? bufferStatus.pendingCount : 0);
+      } catch (bufErr) {}
+    }
+
     try {
       const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`);
       if (!res.ok) return;
@@ -307,6 +362,9 @@ function startSessionStatusPolling() {
       if ((data.cameraVerificationStatus === 'rejected' || data.cameraVerificationStatus === 'flagged' || data.cameraVerificationStatus === 're_verify') && !isReverifyingCamera) {
         showCameraReverificationModal(data.cameraVerificationNote);
       }
+
+      // Sync in-exam chat messages and announcements
+      await fetchStudentMessages();
     } catch (e) {
       console.warn('Error polling session status:', e);
     }
@@ -750,4 +808,234 @@ window.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => { testBtn.textContent = 'Test Alert'; }, 1500);
     });
   }
+
+  // Real-time offline buffer status events from Electron IPC
+  if (window.api && typeof window.api.onBufferStatusChanged === 'function') {
+    window.api.onBufferStatusChanged((status) => {
+      updateBufferStatusUI(status ? status.pendingCount : 0);
+    });
+  }
+
+  // Setup Student Chat Subsystem
+  setupStudentChat();
 });
+
+// ==========================================
+// In-Exam Chat & Examiner Inquiry System
+// ==========================================
+let isChatDrawerOpen = false;
+let studentChatMessagesList = [];
+let unreadMessageCount = 0;
+let seenChatMsgIds = new Set();
+
+function setupStudentChat() {
+  const chatBtn = document.getElementById('floatingChatBtn');
+  const chatDrawer = document.getElementById('studentChatDrawer');
+  const closeBtn = document.getElementById('closeChatDrawerBtn');
+  const chatForm = document.getElementById('studentChatForm');
+  const chatInput = document.getElementById('studentChatInput');
+
+  if (chatBtn && chatDrawer) {
+    chatBtn.addEventListener('click', () => {
+      isChatDrawerOpen = !isChatDrawerOpen;
+      chatDrawer.style.display = isChatDrawerOpen ? 'flex' : 'none';
+      if (isChatDrawerOpen) {
+        unreadMessageCount = 0;
+        updateChatUnreadBadge();
+        const msgContainer = document.getElementById('studentChatMessages');
+        if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
+        if (chatInput) chatInput.focus();
+      }
+    });
+  }
+
+  if (closeBtn && chatDrawer) {
+    closeBtn.addEventListener('click', () => {
+      isChatDrawerOpen = false;
+      chatDrawer.style.display = 'none';
+    });
+  }
+
+  if (chatForm && chatInput) {
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      chatInput.value = '';
+      await sendStudentChatMessage(text);
+    });
+  }
+}
+
+function updateChatUnreadBadge() {
+  const badge = document.getElementById('chatUnreadBadge');
+  if (!badge) return;
+  if (unreadMessageCount > 0 && !isChatDrawerOpen) {
+    badge.textContent = unreadMessageCount > 9 ? '9+' : unreadMessageCount;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function fetchStudentMessages() {
+  if (!sessionInfo || !sessionInfo.sessionId || !sessionInfo.serverUrl) return;
+
+  try {
+    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const newMessages = Array.isArray(data) ? data : (data.messages || []);
+
+    // Check for incoming new messages from teacher/broadcaster
+    let newlyArrivedExaminerMsgs = 0;
+    for (const msg of newMessages) {
+      const mId = (msg._id || msg.id)?.toString();
+      if (mId && !seenChatMsgIds.has(mId)) {
+        seenChatMsgIds.add(mId);
+        if (msg.sender === 'teacher' || msg.isBroadcast) {
+          newlyArrivedExaminerMsgs++;
+          if (!isChatDrawerOpen) {
+            showExaminerChatToast(msg);
+          }
+        }
+      }
+    }
+
+    if (!isChatDrawerOpen && newlyArrivedExaminerMsgs > 0) {
+      unreadMessageCount += newlyArrivedExaminerMsgs;
+      updateChatUnreadBadge();
+    }
+
+    studentChatMessagesList = newMessages;
+    renderStudentMessages();
+  } catch (err) {
+    console.warn('Failed to sync student chat messages:', err);
+  }
+}
+
+function renderStudentMessages() {
+  const container = document.getElementById('studentChatMessages');
+  if (!container) return;
+
+  const welcomeHtml = `
+    <div class="chat-welcome-box">
+      💡 Have a clarification or typo concern on the question paper? Send a message here &mdash; your examiner will reply directly or publish an announcement.
+    </div>
+  `;
+
+  if (studentChatMessagesList.length === 0) {
+    container.innerHTML = welcomeHtml;
+    return;
+  }
+
+  const itemsHtml = studentChatMessagesList.map(msg => {
+    const isMine = msg.sender === 'candidate' || msg.sender === 'student';
+    const isBroadcast = msg.isBroadcast;
+    const timeStr = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    let bubbleClass = isMine ? 'mine' : 'theirs';
+    if (isBroadcast) bubbleClass = 'theirs broadcast';
+
+    let senderLabel = isMine ? 'You' : (isBroadcast ? '📢 EXAMINER ANNOUNCEMENT' : '👨‍🏫 Examiner');
+
+    return `
+      <div class="chat-msg ${bubbleClass}">
+        <div style="font-size: 10px; font-weight: 700; margin-bottom: 2px; color: ${isBroadcast ? '#b45309' : (isMine ? '#1d4ed8' : '#475569')};">
+          ${senderLabel}
+        </div>
+        <div class="chat-bubble">
+          ${escapeHtml(msg.text)}
+        </div>
+        <div class="chat-msg-meta" style="${isMine ? 'text-align: right;' : ''}">
+          ${timeStr}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = welcomeHtml + itemsHtml;
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendStudentChatMessage(text) {
+  if (!sessionInfo || !sessionInfo.sessionId || !sessionInfo.serverUrl) return;
+
+  try {
+    const payload = {
+      sessionId: sessionInfo.sessionId,
+      examId: sessionInfo.examId,
+      sender: 'student',
+      senderName: sessionInfo.studentName || sessionInfo.candidateName || 'Candidate',
+      rollNumber: sessionInfo.rollNumber || sessionInfo.studentId || '',
+      studentId: sessionInfo.studentId || '',
+      text: text.trim()
+    };
+
+    const res = await fetch(`${sessionInfo.serverUrl}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const msgObj = data.message || data;
+      const mId = (msgObj._id || msgObj.id)?.toString();
+      if (mId && !seenChatMsgIds.has(mId)) {
+        seenChatMsgIds.add(mId);
+        studentChatMessagesList.push(msgObj);
+        renderStudentMessages();
+      } else if (!mId) {
+        studentChatMessagesList.push(msgObj);
+        renderStudentMessages();
+      }
+    }
+  } catch (err) {
+    console.error('Failed to send student message:', err);
+  }
+}
+
+function showExaminerChatToast(msg) {
+  let toast = document.getElementById('examinerChatToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'examinerChatToast';
+    toast.style.cssText = `
+      position: fixed; bottom: 80px; right: 24px;
+      background: #0f172a; color: #ffffff; border: 1px solid #3b82f6;
+      padding: 12px 16px; border-radius: 10px; box-shadow: 0 10px 25px -3px rgba(0,0,0,0.3);
+      z-index: 99999; font-size: 13px; max-width: 340px;
+      display: flex; flex-direction: column; gap: 6px;
+      cursor: pointer; animation: slideUp 0.3s ease;
+    `;
+    toast.onclick = () => {
+      const chatBtn = document.getElementById('floatingChatBtn');
+      if (chatBtn) chatBtn.click();
+      toast.style.display = 'none';
+    };
+    document.body.appendChild(toast);
+  }
+
+  const isBroadcast = msg.isBroadcast;
+  toast.innerHTML = `
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span style="font-weight: 700; color: ${isBroadcast ? '#fbbf24' : '#60a5fa'}; font-size: 12px;">
+        ${isBroadcast ? '📢 EXAM BROADCAST' : '💬 EXAMINER REPLY'}
+      </span>
+      <span style="font-size: 11px; color: #94a3b8;">Click to open</span>
+    </div>
+    <div style="color: #f1f5f9; line-height: 1.35; word-break: break-word;">
+      ${escapeHtml(msg.text)}
+    </div>
+  `;
+  toast.style.display = 'flex';
+  setTimeout(() => {
+    if (toast) toast.style.display = 'none';
+  }, 7000);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
