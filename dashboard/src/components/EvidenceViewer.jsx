@@ -10,8 +10,33 @@ import './Components.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-function formatType(typeStr) {
+function formatType(typeStr, details = {}) {
     if (!typeStr) return "Unknown";
+    if (typeStr === 'head_turn_away') {
+        if (details?.reason) return details.reason;
+        if (details?.direction === 'left') return "Looking Left";
+        if (details?.direction === 'right') return "Looking Right";
+        if (details?.direction === 'down') return "Looking Down (Desk Gaze)";
+        return "Head Turn Away";
+    }
+    if (typeStr === 'unauthorized_object') {
+        if (details?.object_class) {
+            return `Unauthorized ${details.object_class.charAt(0).toUpperCase() + details.object_class.slice(1)}`;
+        }
+        return "Unauthorized Object";
+    }
+    if (typeStr === 'second_person_detected') {
+        return "Second Person Detected";
+    }
+    if (typeStr === 'no_face_detected') {
+        return "No Face in View";
+    }
+    if (typeStr === 'unauthorized_app') {
+        if (details?.object_class) {
+            return `Unauthorized App (${details.object_class})`;
+        }
+        return "Unauthorized Application";
+    }
     return typeStr.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
@@ -474,7 +499,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                                 <div>
                                                     <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
-                                                        {formatType(v.type)}
+                                                        {formatType(v.type, v.details)}
                                                     </span>
                                                     <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', marginLeft: '8px' }}>
                                                         Severity {v.severity}
@@ -568,7 +593,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                             {dismissedViolations.map(dv => (
                                                 <div key={dv._id} style={{ background: '#f8f9fa', border: '1px dashed #dadce0', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#5f6368', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                                     <div>
-                                                        <strong>{formatType(dv.type)}</strong> (Severity {dv.severity}) • {new Date(dv.timestamp).toLocaleTimeString()}
+                                                        <strong>{formatType(dv.type, dv.details)}</strong> (Severity {dv.severity}) • {new Date(dv.timestamp).toLocaleTimeString()}
                                                         {dv.details?.object_class && ` • Target: ${dv.details.object_class}`}
                                                     </div>
                                                     <span className="md-badge" style={{ background: '#e8eaed', color: '#5f6368', fontSize: '10px' }}>

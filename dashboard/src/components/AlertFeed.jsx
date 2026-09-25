@@ -9,8 +9,33 @@ import './Components.css';
 
 const API_BASE = 'http://localhost:5000';
 
-function formatType(typeStr) {
+function formatType(typeStr, details = {}) {
     if (!typeStr) return "Unknown";
+    if (typeStr === 'head_turn_away') {
+        if (details?.reason) return details.reason;
+        if (details?.direction === 'left') return "Looking Left";
+        if (details?.direction === 'right') return "Looking Right";
+        if (details?.direction === 'down') return "Looking Down (Desk Gaze)";
+        return "Head Turn Away";
+    }
+    if (typeStr === 'unauthorized_object') {
+        if (details?.object_class) {
+            return `Unauthorized ${details.object_class.charAt(0).toUpperCase() + details.object_class.slice(1)}`;
+        }
+        return "Unauthorized Object";
+    }
+    if (typeStr === 'second_person_detected') {
+        return "Second Person Detected";
+    }
+    if (typeStr === 'no_face_detected') {
+        return "No Face in View";
+    }
+    if (typeStr === 'unauthorized_app') {
+        if (details?.object_class) {
+            return `Unauthorized App (${details.object_class})`;
+        }
+        return "Unauthorized Application";
+    }
     return typeStr.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
@@ -140,7 +165,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
-                                            {formatType(v.type)}
+                                            {formatType(v.type, v.details)}
                                         </span>
                                         <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', color: '#3c4043' }}>
                                             Sev {v.severity}

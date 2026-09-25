@@ -181,6 +181,32 @@ class WhitelistEnforcer:
                         self.allowed_apps.add(item.lower())
             elif isinstance(raw_allowed, set):
                 self.allowed_apps = {a.lower() for a in raw_allowed}
+                
+            # Expand known process aliases for Windows applications
+            APP_ALIASES = {
+                "calc.exe": ["calculatorapp.exe", "calculator.exe", "calc.exe"],
+                "calculatorapp.exe": ["calc.exe", "calculator.exe", "calculatorapp.exe"],
+                "calculator.exe": ["calc.exe", "calculatorapp.exe", "calculator.exe"],
+                "notepad.exe": ["notepad.exe"],
+                "winword.exe": ["winword.exe", "word.exe"],
+                "excel.exe": ["excel.exe"],
+                "powerpnt.exe": ["powerpnt.exe", "powerpoint.exe"],
+                "code.exe": ["code.exe", "code - oss.exe", "vscodium.exe"],
+                "codeblocks.exe": ["codeblocks.exe"],
+                "devcpp.exe": ["devcpp.exe"],
+                "clion64.exe": ["clion64.exe", "clion.exe"],
+                "pycharm64.exe": ["pycharm64.exe", "pycharm.exe"],
+                "idea64.exe": ["idea64.exe", "idea.exe"],
+                "matlab.exe": ["matlab.exe"]
+            }
+            
+            expanded = set()
+            for app in self.allowed_apps:
+                expanded.add(app)
+                if app in APP_ALIASES:
+                    for alias in APP_ALIASES[app]:
+                        expanded.add(alias)
+            self.allowed_apps = expanded
         except Exception as e:
             print(f"[WhitelistEnforcer] Error parsing allowed applications: {e}")
 

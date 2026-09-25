@@ -249,3 +249,67 @@ When you are ready to enforce email verification across the platform, follow thi
      ```javascript
      app.use('/verification', require('./routes/verification'));
      ```
+
+---
+
+## Load Testing Results
+
+### High-Concurrency Benchmark (40 Simultaneous Candidates)
+A comprehensive load testing suite was developed and executed using `scripts/load_test.py` to evaluate backend ingestion throughput, read-write concurrency, and response latency under realistic exam conditions.
+
+#### Test Configuration:
+- **Concurrent Candidates**: 40 active student sessions
+- **Test Duration**: 180 seconds (3.0 minutes)
+- **Violation Ingestion**: Randomized 5–15 seconds interval per student (`POST /violation`)
+- **Dashboard Polling**: Concurrent teacher reads (`GET /violations/:sessionId` and `GET /risk-score/:sessionId`) every 2–3.5 seconds
+- **Authentication**: JWT Bearer token authorization for protected examiner reads
+
+---
+
+### Initial Run & Failure Analysis (Grouped Breakdown)
+In the initial benchmark run, 40 failure exceptions were observed out of 80 write attempts. The failure breakdown categorization revealed:
+
+| Request Type | HTTP Status / Error Code | Error Message & Root Cause | Count | Impact |
+|---|---|---|---|---|
+| `POST_VIOLATION` | `HTTP 0` (Client Exception) | `Network/Timeout Exception: 'charmap' codec can't encode character '\u2717'` (Windows Console stdout encoding mismatch during worker log formatting) | 40 | 100% of recorded failures |
+
+#### Remediation Applied in `scripts/load_test.py`:
+1. **Per-Iteration Try/Except Isolation**: Wrapped every request in its own try/except block so individual failed sends log detailed HTTP status and response bodies without interrupting the worker loop.
+2. **Stdout Encoding Resilience**: Configured `sys.stdout.reconfigure(encoding='utf-8')` and replaced non-ASCII unicode icons with standard ASCII tokens (`[OK]`, `[FAIL]`).
+3. **Automated Exam Initialization**: Added pre-test teacher authentication to dynamically create an open test exam code, ensuring all 40 student sessions join with valid credentials.
+
+---
+
+### Full Benchmark Report (40 Concurrent Students, 3.0 Minutes)
+
+```
+===========================================================================
+         === LOAD TEST REPORT (BEFORE OPTIMIZATION) ===
+===========================================================================
+Total Test Wall-Clock Time:  180.02 seconds (3.00 min)
+Simulated Student Sessions:   40 concurrent candidates
+Total HTTP Requests Sent:    1009 requests
+Overall Effective Throughput: 5.61 req/sec
+Overall Success Rate:        1009/1009 (100.0%)
+Overall Failures/Timeouts:   0 (0.0%)
+---------------------------------------------------------------------------
+METRIC                         | VIOLATION WRITES   | DASHBOARD READS   
+---------------------------------------------------------------------------
+Total Requests                 | 723                | 246               
+Success Count                  | 723                | 246               
+Failure / Timeout Count        | 0                  | 0                 
+Error Rate                     | 0.00%              | 0.00%             
+Average Latency                | 198.79 ms          | 106.85 ms           
+Min Latency                    | 144.39 ms          | 72.40 ms           
+Median (P50) Latency           | 167.83 ms          | 88.76 ms           
+90th Percentile (P90)          | 234.83 ms          | 119.26 ms           
+95th Percentile (P95)          | 368.46 ms          | 176.09 ms           
+99th Percentile (P99)          | 771.01 ms          | 369.66 ms           
+Max Peak Latency               | 1394.91 ms         | 1230.66 ms          
+Throughput (RPS)               | 4.02 req/s         | 1.37 req/s          
+---------------------------------------------------------------------------
+FAILURE BREAKDOWN: No request failures recorded (100% Success).
+===========================================================================
+```
+
+

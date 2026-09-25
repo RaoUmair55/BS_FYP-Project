@@ -106,15 +106,18 @@ class AIMonitor:
                 self.profile_cascade = None
                 self.eye_cascade = None
 
-            # Load ONNX model for object detection if present
-            model_path = os.path.join(base_dir, "yolo26n.onnx")
+            # Load ONNX model for object detection (prefer full float32 for high accuracy on phones at all angles)
+            model_path_std = os.path.join(base_dir, "yolo26n.onnx")
+            model_path_int8 = os.path.join(base_dir, "yolo26n_int8.onnx")
+            model_path = model_path_std if os.path.exists(model_path_std) else model_path_int8
+
             if os.path.exists(model_path):
                 try:
                     self.ort_session = ort.InferenceSession(
                         model_path,
                         providers=["CPUExecutionProvider"]
                     )
-                    print("[AIMonitor] ONNX YOLO object detector loaded successfully.")
+                    print(f"[AIMonitor] ONNX YOLO object detector loaded successfully ({os.path.basename(model_path)}).")
                 except Exception as e:
                     print(f"[AIMonitor Warning] Failed to load ONNX model: {e}")
 
@@ -224,7 +227,7 @@ class AIMonitor:
                     except Exception:
                         pass
                     
-                if self.frame_count % 15 == 0 and self.ort_session:
+                if self.frame_count % 2 == 0 and self.ort_session:
                     try:
                         self._check_objects(frame)
                     except Exception:
@@ -238,111 +241,154 @@ class AIMonitor:
                 cap.release()
 
     def _check_faces_opencv(self, frame):
-        """Robust multi-cascade face, profile, and head turn detection."""
+        """
+        Robust multi-cascade face, eye, profile, and multi-directional head/gaze monitoring.
+        Eliminates false positives by ensuring profile cascades are only evaluated when frontal 
+        face is absent, and differentiates Looking Left, Looking Right, and Looking Down (Desk Gaze).
+        """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame_h, frame_w = frame.shape[:2]
         
-        # 1. Frontal faces
-        faces = self.face_cascade.detectMultiScale(
+        # 1. Detect Frontal Faces
+        raw_faces = self.face_cascade.detectMultiScale(
             gray, 
             scaleFactor=1.1, 
             minNeighbors=5, 
             minSize=(60, 60)
         )
         
-        # 2. Side profile faces (left and right)
+        # Filter genuine non-overlapping faces
+        faces = []
+        for (fx, fy, fw, fh) in raw_faces:
+            if fw >= 60 and fh >= 60:
+                faces.append((fx, fy, fw, fh))
+
+        num_faces = len(faces)
         left_profiles = ()
         right_profiles = ()
-        if self.profile_cascade is not None:
+
+        # 2. Check Profile Cascades ONLY when frontal face is NOT visible
+        # (Running profile cascade on a frontal face causes massive false positives from ears/jaw shadows)
+        if num_faces == 0 and self.profile_cascade is not None:
             left_profiles = self.profile_cascade.detectMultiScale(
                 gray, 
                 scaleFactor=1.1, 
-                minNeighbors=4, 
-                minSize=(50, 50)
+                minNeighbors=5, 
+                minSize=(60, 60)
             )
             flipped_gray = cv2.flip(gray, 1)
             right_profiles = self.profile_cascade.detectMultiScale(
                 flipped_gray, 
                 scaleFactor=1.1, 
-                minNeighbors=4, 
-                minSize=(50, 50)
+                minNeighbors=5, 
+                minSize=(60, 60)
             )
 
-        num_faces = len(faces)
         num_profiles = len(left_profiles) + len(right_profiles)
 
-        # 1. Missing Face Check
+        # 3. Missing Face Check (No face or profile visible for >= 10s)
         if num_faces == 0 and num_profiles == 0:
             if self.no_face_start is None:
                 self.no_face_start = time.time()
             elif time.time() - self.no_face_start >= 10.0:
                 self._emit_violation("no_face_detected", severity=3, details={"reason": "Candidate not visible in camera view"}, frame=frame)
                 self.no_face_start = None
+            self.lateral_turn_start = None
+            self.downward_gaze_start = None
+            self.second_person_counter = 0
             return
             
         self.no_face_start = None
 
-        # 2. Second Person Check
-        if num_faces > 1 or (num_profiles > 1 and num_faces > 0):
-            self.second_person_counter += 1
-            if self.second_person_counter >= 3:
-                annotated = frame.copy()
-                for (fx, fy, fw, fh) in faces:
-                    cv2.rectangle(annotated, (fx, fy), (fx + fw, fy + fh), (0, 165, 255), 2)
-                    cv2.putText(annotated, "PERSON", (fx, max(20, fy - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
-                self._emit_violation("second_person_detected", severity=4, details={"face_count": num_faces}, frame=annotated)
+        # 4. Second Person Check (Strictly require >=2 distinct frontal faces for 5 consecutive frames)
+        if num_faces >= 2:
+            # Verify faces have distinct center points
+            (x1, y1, w1, h1) = faces[0]
+            (x2, y2, w2, h2) = faces[1]
+            c1 = (x1 + w1 / 2, y1 + h1 / 2)
+            c2 = (x2 + w2 / 2, y2 + h2 / 2)
+            dist = np.hypot(c1[0] - c2[0], c1[1] - c2[1])
+            
+            if dist > 70:
+                self.second_person_counter += 1
+                if self.second_person_counter >= 5:
+                    annotated = frame.copy()
+                    for (fx, fy, fw, fh) in faces:
+                        cv2.rectangle(annotated, (fx, fy), (fx + fw, fy + fh), (0, 165, 255), 2)
+                        cv2.putText(annotated, "PERSON", (fx, max(20, fy - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+                    self._emit_violation("second_person_detected", severity=4, details={"face_count": num_faces, "reason": "Multiple people detected in view"}, frame=annotated)
+                    self.second_person_counter = 0
+            else:
                 self.second_person_counter = 0
         else:
             self.second_person_counter = 0
 
-        # 3. Head Turn & Multi-Directional Gaze/Movement Check
+        # 5. Multi-Directional Head Turn & Gaze Monitoring
         is_lateral_turn = False
         is_downward_gaze = False
         turn_reason = ""
-        frame_h, frame_w = frame.shape[:2]
+        turn_direction = ""
 
-        if num_profiles > 0 and num_faces == 0:
-            # Candidate turned profile / sideways
+        if num_faces == 0 and num_profiles > 0:
+            # Candidate turned their head fully sideways away from the screen
             is_lateral_turn = True
-            turn_reason = "Side head turn (profile view)"
+            if len(left_profiles) > 0:
+                turn_reason = "Head Turned Left (Profile View)"
+                turn_direction = "left"
+            else:
+                turn_reason = "Head Turned Right (Profile View)"
+                turn_direction = "right"
+
         elif num_faces == 1:
             (x, y, w, h) = faces[0]
             face_center_y = y + h / 2
             face_center_x = x + w / 2
             
             # Check for downward head pitch (looking down at desk / notes / lap)
-            # Only trigger downward gaze if face is genuinely lowered in the frame (looking down at desk)
-            if (face_center_y / frame_h) > 0.70 or (y + h) / frame_h > 0.90:
+            if (face_center_y / frame_h) > 0.72 or (y + h) / frame_h > 0.90:
                 is_downward_gaze = True
-                turn_reason = "Downward head tilt (looking down at desk)"
-            # Profile detected alongside frontal face -> angled turn
-            elif num_profiles > 0:
-                is_lateral_turn = True
-                turn_reason = "Angled head turn"
+                turn_reason = "Looking Down (Desk/Lap Gaze)"
+                turn_direction = "down"
             elif self.eye_cascade is not None:
-                roi_gray = gray[y:y + int(h * 0.6), x:x + w]
-                eyes = self.eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=3, minSize=(15, 15))
+                # Eye ROI: upper half of face
+                roi_gray = gray[y + int(h * 0.15):y + int(h * 0.55), x + int(w * 0.1):x + int(w * 0.9)]
+                eyes = self.eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=4, minSize=(16, 16))
                 
-                # If face is somewhat low and eyes are completely hidden (head tilted down)
-                if len(eyes) == 0 and (face_center_y / frame_h) > 0.62:
+                # If face is somewhat lowered and eyes are obscured (head tilted downward)
+                if len(eyes) == 0 and (face_center_y / frame_h) > 0.65:
                     is_downward_gaze = True
-                    turn_reason = "Downward gaze (eyes lowered away from screen)"
-                elif len(eyes) == 1:
-                    ex, ey, ew, eh = eyes[0]
-                    rel_pos = (ex + ew / 2) / w
-                    if rel_pos < 0.22 or rel_pos > 0.78:
-                        is_lateral_turn = True
-                        turn_reason = "Lateral gaze shift (single eye visible)"
+                    turn_reason = "Looking Down (Eyes Lowered)"
+                    turn_direction = "down"
                 elif len(eyes) >= 2:
                     sorted_eyes = sorted(eyes, key=lambda e: e[0])
                     eye1_center = sorted_eyes[0][0] + sorted_eyes[0][2] / 2
                     eye2_center = sorted_eyes[-1][0] + sorted_eyes[-1][2] / 2
                     eye_mid = (eye1_center + eye2_center) / 2
-                    asymmetry = abs(eye_mid - (w / 2)) / (w / 2)
-                    if asymmetry > 0.35:
+                    roi_w = w * 0.8
+                    offset_ratio = (eye_mid - (roi_w / 2)) / (roi_w / 2)
+                    
+                    if offset_ratio < -0.45:
                         is_lateral_turn = True
-                        turn_reason = f"Facial gaze asymmetry ({round(asymmetry, 2)})"
+                        turn_reason = "Looking Left (Gaze Shift)"
+                        turn_direction = "left"
+                    elif offset_ratio > 0.45:
+                        is_lateral_turn = True
+                        turn_reason = "Looking Right (Gaze Shift)"
+                        turn_direction = "right"
+                elif len(eyes) == 1:
+                    ex, ey, ew, eh = eyes[0]
+                    roi_w = w * 0.8
+                    rel_pos = (ex + ew / 2) / roi_w
+                    if rel_pos < 0.18:
+                        is_lateral_turn = True
+                        turn_reason = "Looking Left (Side Gaze)"
+                        turn_direction = "left"
+                    elif rel_pos > 0.82:
+                        is_lateral_turn = True
+                        turn_reason = "Looking Right (Side Gaze)"
+                        turn_direction = "right"
 
-        # Check Lateral Head Turn (Threshold: 1.5s)
+        # Check Lateral Head Turn (Threshold: sustained_lateral_seconds)
         if is_lateral_turn:
             if self.lateral_turn_start is None:
                 self.lateral_turn_start = time.time()
@@ -351,33 +397,31 @@ class AIMonitor:
                 lateral_limit = self.thresholds.get("sustained_lateral_seconds", 1.5)
                 if elapsed >= lateral_limit:
                     annotated = frame.copy()
-                    cv2.putText(annotated, "LOOKING AWAY / HEAD TURN", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-                    cv2.putText(annotated, f"Reason: {turn_reason}", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
+                    cv2.putText(annotated, f"SUSPICIOUS ACTIVITY: {turn_reason.upper()}", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     self._emit_violation(
                         "head_turn_away", 
                         severity=2, 
-                        details={"duration": round(elapsed, 1), "reason": turn_reason},
+                        details={"duration": round(elapsed, 1), "reason": turn_reason, "direction": turn_direction},
                         frame=annotated
                     )
                     self.lateral_turn_start = None
         else:
             self.lateral_turn_start = None
 
-        # Check Downward Gaze / Desk Glance (Threshold: 2.0s)
+        # Check Downward Gaze / Desk Glance (Threshold: sustained_downward_seconds)
         if is_downward_gaze:
             if self.downward_gaze_start is None:
                 self.downward_gaze_start = time.time()
             else:
                 elapsed = time.time() - self.downward_gaze_start
-                downward_limit = self.thresholds.get("sustained_downward_seconds", 2.0)
+                downward_limit = self.thresholds.get("sustained_downward_seconds", 3.0)
                 if elapsed >= downward_limit:
                     annotated = frame.copy()
-                    cv2.putText(annotated, "LOOKING DOWN / DESK GAZE", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-                    cv2.putText(annotated, f"Reason: {turn_reason}", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
+                    cv2.putText(annotated, f"SUSPICIOUS ACTIVITY: {turn_reason.upper()}", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     self._emit_violation(
                         "head_turn_away", 
                         severity=2, 
-                        details={"duration": round(elapsed, 1), "reason": turn_reason},
+                        details={"duration": round(elapsed, 1), "reason": turn_reason, "direction": turn_direction},
                         frame=annotated
                     )
                     self.downward_gaze_start = None
@@ -485,7 +529,7 @@ class AIMonitor:
         Filters for 'cell phone' (class 67) and 'book' (class 73).
         """
         now = time.time()
-        if hasattr(self, 'last_object_violation_at') and (now - self.last_object_violation_at < 3.0):
+        if hasattr(self, 'last_object_violation_at') and (now - self.last_object_violation_at < 2.0):
             return
 
         h, w = frame.shape[:2]
@@ -505,7 +549,8 @@ class AIMonitor:
         if len(output_tensor.shape) == 3:
             output_tensor = output_tensor[0]
 
-        conf_thresh = self.thresholds.get("object_detection_confidence", 0.35)
+        conf_thresh = self.thresholds.get("object_detection_confidence", 0.25)
+        target_classes = {67: "cell phone", 73: "book"}
 
         # Format A: Shape (300, 6) -> [x1, y1, x2, y2, conf, class_id]
         if output_tensor.shape[-1] == 6 or (len(output_tensor.shape) == 2 and output_tensor.shape[1] == 6):
@@ -515,8 +560,8 @@ class AIMonitor:
                     continue
                     
                 class_id = int(pred[5])
-                if class_id == 67 or class_id == 73: # Cell phone or book
-                    class_name = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "cell phone"
+                if class_id in target_classes:
+                    class_name = target_classes[class_id]
                     self.last_object_violation_at = now
                     
                     # Annotate frame with red detection box
@@ -539,34 +584,47 @@ class AIMonitor:
         # Format B: Shape (84, 8400) -> Standard YOLO ONNX output
         elif len(output_tensor.shape) == 2 and output_tensor.shape[0] == 84:
             boxes_scores = output_tensor.T # (8400, 84)
+            best_match = None
+            best_conf = 0.0
+
             for pred in boxes_scores:
                 class_scores = pred[4:]
-                class_id = int(np.argmax(class_scores))
-                confidence = float(class_scores[class_id])
                 
-                if confidence >= conf_thresh:
-                    if class_id == 67 or class_id == 73: # Cell phone or book
-                        class_name = COCO_CLASSES[class_id] if 0 <= class_id < len(COCO_CLASSES) else "cell phone"
-                        self.last_object_violation_at = now
+                # Check cell phone (67)
+                if len(class_scores) > 67:
+                    p_conf = float(class_scores[67])
+                    if p_conf >= conf_thresh and p_conf > best_conf:
+                        best_conf = p_conf
+                        best_match = (pred, 67, "cell phone", p_conf)
+                
+                # Check book (73)
+                if len(class_scores) > 73:
+                    b_conf = float(class_scores[73])
+                    if b_conf >= conf_thresh and b_conf > best_conf:
+                        best_conf = b_conf
+                        best_match = (pred, 73, "book", b_conf)
 
-                        # Annotate frame with red detection box
-                        annotated = frame.copy()
-                        cx, cy, bw, bh = pred[0], pred[1], pred[2], pred[3]
-                        x1 = int((cx - bw / 2) * w / 640)
-                        y1 = int((cy - bh / 2) * h / 640)
-                        x2 = int((cx + bw / 2) * w / 640)
-                        y2 = int((cy + bh / 2) * h / 640)
-                        cv2.rectangle(annotated, (max(0, x1), max(0, y1)), (min(w, x2), min(h, y2)), (0, 0, 255), 2)
-                        label = f"{class_name.upper()}: {int(confidence * 100)}%"
-                        cv2.putText(annotated, label, (max(0, x1), max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            if best_match is not None:
+                pred, class_id, class_name, confidence = best_match
+                self.last_object_violation_at = now
 
-                        self._emit_violation(
-                            "unauthorized_object",
-                            severity=3,
-                            details={"confidence": round(confidence, 2), "object_class": class_name},
-                            frame=annotated
-                        )
-                        break
+                # Annotate frame with red detection box
+                annotated = frame.copy()
+                cx, cy, bw, bh = pred[0], pred[1], pred[2], pred[3]
+                x1 = int((cx - bw / 2) * w / 640)
+                y1 = int((cy - bh / 2) * h / 640)
+                x2 = int((cx + bw / 2) * w / 640)
+                y2 = int((cy + bh / 2) * h / 640)
+                cv2.rectangle(annotated, (max(0, x1), max(0, y1)), (min(w, x2), min(h, y2)), (0, 0, 255), 2)
+                label = f"{class_name.upper()}: {int(confidence * 100)}%"
+                cv2.putText(annotated, label, (max(0, x1), max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+                self._emit_violation(
+                    "unauthorized_object",
+                    severity=3,
+                    details={"confidence": round(confidence, 2), "object_class": class_name},
+                    frame=annotated
+                )
 
     def _emit_violation(self, violation_type, severity, details, frame=None):
         """

@@ -36,18 +36,32 @@ class CloudinaryStorageProvider extends StorageProvider {
         const publicId = `${baseName}_${Date.now()}`;
 
         // Also persist a local copy in uploads folder as local cache / fallback
+        let localSavedPath = null;
+        let localUrl = null;
         try {
             const fs = require('fs');
-            const localDir = path.join(__dirname, '../../../../server/uploads', folder);
+            const localDir = path.join(__dirname, '../../../uploads', folder);
             if (!fs.existsSync(localDir)) {
                 fs.mkdirSync(localDir, { recursive: true });
             }
             const localFilePath = path.join(localDir, filename);
+            let buf = null;
             if (Buffer.isBuffer(fileBuffer)) {
-                fs.writeFileSync(localFilePath, fileBuffer);
-            } else if (typeof fileBuffer === 'string' && fileBuffer.startsWith('data:')) {
-                const base64Data = fileBuffer.replace(/^data:[^;]+;base64,/, '');
-                fs.writeFileSync(localFilePath, Buffer.from(base64Data, 'base64'));
+                buf = fileBuffer;
+            } else if (typeof fileBuffer === 'string') {
+                if (fileBuffer.startsWith('data:')) {
+                    const base64Data = fileBuffer.replace(/^data:[^;]+;base64,/, '');
+                    buf = Buffer.from(base64Data, 'base64');
+                } else if (/^[A-Za-z0-9+/=]+$/.test(fileBuffer.substring(0, 100))) {
+                    buf = Buffer.from(fileBuffer, 'base64');
+                } else {
+                    buf = Buffer.from(fileBuffer, 'utf8');
+                }
+            }
+            if (buf) {
+                fs.writeFileSync(localFilePath, buf);
+                localSavedPath = localFilePath;
+                localUrl = `/uploads/${folder}/${filename}`;
             }
         } catch (localSaveErr) {
             console.warn('[CloudinaryStorageProvider] Local cache write warning:', localSaveErr.message);
@@ -61,12 +75,26 @@ class CloudinaryStorageProvider extends StorageProvider {
                 overwrite: true
             };
 
+            const fallbackToLocal = (err) => {
+                if (localSavedPath && localUrl) {
+                    console.warn(`[CloudinaryStorageProvider] Cloudinary upload error (${err.message || err}). Falling back to local storage: ${localUrl}`);
+                    return resolve({
+                        path: localSavedPath,
+                        url: localUrl,
+                        public_id: publicId,
+                        size: Buffer.isBuffer(fileBuffer) ? fileBuffer.length : undefined,
+                        format: path.extname(filename).replace('.', '')
+                    });
+                }
+                console.error('[CloudinaryStorageProvider] Upload error and no local cache available:', err);
+                reject(err);
+            };
+
             // 1. If buffer is provided
             if (Buffer.isBuffer(fileBuffer)) {
                 const uploadStream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
                     if (error) {
-                        console.error('[CloudinaryStorageProvider] Upload buffer error:', error);
-                        return reject(error);
+                        return fallbackToLocal(error);
                     }
                     resolve({
                         path: result.secure_url,
@@ -76,6 +104,7 @@ class CloudinaryStorageProvider extends StorageProvider {
                         format: result.format
                     });
                 });
+                uploadStream.on('error', (err) => fallbackToLocal(err));
                 uploadStream.end(fileBuffer);
             } 
             // 2. If string is provided (base64, data URI, or URL/path)
@@ -88,8 +117,7 @@ class CloudinaryStorageProvider extends StorageProvider {
 
                 cloudinary.uploader.upload(dataToUpload, uploadOptions, (error, result) => {
                     if (error) {
-                        console.error('[CloudinaryStorageProvider] Upload string error:', error);
-                        return reject(error);
+                        return fallbackToLocal(error);
                     }
                     resolve({
                         path: result.secure_url,
@@ -100,6 +128,13 @@ class CloudinaryStorageProvider extends StorageProvider {
                     });
                 });
             } else {
+                if (localSavedPath && localUrl) {
+                    return resolve({
+                        path: localSavedPath,
+                        url: localUrl,
+                        public_id: publicId
+                    });
+                }
                 reject(new Error('[CloudinaryStorageProvider] Invalid fileBuffer type. Expected Buffer or string.'));
             }
         });

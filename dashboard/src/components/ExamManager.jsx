@@ -17,7 +17,7 @@ const SOFTWARE_PRESETS = [
     { id: 'winword', name: 'Microsoft Word', executable: 'winword.exe', category: 'Office & Text', icon: '📄' },
     { id: 'excel', name: 'Microsoft Excel', executable: 'excel.exe', category: 'Office & Text', icon: '📊' },
     { id: 'notepad', name: 'Windows Notepad', executable: 'notepad.exe', category: 'Office & Text', icon: '🗒️' },
-    { id: 'calc', name: 'Windows Calculator', executable: 'calc.exe', category: 'Math & Tools', icon: '🧮' },
+    { id: 'calc', name: 'Windows Calculator', executable: 'CalculatorApp.exe', category: 'Math & Tools', icon: '🧮' },
     { id: 'matlab', name: 'MATLAB', executable: 'matlab.exe', category: 'Math & Tools', icon: '📐' }
 ];
 

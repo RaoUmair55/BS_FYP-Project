@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const Session = require('../models/Session');
@@ -105,6 +106,21 @@ router.post('/', async (req, res) => {
 
         if (!examEndTime && (!examCount || (examCount > 0 && !inputCode))) {
             examEndTime = new Date(Date.now() + examDuration * 60 * 1000);
+        }
+
+        if (mongoose.connection.readyState !== 1) {
+            console.warn('[WARNING] MongoDB unreachable. Creating session in local fallback mode.');
+            const fallbackId = 'sess-fallback-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+            return res.status(201).json({
+                _id: fallbackId,
+                sessionId: fallbackId,
+                studentId: finalStudentId,
+                studentName: trimmedName,
+                rollNumber: trimmedRoll,
+                examId: inputCode || 'PRACTICE',
+                startTime: new Date(),
+                endTime: examEndTime || new Date(Date.now() + 60 * 60 * 1000)
+            });
         }
 
         const newSession = new Session({
