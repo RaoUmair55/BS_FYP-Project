@@ -95,11 +95,12 @@ class WhitelistEnforcer:
             "memory compression",
             "igfxem.exe",
             "igfxhk.exe",
-            "igfxtray.exe",
             "onedrive.sync.service.exe",
             "onedrive.exe",
             "wlanext.exe",
-            "applemobiledeviceprocess.exe"
+            "applemobiledeviceprocess.exe",
+            "phoneexperiencehost.exe",
+            "git-remote-https.exe"
         }
         
         # Hardcoded list of common Windows services/drivers/telemetry/databases to skip
@@ -121,7 +122,7 @@ class WhitelistEnforcer:
             "nvdisplay.container.exe", "nvcontainer.exe", "nvsphelper64.exe",
             "onedrive.sync.service.exe", "onedrive.exe", "wlanext.exe",
             "applemobiledeviceprocess.exe", "chrome-native-host.exe", "shellexperiencehost.exe",
-            "defendersessionhelper.exe",
+            "defendersessionhelper.exe", "phoneexperiencehost.exe", "git-remote-https.exe",
             # Intel platform & graphics services
             "esif_uf.exe", "esif_assist.exe", "oneapp.igcc.winservice.exe", "jhi_service.exe",
             "ipfsvc.exe", "dptf.exe",
@@ -132,7 +133,7 @@ class WhitelistEnforcer:
             "docker.exe", "dockerd.exe",
             # Database and developer background daemons
             "postgres.exe", "pg_ctl.exe", "mysqld.exe", "sqlservr.exe", "mongod.exe", "redis-server.exe",
-            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe",
+            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe", "git-remote-https.exe",
             # Microsoft Office background telemetry
             "msoia.exe", "msoadfs.exe"
         }

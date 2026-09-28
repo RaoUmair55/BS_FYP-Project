@@ -7,6 +7,7 @@ import psutil
 from whitelist_enforcer import WhitelistEnforcer
 from usb_monitor import USBMonitor
 from ai_monitor import AIMonitor
+from voice_monitor import VoiceMonitor
 import server
 
 ELECTRON_RECEIVER_URL = "http://127.0.0.1:8766/violation"
@@ -62,6 +63,14 @@ if __name__ == "__main__":
     # Inject usb_monitor instance so server can use it for /check-usb
     server.usb_monitor = usb_monitor
     usb_monitor.start()
+
+    voice_monitor = VoiceMonitor(
+        session_id=exam_session_id,
+        on_violation_callback=send_violation_to_electron,
+        is_self_check=is_self_check
+    )
+    # Inject voice_monitor instance so server can use it for /set-reference-voice
+    server.voice_monitor = voice_monitor
     
     if not is_self_check:
         try:
@@ -72,11 +81,18 @@ if __name__ == "__main__":
             monitor.start()
         except Exception as e:
             print(f"[AI Module Warning] Could not start AIMonitor: {e}")
+
+        try:
+            voice_monitor.start()
+        except Exception as e:
+            print(f"[AI Module Warning] Could not start VoiceMonitor: {e}")
     else:
-        print("[AI Module] Self-check mode active. Skipping AIMonitor camera initialization until exam starts.")
+        print("[AI Module] Self-check mode active. Skipping AIMonitor and VoiceMonitor continuous streams until exam starts.")
     
     try:
         uvicorn.run(server.app, host="127.0.0.1", port=8000)
     finally:
         enforcer.stop()
         usb_monitor.stop()
+        voice_monitor.stop()
+

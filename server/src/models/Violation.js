@@ -15,7 +15,8 @@ const violationSchema = new mongoose.Schema({
             "camera_issue",
             "camera_occluded_or_dark",
             "usb_device_detected",
-            "multiple_displays_detected"
+            "multiple_displays_detected",
+            "second_voice_detected"
         ]
     },
     severity: { type: Number, required: true, min: 1, max: 5 },

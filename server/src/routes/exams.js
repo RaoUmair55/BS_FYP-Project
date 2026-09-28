@@ -170,15 +170,20 @@ router.get('/', requireAuth, async (req, res) => {
         if (req.query.status) {
             filter.status = req.query.status.toLowerCase();
         }
-        if (req.query.scope === 'my' && req.teacher?.teacherId) {
-            filter.createdBy = req.teacher.teacherId;
+
+        const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
+        const isAdmin = req.teacher?.role === 'admin';
+
+        // Default: regular examiners only see exams they created. Admins can view all if scope=all.
+        if (req.query.scope === 'all' && isAdmin) {
+            // Admin view across all teachers
+        } else if (currentTeacherId) {
+            filter.createdBy = currentTeacherId;
         }
 
         const exams = await Exam.find(filter).sort({ createdAt: -1 });
         
         // Enrich exams with active student count and fallback title/code
-        const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
-
         const enrichedExams = await Promise.all(exams.map(async (exam) => {
             const code = exam.examCode || exam.examId || 'EXAM';
             const activeStudents = await Session.countDocuments({ 

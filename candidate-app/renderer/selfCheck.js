@@ -1,5 +1,7 @@
 const btnCamera = document.getElementById('btn-check-camera');
 const btnMic = document.getElementById('btn-check-mic');
+const btnRecordVoice = document.getElementById('btn-record-voice');
+const btnRecordAgainVoice = document.getElementById('btn-record-again-voice');
 const btnApps = document.getElementById('btn-check-apps');
 const btnUsb = document.getElementById('btn-check-usb');
 const btnDisplay = document.getElementById('btn-check-display');
@@ -7,6 +9,7 @@ const btnBegin = document.getElementById('btn-begin-exam');
 
 let cameraPassed = false;
 let micPassed = false;
+let voicePassed = false;
 let appsPassed = false;
 let usbPassed = false;
 let displayPassed = false;
@@ -43,7 +46,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function updateBeginButton() {
-  btnBegin.disabled = !(cameraPassed && micPassed && appsPassed && usbPassed && displayPassed);
+  btnBegin.disabled = !(cameraPassed && micPassed && voicePassed && appsPassed && usbPassed && displayPassed);
 }
 
 async function uploadCameraVerificationSnapshot(video) {
@@ -386,6 +389,187 @@ btnMic.addEventListener('click', async () => {
     setStatus('check-mic', 'fail', 'Microphone access denied or not found.');
   }
 });
+
+function encodeWAV(samples, sampleRate = 16000) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // mono channel
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate (sampleRate * numChannels * bits/8)
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // 16 bits per sample
+  writeString(view, 36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    let s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+
+  return buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+async function recordVoiceSample(durationSeconds = 4) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const sampleRate = audioContext.sampleRate;
+  const source = audioContext.createMediaStreamSource(stream);
+  const scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+  
+  const recordedChunks = [];
+  scriptNode.onaudioprocess = (e) => {
+    const inputData = e.inputBuffer.getChannelData(0);
+    recordedChunks.push(new Float32Array(inputData));
+  };
+
+  source.connect(scriptNode);
+  scriptNode.connect(audioContext.destination);
+
+  const statusBox = document.getElementById('voice-recording-status');
+  const countdownEl = document.getElementById('voice-countdown');
+  if (statusBox) statusBox.style.display = 'block';
+
+  for (let s = durationSeconds; s > 0; s--) {
+    if (countdownEl) countdownEl.textContent = `${s}s`;
+    await new Promise(res => setTimeout(res, 1000));
+  }
+  if (countdownEl) countdownEl.textContent = 'Processing...';
+
+  source.disconnect();
+  scriptNode.disconnect();
+  stream.getTracks().forEach(t => t.stop());
+  await audioContext.close();
+
+  let totalLength = 0;
+  for (const chunk of recordedChunks) totalLength += chunk.length;
+  const merged = new Float32Array(totalLength);
+  let offset = 0;
+  for (const chunk of recordedChunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const targetSr = 16000;
+  let resampled;
+  if (sampleRate === targetSr) {
+    resampled = merged;
+  } else {
+    const targetLength = Math.round(merged.length * targetSr / sampleRate);
+    resampled = new Float32Array(targetLength);
+    for (let i = 0; i < targetLength; i++) {
+      const srcIndex = (i * sampleRate) / targetSr;
+      const indexFloor = Math.floor(srcIndex);
+      const frac = srcIndex - indexFloor;
+      const s0 = merged[indexFloor] || 0;
+      const s1 = merged[indexFloor + 1] || s0;
+      resampled[i] = s0 + frac * (s1 - s0);
+    }
+  }
+
+  const wavBuffer = encodeWAV(resampled, targetSr);
+  const base64Wav = arrayBufferToBase64(wavBuffer);
+  return 'data:audio/wav;base64,' + base64Wav;
+}
+
+async function handleVoiceRecord() {
+  const statusBox = document.getElementById('voice-recording-status');
+  if (btnRecordVoice) {
+    btnRecordVoice.disabled = true;
+    btnRecordVoice.textContent = 'Recording in progress...';
+  }
+  if (btnRecordAgainVoice) {
+    btnRecordAgainVoice.style.display = 'none';
+  }
+  setStatus('check-voice', 'pending');
+
+  try {
+    const wavDataUrl = await recordVoiceSample(4);
+    if (statusBox) statusBox.textContent = 'Calibrating speaker embedding profile...';
+
+    const result = await window.api.setReferenceVoice(wavDataUrl);
+    if (result && result.success) {
+      voicePassed = true;
+      setStatus('check-voice', 'pass');
+      if (btnRecordVoice) {
+        btnRecordVoice.textContent = '✓ Voice Profile Calibrated';
+        btnRecordVoice.style.background = '#10b981';
+        btnRecordVoice.style.color = '#ffffff';
+        btnRecordVoice.disabled = true;
+      }
+      if (btnRecordAgainVoice) {
+        btnRecordAgainVoice.style.display = 'block';
+      }
+      if (statusBox) {
+        statusBox.textContent = '✓ Speaker identity profile successfully calibrated (256-d vector saved).';
+        statusBox.style.color = '#10b981';
+      }
+    } else {
+      voicePassed = false;
+      setStatus('check-voice', 'fail', result?.error || 'Could not verify sufficient speech duration. Please speak louder and retry.');
+      if (btnRecordVoice) {
+        btnRecordVoice.disabled = false;
+        btnRecordVoice.textContent = 'Retry Voice Recording';
+      }
+      if (statusBox) statusBox.style.display = 'none';
+    }
+    updateBeginButton();
+  } catch (err) {
+    console.error('Voice Recording Error:', err);
+    voicePassed = false;
+    setStatus('check-voice', 'fail', 'Microphone access failed or recording error.');
+    if (btnRecordVoice) {
+      btnRecordVoice.disabled = false;
+      btnRecordVoice.textContent = 'Retry Voice Recording';
+    }
+    if (statusBox) statusBox.style.display = 'none';
+    updateBeginButton();
+  }
+}
+
+if (btnRecordVoice) {
+  btnRecordVoice.addEventListener('click', handleVoiceRecord);
+}
+
+if (btnRecordAgainVoice) {
+  btnRecordAgainVoice.addEventListener('click', () => {
+    if (btnRecordVoice) {
+      btnRecordVoice.disabled = false;
+      btnRecordVoice.textContent = '🎙️ Record Voice Sample (4s)';
+      btnRecordVoice.style.background = '#f1f5f9';
+      btnRecordVoice.style.color = '#334155';
+    }
+    btnRecordAgainVoice.style.display = 'none';
+    voicePassed = false;
+    setStatus('check-voice', 'pending');
+    updateBeginButton();
+    handleVoiceRecord();
+  });
+}
+
 
 btnApps.addEventListener('click', async () => {
   try {

@@ -14,5 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   checkUsbDrives: async () => ipcRenderer.invoke('check-usb-drives'),
   getDisplayCount: async () => ipcRenderer.invoke('get-display-count'),
   getBufferStatus: async () => ipcRenderer.invoke('get-buffer-status'),
-  onBufferStatusChanged: (callback) => ipcRenderer.on('buffer-status-changed', (_event, value) => callback(value))
+  onBufferStatusChanged: (callback) => ipcRenderer.on('buffer-status-changed', (_event, value) => callback(value)),
+  setReferenceVoice: async (audioBase64) => ipcRenderer.invoke('set-reference-voice', audioBase64),
+  checkVoice: async () => ipcRenderer.invoke('check-voice')
 });

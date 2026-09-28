@@ -79,6 +79,18 @@ router.get('/messages/:sessionId', async (req, res) => {
         const { sessionId } = req.params;
         const { examId } = req.query;
 
+        let session = null;
+        try {
+            session = await Session.findOne({ 
+                $or: [
+                    { _id: sessionId.match(/^[0-9a-fA-F]{24}$/) ? sessionId : null }, 
+                    { sessionId: sessionId }
+                ] 
+            });
+        } catch (e) {}
+
+        const activeExamId = (examId || (session ? session.examId : null) || '').toUpperCase();
+
         const query = {
             $or: [
                 { sessionId: sessionId },
@@ -86,8 +98,14 @@ router.get('/messages/:sessionId', async (req, res) => {
             ]
         };
 
-        if (examId) {
-            query.examId = examId.toUpperCase();
+        if (activeExamId) {
+            query.examId = activeExamId;
+        }
+
+        // Clean isolation: only include messages from this session's time window or later
+        if (session && (session.startTime || session.createdAt)) {
+            const startThreshold = new Date(new Date(session.startTime || session.createdAt).getTime() - 60000); // 1 minute pre-buffer
+            query.timestamp = { $gte: startThreshold };
         }
 
         const messages = await Message.find(query).sort({ timestamp: 1 });

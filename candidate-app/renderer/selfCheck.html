@@ -87,7 +87,7 @@
 
     <div class="check-item" id="check-mic">
       <div class="check-header">
-        <span>2. Microphone Check</span>
+        <span>2. Microphone Hardware Check</span>
         <span class="status-icon status-pending">⏳</span>
       </div>
       <div class="check-content">
@@ -100,9 +100,30 @@
       </div>
     </div>
 
+    <div class="check-item" id="check-voice">
+      <div class="check-header">
+        <span>3. Voice Reference Profile Check</span>
+        <span class="status-icon status-pending">⏳</span>
+      </div>
+      <div class="check-content">
+        <p style="font-size: 0.875rem; color: #4b5563; margin-top: 0;">
+          Read the following verification phrase aloud clearly for 3-4 seconds to calibrate your voice embedding:
+        </p>
+        <div style="background: #f8fafc; border: 1.5px dashed #94a3b8; border-radius: 8px; padding: 10px 14px; font-size: 0.90rem; font-weight: 500; color: #0f172a; text-align: center; font-style: italic;">
+          "IntegrityFlow confirms my identity and verifies my voice for this examination session."
+        </div>
+        <div id="voice-recording-status" style="display: none; font-size: 0.85rem; font-weight: 600; color: #1a73e8; margin-top: 6px; text-align: center;">
+          🎙️ Recording voice sample... <span id="voice-countdown">4s</span>
+        </div>
+        <p class="error-text" style="color: #ef4444; display: none;"></p>
+        <button id="btn-record-voice" class="secondary-button" style="margin-top: 6px;">🎙️ Record Voice Sample (4s)</button>
+        <button id="btn-record-again-voice" class="secondary-button" style="display: none; margin-top: 6px; background: #f8fafc; border: 1px solid #cbd5e1;">↺ Record Again</button>
+      </div>
+    </div>
+
     <div class="check-item" id="check-apps">
       <div class="check-header">
-        <span>3. Running Apps Check</span>
+        <span>4. Running Apps Check</span>
         <span class="status-icon status-pending">⏳</span>
       </div>
       <div class="check-content">
@@ -116,7 +137,7 @@
 
     <div class="check-item" id="check-usb">
       <div class="check-header">
-        <span>4. External Storage Check</span>
+        <span>5. External Storage Check</span>
         <span class="status-icon status-pending">⏳</span>
       </div>
       <div class="check-content">
@@ -129,7 +150,7 @@
 
     <div class="check-item" id="check-display">
       <div class="check-header">
-        <span>5. Display Check</span>
+        <span>6. Display Check</span>
         <span class="status-icon status-pending">⏳</span>
       </div>
       <div class="check-content">

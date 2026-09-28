@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const Violation = require('../models/Violation');
 const Session = require('../models/Session');
+const Exam = require('../models/Exam');
 const { broadcastViolation, broadcastRiskScoreUpdate, broadcastViolationReview } = require('../sockets/violationSocket');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
@@ -87,6 +88,38 @@ router.get('/violations', requireAuth, async (req, res) => {
         if (req.query.reviewed !== undefined) {
             query.reviewed = req.query.reviewed === 'true';
         }
+
+        const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
+        const isAdmin = req.teacher?.role === 'admin';
+
+        // Enforce teacher isolation: only return violations from exams owned by this teacher
+        if (!isAdmin && currentTeacherId) {
+            const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
+            const myCodes = [];
+            myExams.forEach(e => {
+                if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
+                if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+                if (e._id) myCodes.push(e._id.toString());
+            });
+
+            if (myCodes.length === 0) {
+                return res.json([]);
+            }
+
+            const mySessions = await Session.find({ examId: { $in: myCodes } }).select('_id sessionId studentId').lean();
+            const mySessionIds = [];
+            mySessions.forEach(s => {
+                mySessionIds.push(String(s._id));
+                if (s.sessionId) mySessionIds.push(String(s.sessionId));
+                if (s.studentId) mySessionIds.push(String(s.studentId));
+            });
+
+            if (mySessionIds.length === 0) {
+                return res.json([]);
+            }
+            query.sessionId = { $in: mySessionIds };
+        }
+
         const violations = await Violation.find(query).sort({ timestamp: -1 });
         res.json(violations);
     } catch (err) {
@@ -98,16 +131,37 @@ router.get('/violations', requireAuth, async (req, res) => {
 // GET /violations/priority-queue — Priority Queue for Cross-Student Unreviewed Violations (Teacher-facing, protected)
 router.get('/violations/priority-queue', requireAuth, async (req, res) => {
     try {
+        const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
+        const isAdmin = req.teacher?.role === 'admin';
+
         const sessionFilter = { status: 'active' };
-        if (req.query.examId) {
+
+        if (!isAdmin && currentTeacherId) {
+            const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
+            const myCodes = [];
+            myExams.forEach(e => {
+                if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
+                if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+                if (e._id) myCodes.push(e._id.toString());
+            });
+
+            if (myCodes.length === 0) {
+                return res.json([]);
+            }
+
+            if (req.query.examId) {
+                sessionFilter.examId = req.query.examId;
+            } else {
+                sessionFilter.examId = { $in: myCodes };
+            }
+        } else if (req.query.examId) {
             sessionFilter.examId = req.query.examId;
         }
 
-        // 1. Fetch active sessions (scoped to optional examId filter)
+        // 1. Fetch active sessions (scoped to teacher's exams and optional examId filter)
         const activeSessions = await Session.find(sessionFilter).lean();
         
-        // If an examId filter was requested and no active sessions exist, return empty list immediately
-        if (req.query.examId && activeSessions.length === 0) {
+        if (activeSessions.length === 0) {
             return res.json([]);
         }
 
@@ -119,12 +173,10 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
 
         const activeSessionIds = Array.from(activeSessionMap.keys());
         
-        let violationQuery = { reviewed: { $ne: true } };
-        if (activeSessionIds.length > 0) {
-            violationQuery.sessionId = { $in: activeSessionIds };
-        } else if (req.query.examId) {
-            return res.json([]);
-        }
+        let violationQuery = { 
+            reviewed: { $ne: true },
+            sessionId: { $in: activeSessionIds }
+        };
 
         // 2. Fetch unreviewed violations sorted by severity descending, then timestamp descending
         const rawViolations = await Violation.find(violationQuery)

@@ -460,7 +460,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                 cursor: 'pointer'
                             }}
                         >
-                            <option value="ALL">All Live Exams</option>
+                            <option value="ALL">All My Live Exams</option>
                             {availableExamCodes.map(code => (
                                 <option key={code} value={code}>{code}</option>
                             ))}

@@ -9,12 +9,14 @@ This document serves as the single source of truth for data contracts between th
 ```json
 {
   "sessionId": "string (UUID / Session identifier)",
-  "type": "head_turn_away | second_person_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark",
+  "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark",
   "severity": "number (1-5)",
   "timestamp": "ISO 8601 string (Microsecond precision preserved)",
   "details": {
     "confidence": "number, optional (0.00 - 1.00)",
+    "similarity_score": "number, optional (0.00 - 1.00 for voice similarity)",
     "duration": "number, optional (seconds)",
+    "duration_seconds": "number, optional (seconds)",
     "object_class": "string, optional (e.g. 'cell phone', 'book')",
     "process_name": "string, optional (e.g. 'chrome.exe')",
     "device_name": "string, optional (e.g. 'Drive E:\\ - Sandisk')",

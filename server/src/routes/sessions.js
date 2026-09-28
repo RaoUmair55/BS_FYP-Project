@@ -13,7 +13,27 @@ const storageService = require('../services/storage');
 // GET /sessions/active (Teacher-facing)
 router.get('/active', requireAuth, async (req, res) => {
     try {
-        const activeSessions = await Session.find({ status: "active" });
+        const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
+        const isAdmin = req.teacher?.role === 'admin';
+
+        const sessionFilter = { status: "active" };
+
+        if (!isAdmin && currentTeacherId) {
+            const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
+            const myCodes = [];
+            myExams.forEach(e => {
+                if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
+                if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+                if (e._id) myCodes.push(e._id.toString());
+            });
+
+            if (myCodes.length === 0) {
+                return res.json([]);
+            }
+            sessionFilter.examId = { $in: myCodes };
+        }
+
+        const activeSessions = await Session.find(sessionFilter);
         
         // Calculate the current risk score for each active session on load
         const sessionsWithScores = await Promise.all(activeSessions.map(async (session) => {

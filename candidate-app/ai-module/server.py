@@ -132,3 +132,47 @@ def detect_face(payload: dict):
     except Exception as e:
         return {"detected": False, "count": 0, "error": str(e)}
 
+@app.post("/set-reference-voice")
+def set_reference_voice(payload: dict):
+    """
+    Calibrates the candidate's reference voice from recorded audio during Self-Check.
+    Accepts base64 audio data (WAV or raw PCM).
+    """
+    import server
+    import os
+    from voice_monitor import VoiceMonitor
+
+    audio_b64 = payload.get("audio") or payload.get("audio_base64", "")
+    session_id = payload.get("session_id") or os.environ.get("EXAM_SESSION_ID", "default-session")
+    
+    if not audio_b64:
+        return {"success": False, "error": "No audio data provided"}
+
+    try:
+        if "," in audio_b64:
+            audio_b64 = audio_b64.split(",", 1)[1]
+            
+        audio_bytes = base64.b64decode(audio_b64)
+        
+        # Use existing VoiceMonitor instance if available on server
+        if hasattr(server, 'voice_monitor') and server.voice_monitor:
+            result = server.voice_monitor.set_reference_voice(audio_bytes, session_id=session_id)
+            return result
+        else:
+            # Create a temporary VoiceMonitor to calibrate and persist embedding to disk
+            temp_vm = VoiceMonitor(session_id=session_id, is_self_check=True)
+            result = temp_vm.set_reference_voice(audio_bytes, session_id=session_id)
+            return result
+    except Exception as e:
+        print(f"[Server Error] /set-reference-voice failed: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/check-voice")
+def check_voice():
+    """Returns the calibration status of the reference voice profile."""
+    import server
+    if hasattr(server, 'voice_monitor') and server.voice_monitor:
+        has_ref = server.voice_monitor.reference_embedding is not None
+        return {"calibrated": has_ref}
+    return {"calibrated": False}
+

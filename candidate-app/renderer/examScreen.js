@@ -882,7 +882,8 @@ async function fetchStudentMessages() {
   if (!sessionInfo || !sessionInfo.sessionId || !sessionInfo.serverUrl) return;
 
   try {
-    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}`);
+    const examQuery = sessionInfo.examId ? `?examId=${encodeURIComponent(sessionInfo.examId)}` : '';
+    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}${examQuery}`);
     if (!res.ok) return;
     const data = await res.json();
     const newMessages = Array.isArray(data) ? data : (data.messages || []);

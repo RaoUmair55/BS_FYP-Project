@@ -29,7 +29,6 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState('active'); // 'active' | 'completed'
-    const [scopeFilter, setScopeFilter] = useState('all'); // 'all' | 'mine'
 
     // Confirmation dialog state for ending an exam
     const [endExamModalData, setEndExamModalData] = useState(null); // { id, title }
@@ -249,9 +248,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
     const activeExams = exams.filter(e => e.status === 'active' || e.status === 'draft');
     const completedExams = exams.filter(e => e.status === 'completed');
-    const baseExams = activeTab === 'active' ? activeExams : completedExams;
-    const displayedExams = scopeFilter === 'mine' ? baseExams.filter(e => e.isMine) : baseExams;
-    const myExamsCount = baseExams.filter(e => e.isMine).length;
+    const displayedExams = activeTab === 'active' ? activeExams : completedExams;
 
     return (
         <div className="exam-manager-container">
@@ -266,7 +263,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                 </button>
             </div>
 
-            {/* Material Design Tab Filter & Scope Switcher */}
+            {/* Material Design Tab Filter */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
                 <div className="exam-tabs-bar" style={{ margin: 0 }}>
                     <button 
@@ -286,54 +283,6 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         <span className="tab-count-pill">{completedExams.length}</span>
                     </button>
                 </div>
-
-                {/* Scope Filter: All vs Created By Me */}
-                {teacher && (
-                    <div style={{
-                        display: 'flex',
-                        background: 'var(--bg-base, #f1f3f4)',
-                        padding: '3px',
-                        borderRadius: '20px',
-                        border: '1px solid var(--border-color, #dadce0)'
-                    }}>
-                        <button
-                            type="button"
-                            onClick={() => setScopeFilter('all')}
-                            style={{
-                                padding: '5px 12px',
-                                borderRadius: '16px',
-                                border: 'none',
-                                background: scopeFilter === 'all' ? '#ffffff' : 'transparent',
-                                color: scopeFilter === 'all' ? '#1a73e8' : '#5f6368',
-                                fontWeight: scopeFilter === 'all' ? 600 : 400,
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                                boxShadow: scopeFilter === 'all' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-                                transition: 'all 0.15s ease'
-                            }}
-                        >
-                            All Department Exams ({baseExams.length})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setScopeFilter('mine')}
-                            style={{
-                                padding: '5px 12px',
-                                borderRadius: '16px',
-                                border: 'none',
-                                background: scopeFilter === 'mine' ? '#ffffff' : 'transparent',
-                                color: scopeFilter === 'mine' ? '#1a73e8' : '#5f6368',
-                                fontWeight: scopeFilter === 'mine' ? 600 : 400,
-                                fontSize: '12px',
-                                cursor: 'pointer',
-                                boxShadow: scopeFilter === 'mine' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-                                transition: 'all 0.15s ease'
-                            }}
-                        >
-                            Created by Me ({myExamsCount})
-                        </button>
-                    </div>
-                )}
             </div>
 
             {error && (

@@ -300,6 +300,36 @@ ipcMain.handle('kill-app', async (event, name) => {
   return await killApp(name);
 });
 
+// Set Reference Voice profile via Python
+ipcMain.handle('set-reference-voice', async (event, audioBase64) => {
+  try {
+    const response = await fetch('http://127.0.0.1:8000/set-reference-voice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        audio_base64: audioBase64,
+        session_id: activeSessionInfo.sessionId 
+      })
+    });
+    if (!response.ok) return { success: false, error: 'HTTP error ' + response.status };
+    return await response.json();
+  } catch (error) {
+    console.error('[Electron] Error calling /set-reference-voice:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check Voice profile calibration status
+ipcMain.handle('check-voice', async () => {
+  try {
+    const response = await fetch('http://127.0.0.1:8000/check-voice');
+    if (!response.ok) return { calibrated: false };
+    return await response.json();
+  } catch (error) {
+    return { calibrated: false };
+  }
+});
+
 // Return session info to renderer
 ipcMain.handle('get-session-info', () => {
   return activeSessionInfo;

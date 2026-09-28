@@ -40,6 +40,8 @@
     "systemsettings.exe",
     "chrome-native-host.exe",
     "git.exe",
+    "git-remote-https.exe",
+    "phoneexperiencehost.exe",
     "antigravitysetup-stable-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.exe",
     "antigravitysetup-stable-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.tmp"
   ]
