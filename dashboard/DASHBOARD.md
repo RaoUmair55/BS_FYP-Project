@@ -19,6 +19,7 @@
 | **4. Secure In-Memory Auth & Full Examiner Auth UI Flow** | `AuthContext` with strict in-memory tokens & silent refresh on mount, Axios 401 retry interceptor, Material `Login`, `Signup`, `ForgotPassword`, `ResetPassword`, and App route protection. | **COMPLETE** ✅ |
 | **5. Candidate Identity & Real Student Names** | Dashboard `StudentList` displays `studentName` (primary) and `rollNumber` (secondary), `EvidenceViewer` header displays `Viewing: [Student Name] ([Roll Number])`, `ExamSummary` candidate roster and CSV export include real student names. | **COMPLETE** ✅ |
 | **6. Multi-Student Scalability & Performance** | MongoDB compound indexes (`{ sessionId: 1, timestamp: -1 }`, `{ reviewed: 1 }`, `{ sessionId: 1, reviewed: 1 }`, `{ examId: 1, status: 1 }`), `GET /violations/priority-queue`, cross-student Severity-First Priority Queue tab, client-side 2-minute repeated alert grouping. | **COMPLETE** ✅ |
+| **7. Multi-Tenant Examiner Data Isolation** | Strict scoping on `GET /exams`, `GET /sessions/active`, `GET /violations`, and Priority Queue to exams created by the authenticated examiner (`createdBy`), with full super-access preserved for `admin` role. | **COMPLETE** ✅ |
 
 ---
 
