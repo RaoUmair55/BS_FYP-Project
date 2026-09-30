@@ -26,11 +26,12 @@ async function requireAuth(req, res, next) {
             return res.status(401).json({ error: 'Invalid access token', code: 'INVALID_TOKEN' });
         }
 
-        // Attach decoded info to request
+        const teacher = await Teacher.findById(decoded.teacherId);
+        if (!teacher) return res.status(401).json({ error: 'Account no longer exists' });
         req.teacher = {
-            teacherId: decoded.teacherId,
-            email: decoded.email,
-            role: decoded.role
+            teacherId: teacher._id.toString(),
+            email: teacher.email,
+            role: teacher.role
         };
 
         next();

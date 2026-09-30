@@ -25,12 +25,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         sessionInfo = JSON.parse(sessionStorage.getItem('sessionInfo') || localStorage.getItem('sessionInfo') || '{}');
       } catch (e) {}
     }
+    const isLab = sessionInfo && sessionInfo.examType === 'physical_lab';
     const badge = document.getElementById('candidateInfoBadge');
     if (badge && sessionInfo) {
       const name = sessionInfo.studentName || sessionInfo.studentId || 'Candidate';
       const roll = sessionInfo.rollNumber ? ` (${sessionInfo.rollNumber})` : '';
       const exam = sessionInfo.examId ? ` • Exam: ${sessionInfo.examId}` : '';
-      badge.textContent = `Candidate: ${name}${roll}${exam}`;
+      const labBadge = isLab ? ' • 🏫 Physical Lab Mode' : '';
+      badge.textContent = `Candidate: ${name}${roll}${exam}${labBadge}`;
+      if (isLab) {
+        badge.style.background = '#e0f2fe';
+        badge.style.color = '#0369a1';
+        badge.style.border = '1px solid #7dd3fc';
+      }
+    }
+
+    // If Physical Lab Exam, bypass Camera, Mic, and Voice checks automatically
+    if (isLab) {
+      cameraPassed = true;
+      micPassed = true;
+      voicePassed = true;
+
+      ['check-camera', 'check-mic', 'check-voice'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          const icon = el.querySelector('.status-icon');
+          if (icon) {
+            icon.className = 'status-icon status-pass';
+            icon.textContent = '✅';
+          }
+          const content = el.querySelector('.check-content');
+          if (content) {
+            content.innerHTML = '<div style="background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 8px; padding: 12px; font-size: 13px; color: #0369a1; line-height: 1.4;">🏫 <strong>Bypassed for Physical Lab Exam:</strong> Hardware cameras and microphones are not required. A human invigilator is present in the lab.</div>';
+          }
+        }
+      });
+      updateBeginButton();
     }
 
     // Display teacher-allowed applications if configured
@@ -74,12 +104,13 @@ async function uploadCameraVerificationSnapshot(video) {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-    const res = await fetch(`http://localhost:5000/sessions/${sessionInfo.sessionId}/camera-verification`, {
+    const res = await fetch(`${sessionInfo.serverUrl || 'http://localhost:5000'}/sessions/${sessionInfo.sessionId}/camera-verification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ photoBase64 })
     });
-    console.log('[SelfCheck] Uploaded initial camera verification photo for session:', sessionInfo.sessionId, 'Status:', res.status);
+    if (!res.ok) throw new Error(`Camera verification upload failed (${res.status})`);
+    console.log('[SelfCheck] Uploaded initial camera verification photo for session:', sessionInfo.sessionId);
   } catch (err) {
     console.error('[SelfCheck] Failed to upload camera verification photo:', err);
   }
@@ -578,6 +609,7 @@ btnApps.addEventListener('click', async () => {
     btnApps.disabled = true;
 
     const result = await window.api.checkApps();
+    if (result.error) throw new Error(result.error);
     const apps = result.unauthorized_apps || [];
     
     const list = document.getElementById('unauthorized-list');
@@ -656,6 +688,7 @@ btnUsb.addEventListener('click', async () => {
     btnUsb.disabled = true;
 
     const result = await window.api.checkUsbDrives();
+    if (result.error) throw new Error(result.error);
     const drives = result.removable_drives || [];
     
     const list = document.getElementById('usb-list');

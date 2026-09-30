@@ -8,6 +8,7 @@ let targetEndTime = null;
 let serverTimeOffset = 0;
 let isSubmitted = false;
 let autoSubmitting = false;
+let autoSubmitExam = null;
 let seenWarningCount = 0;
 let statusInterval = null;
 
@@ -43,7 +44,7 @@ async function loadExamPaper() {
   if (!sessionInfo || isPaperLoaded) return;
 
   try {
-    const paperUrl = `${sessionInfo.serverUrl}/exam/${sessionInfo.examId}/paper`;
+    const paperUrl = `${sessionInfo.serverUrl}/exam/${encodeURIComponent(sessionInfo.examId)}/paper?sessionId=${encodeURIComponent(sessionInfo.sessionId)}`;
     const response = await fetch(paperUrl);
 
     // HTTP 423: Paper is locked in waiting lobby by examiner
@@ -242,7 +243,7 @@ function startTimer() {
       timerDisplay.className = 'timer-badge critical';
       if (!isSubmitted && !autoSubmitting) {
         autoSubmitting = true;
-        handleAutoSubmit();
+        autoSubmitExam?.();
       }
       return;
     }
@@ -384,7 +385,7 @@ async function showCameraReverificationModal(note) {
   isReverifyingCamera = true;
 
   if (noteText && note) {
-    noteText.innerHTML = `<strong>Examiner Note:</strong> "${note}"<br><span style="font-size:12px; margin-top:4px; display:block;">Please adjust your camera angle/lighting and capture a new verification photo.</span>`;
+    noteText.innerHTML = `<strong>Examiner Note:</strong> "${escapeHtml(note)}"<br><span style="font-size:12px; margin-top:4px; display:block;">Please adjust your camera angle/lighting and capture a new verification photo.</span>`;
   }
 
   modal.style.display = 'flex';
@@ -505,6 +506,86 @@ function showExaminerWarningToast(msg) {
   toast.style.display = 'flex';
 }
 
+function showPreExistingFileModal(data) {
+  // 1. Immediately disarm and clear any attached file from the upload widget so it cannot be submitted
+  selectedFile = null;
+  const fileInput = document.getElementById('fileInput');
+  const fileCard = document.getElementById('fileCard');
+  const dropzone = document.getElementById('dropzone');
+  const summaryFile = document.getElementById('summaryFile');
+  if (fileInput) fileInput.value = '';
+  if (fileCard) fileCard.style.display = 'none';
+  if (dropzone) dropzone.style.display = 'block';
+  if (summaryFile) summaryFile.textContent = 'None';
+
+  let modal = document.getElementById('preExistingFileBlockedModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'preExistingFileBlockedModal';
+    modal.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(5px);
+      z-index: 9999999; display: flex; align-items: center; justify-content: center;
+      padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    `;
+    document.body.appendChild(modal);
+  }
+
+  const fileName = data?.fileName || 'Existing Document';
+  const appName = data?.appName || 'Microsoft Word';
+
+  modal.innerHTML = `
+    <div style="background: #ffffff; border-radius: 14px; width: 100%; max-width: 540px; padding: 28px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); border: 2px solid #f59e0b; text-align: left; animation: fadeInScale 0.2s ease-out;">
+      <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 16px;">
+        <div style="background: #fef3c7; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0;">
+          🚫
+        </div>
+        <div>
+          <h2 style="margin: 0; font-size: 19px; font-weight: 700; color: #92400e;">Pre-Existing Document Closed</h2>
+          <div style="font-size: 12px; color: #b45309; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Exam Integrity Enforcement</div>
+        </div>
+      </div>
+
+      <div style="background: #fffbeb; border: 1.5px solid #fef3c7; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+        <div style="font-size: 13.5px; color: #78350f; font-weight: 600; margin-bottom: 4px;">
+          Detected File: <span style="font-family: monospace; background: #fde68a; padding: 2px 7px; border-radius: 4px; color: #451a03; font-size: 13px;">${escapeHtml(fileName)}</span>
+        </div>
+        <div style="font-size: 12.5px; color: #92400e; line-height: 1.5;">
+          This file was created or modified prior to this exam session. Opening pre-existing files, notes, or previous assignments is strictly prohibited. <strong>The application has been automatically closed.</strong>
+        </div>
+      </div>
+
+      <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 22px;">
+        <div style="font-size: 13.5px; color: #166534; font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 5px;">
+          <span>📝</span> Required Action &mdash; Create a Blank File:
+        </div>
+        <div style="font-size: 13px; color: #15803d; line-height: 1.5;">
+          You may re-open ${escapeHtml(appName)}, but you must choose <strong>"Blank document"</strong> to start a completely new file. Only work produced live during this exam is permitted.
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end;">
+        <button id="btnAcknowledgeFileClosed" 
+                style="background: #f59e0b; color: #ffffff; border: none; padding: 11px 24px; border-radius: 6px; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background 0.15s ease; box-shadow: 0 4px 6px -1px rgba(245, 158, 11, 0.3);">
+          I Understand &mdash; I Will Create a New File
+        </button>
+      </div>
+    </div>
+  `;
+
+  modal.style.display = 'flex';
+
+  const btn = document.getElementById('btnAcknowledgeFileClosed');
+  if (btn) {
+    btn.onclick = () => {
+      modal.style.display = 'none';
+      if (window.api && typeof window.api.clearClipboard === 'function') {
+        window.api.clearClipboard();
+      }
+    };
+  }
+}
+
 function handleSessionTerminated(reason) {
   if (statusInterval) clearInterval(statusInterval);
   if (timerInterval) clearInterval(timerInterval);
@@ -527,10 +608,10 @@ function handleSessionTerminated(reason) {
     </div>
     <h1 style="font-size:24px; font-weight:700; margin-bottom:8px; color:#f87171;">SESSION TERMINATED BY EXAMINER</h1>
     <p style="font-size:15px; color:#cbd5e1; max-width:480px; margin-bottom:24px; line-height:1.5;">
-      Reason: <strong>"${reason || 'Integrity Policy Violation'}"</strong>
+      Reason: <strong>"${reason || 'Terminated by examiner for integrity violation'}"</strong>
     </p>
     <div style="background:#1e293b; border:1px solid #334155; padding:12px 20px; border-radius:6px; font-size:13px; color:#94a3b8;">
-      Your exam inputs have been locked. Please contact your invigilator/teacher for further instructions.
+      Your exam inputs have been locked by the examiner. Please contact your invigilator/teacher for further instructions.
     </div>
   `;
 }
@@ -587,6 +668,33 @@ async function renderDocx(buffer, container) {
 // Setup Event Listeners
 window.addEventListener('DOMContentLoaded', () => {
   init();
+
+  // Enforce clipboard & copy/cut/paste lockdown during exam
+  ['copy', 'cut', 'paste', 'contextmenu'].forEach(evt => {
+    document.addEventListener(evt, (e) => {
+      e.preventDefault();
+      if (window.api && window.api.clearClipboard) {
+        window.api.clearClipboard();
+      }
+    }, true);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+    const key = e.key ? e.key.toLowerCase() : '';
+    if ((isCtrlOrCmd && ['c', 'v', 'x', 'insert'].includes(key)) || (e.shiftKey && key === 'insert')) {
+      e.preventDefault();
+      if (window.api && window.api.clearClipboard) {
+        window.api.clearClipboard();
+      }
+    }
+  }, true);
+
+  window.addEventListener('focus', () => {
+    if (window.api && window.api.clearClipboard) {
+      window.api.clearClipboard();
+    }
+  });
 
   // Tab Switching
   const tabTextBtn = document.getElementById('tabTextBtn');
@@ -663,6 +771,28 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleFileSelect(file) {
+    if (!file) return;
+
+    // Check if the file is pre-existing (modified prior to exam session start)
+    const examStartTimeMs = (sessionInfo && sessionInfo.startTime) 
+      ? new Date(sessionInfo.startTime).getTime() 
+      : startTime;
+
+    // If file was last modified more than 30 seconds before candidate joined / exam started
+    if (file.lastModified && examStartTimeMs && file.lastModified < (examStartTimeMs - 30000)) {
+      console.warn(`[ExamScreen] Blocked upload of pre-existing file: ${file.name} (lastModified: ${new Date(file.lastModified).toISOString()})`);
+      showPreExistingFileModal({
+        fileName: file.name,
+        appName: 'File Upload',
+        reason: `Pre-existing file blocked: "${file.name}" was modified before this exam session started (${new Date(file.lastModified).toLocaleTimeString()}).`
+      });
+      selectedFile = null;
+      if (fileInput) fileInput.value = '';
+      if (fileCard) fileCard.style.display = 'none';
+      if (dropzone) dropzone.style.display = 'block';
+      return;
+    }
+
     selectedFile = file;
     fileName.textContent = file.name;
     const kb = (file.size / 1024).toFixed(1);
@@ -682,6 +812,25 @@ window.addEventListener('DOMContentLoaded', () => {
 
   if (submitExamBtn) {
     submitExamBtn.addEventListener('click', () => {
+      // Re-validate attached file before displaying submit summary modal
+      if (selectedFile) {
+        const examStartTimeMs = (sessionInfo && sessionInfo.startTime) 
+          ? new Date(sessionInfo.startTime).getTime() 
+          : startTime;
+        if (selectedFile.lastModified && examStartTimeMs && selectedFile.lastModified < (examStartTimeMs - 30000)) {
+          showPreExistingFileModal({
+            fileName: selectedFile.name,
+            appName: 'File Upload',
+            reason: `Pre-existing file blocked: "${selectedFile.name}" was modified before this exam session started.`
+          });
+          selectedFile = null;
+          if (fileInput) fileInput.value = '';
+          if (fileCard) fileCard.style.display = 'none';
+          if (dropzone) dropzone.style.display = 'block';
+          return;
+        }
+      }
+
       const typed = answerText ? answerText.value.trim() : '';
       if (!typed && !selectedFile) {
         alert("Please enter a typed answer or attach an answer file before submitting.");
@@ -724,6 +873,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (confirmModal) confirmModal.style.display = 'none';
     await performSubmission(true);
   }
+  autoSubmitExam = handleAutoSubmit;
 
   async function performSubmission(isAutoSubmit = false) {
     if (!sessionInfo || isSubmitted) return;
@@ -744,7 +894,15 @@ window.addEventListener('DOMContentLoaded', () => {
         formData.append('answerText', answerText.value.trim());
       }
       if (selectedFile) {
-        formData.append('file', selectedFile);
+        const examStartTimeMs = (sessionInfo && sessionInfo.startTime) 
+          ? new Date(sessionInfo.startTime).getTime() 
+          : startTime;
+        if (selectedFile.lastModified && examStartTimeMs && selectedFile.lastModified < (examStartTimeMs - 30000)) {
+          console.warn(`[ExamScreen] Dropped pre-existing file "${selectedFile.name}" prior to HTTP post.`);
+          selectedFile = null;
+        } else {
+          formData.append('file', selectedFile);
+        }
       }
 
       const submissionUrl = `${sessionInfo.serverUrl}/submissions`;
@@ -779,6 +937,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Submission failed:', err);
+      if (isAutoSubmit) autoSubmitting = false;
       if (submitExamBtn) {
         submitExamBtn.disabled = false;
         submitExamBtn.innerHTML = `<span>Submit Exam</span><span>➔</span>`;
@@ -813,6 +972,14 @@ window.addEventListener('DOMContentLoaded', () => {
   if (window.api && typeof window.api.onBufferStatusChanged === 'function') {
     window.api.onBufferStatusChanged((status) => {
       updateBufferStatusUI(status ? status.pendingCount : 0);
+    });
+  }
+
+  // Pre-existing file blocked modal listener
+  if (window.api && typeof window.api.onPreExistingFileBlocked === 'function') {
+    window.api.onPreExistingFileBlocked((data) => {
+      console.log('[CandidateApp] Received pre-existing file blocked event:', data);
+      showPreExistingFileModal(data);
     });
   }
 

@@ -16,6 +16,7 @@ const examSchema = new mongoose.Schema({
     paperPath: { type: String, default: null },
     paperFilename: { type: String, default: null },
     status: { type: String, enum: ['draft', 'active', 'completed'], default: 'draft' },
+    examType: { type: String, enum: ['online', 'physical_lab'], default: 'online' },
     durationMinutes: { type: Number, default: 60 },
     extraMinutes: { type: Number, default: 0 },
     startedAt: { type: Date, default: null },

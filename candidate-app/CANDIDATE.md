@@ -18,19 +18,25 @@ This module implements the full end-to-end exam experience, AI monitoring pipeli
    - Following consent, candidate provides **Full Name** (e.g., `Muhammad Ali`) and **Roll / Registration Number** (e.g., `FA20-BCS-042`).
    - Validates input format (non-empty, minimum length, valid institutional alphanumeric characters).
    - **Consolidated Session Creation**: Submits `POST /sessions` to create the MongoDB session with `studentName`, `rollNumber`, `studentId`, `examId`, and verified consent flags.
-5. **AI Module Spawning & Self-Check Flow (`selfCheck.html`)**:
+5. **AI Module Spawning & Dual-Mode Self-Check Flow (`selfCheck.html`)**:
    - Displays candidate identification badge.
-   - Runs camera check, microphone check, voice reference calibration (3-5s recording), and background process whitelist verification.
-   - Captures and uploads initial reference selfie to `POST /sessions/:sessionId/camera-verification` and reference voice embedding to `POST /set-reference-voice`.
+   - **🌐 Remote Online Mode**: Runs 6 checks (Camera, Microphone, Voice Reference 4s calibration, Background Process Whitelist, USB storage, and Multi-display).
+   - **🏫 Physical Lab Mode**: Automatically bypasses camera and microphone hardware checks (ideal for lab PCs without webcams), requiring only Process Whitelist, USB, and Display checks.
+   - Captures and uploads initial reference selfie and voice embedding (online mode only).
    - "Begin Exam" switches Python daemon into strict `exam` mode and opens workspace.
-6. **Whitelist, USB, Voice & AI Monitoring**: `WhitelistEnforcer` scans processes every 2.5s while `AIMonitor` tracks lateral head yaw, upward head pitch (looking up / above screen view with neck-tilt continuity tracking), missing faces, multi-person events, and unauthorized physical objects. `VoiceMonitor` runs a two-stage acoustic pipeline (VAD gate + speaker verification) to flag unauthorized third-party speech while permitting the candidate to read questions aloud. `USBMonitor` detects removable mass storage media insertion, and Electron's `screen` monitor detects multi-display connections.
-7. **Two-Panel Exam Workspace (Module 7B & Module 7)**:
-   - **Header Bar**: Displays `Student: [Full Name] ([Roll Number])`, `Exam: [Exam Code]`, Reassuring `● Monitoring Active` badge, running HH:MM:SS timer.
+6. **Whitelist, Pre-Existing File Guard, USB, Voice & AI Monitoring**: 
+   - `WhitelistEnforcer` scans processes every 2.5s and incorporates a **Pre-Existing File Timestamp Guard**: when teacher-allowed external tools (Word, VS Code, Notepad) are permitted, it inspects open file handles and flags any files modified before exam start (`mtime < exam_start_time`).
+   - `AIMonitor` tracks lateral head yaw, upward head pitch (looking up / above screen view with neck-tilt continuity tracking), missing faces, multi-person events, and unauthorized physical objects (bypassed in Physical Lab mode).
+   - `VoiceMonitor` runs a two-stage acoustic pipeline (VAD gate + speaker verification) to flag unauthorized third-party speech (bypassed in Physical Lab mode).
+   - `USBMonitor` detects removable mass storage media insertion, and Electron's `screen` monitor detects multi-display connections.
+7. **Two-Panel Exam Workspace & Clipboard Lockdown (Module 7B & Module 7)**:
+   - **Header Bar**: Displays `Student: [Full Name] ([Roll Number])`, `Exam: [Exam Code]`, Status badge (`● Monitoring Active` or `● Lab Integrity Active`), running HH:MM:SS timer.
+   - **OS Clipboard & Copy-Paste Lockdown**: Flushes OS clipboard upon exam start and intercepts `copy`, `cut`, `paste`, context menu (right-click), and keyboard shortcuts (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Shift+Insert`), auto-clearing clipboard on attempt or window focus.
    - **Left Panel**: In-app paper viewer (rendering PDF/DOCX inside Electron without external viewers).
    - **Right Panel**: Answer area with tabs for (a) plain typed text with auto-saving to local storage, and (b) file attachment upload (.pdf, .docx, .py, .cpp, .zip).
    - **Submission Flow**: Prominent "Submit Exam" button with confirmation modal, retryable network failure handling, and MongoDB persistence.
 8. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server (`unauthorized_app`, `unauthorized_object`, `cell_phone`, `head_turn_away`, `second_person_detected`, `second_voice_detected`, `no_face_detected`, `usb_device_detected`, `multiple_displays_detected`).
-9. **Disk-Backed Offline Violation Buffer (SQLite FIFO Queue)**: Automatically intercepts any network transport failure or server disconnect, enqueueing violation payloads and local evidence screenshots to an encrypted local SQLite database without dropping a single event. A background retry loop resends queued events with their original microsecond timestamps once connectivity resumes.
+9. **Disk-Backed Offline Violation Buffer**: Electron uses an atomic JSON file in its userData directory; non-Electron runs may use SQLite. Failed writes are reported rather than acknowledged. A retry loop resends queued events with their original timestamps.
 
 ---
 
@@ -65,9 +71,9 @@ The Candidate App's AI monitoring engine applies the **Dependency Inversion Prin
 - **Zero Monitor Complexity**: The individual detection monitors (`AIMonitor`, `WhitelistEnforcer`, `USBMonitor`, `DisplayMonitor`, `VoiceMonitor`) are decoupled from network transport logic. Each monitor simply fires violation events to the local receiver.
 - **Single Point of Resilience**: Network outages, server restarts, or transient WiFi drops are transport failures, not monitor failures. Centralizing offline persistence in the Electron IPC layer (`violationForwarder.js` / `pythonBridge.js`) ensures **every existing and future monitor inherits guaranteed offline delivery without modifying any detection code**.
 
-### 2. Why SQLite (WAL Mode) Over a Flat JSON File
+### 2. Offline Buffer Storage
 - **Concurrent Write Safety**: In high-stress scenarios (e.g., candidate simultaneously opens an unauthorized browser and plugs in a USB flash drive), multiple monitors dispatch events concurrently. A flat JSON file risks race conditions, corrupted partial writes, and read-after-write conflicts.
-- **ACID Transactions & Crash Resilience**: SQLite with **Write-Ahead Logging (`PRAGMA journal_mode = WAL`)** guarantees atomic, crash-proof inserts. Even if the candidate app's power is cut or the process is killed while offline, all buffered violation payloads and screenshot paths remain intact on disk in Electron's secure `userData` directory.
+- **Electron persistence**: Electron uses an atomic JSON replacement in its `userData` directory. This is neither encrypted nor a SQLite WAL database; keep that limitation in mind when handling evidence.
 - **Strict FIFO Queue**: Buffered events are queried with `ORDER BY id ASC` to guarantee that temporal ordering is strictly maintained when replaying events to the backend.
 
 ### 3. Preserving Original Timestamps & Module 5 Scoring Engine Integrity
@@ -181,4 +187,3 @@ To verify the complete security checks (`consent → identity → self-check (6 
 ## Known Limitations & Future Work
 
 - **Live vs. Recorded Audio Distinction**: The speaker verification system evaluates acoustic vocal tract characteristics against the reference embedding. It distinguishes *different speakers*, but cannot distinguish between a live second person in the room versus recorded third-party audio played aloud through a speaker (e.g., a phone call on speakerphone or a synthesized text-to-speech engine). Acoustic replay spoofing detection (e.g., high-frequency speaker artifact analysis) is identified as future work.
-

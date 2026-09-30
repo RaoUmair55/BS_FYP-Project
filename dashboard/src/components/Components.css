@@ -2,10 +2,10 @@
 
 /* Common Card & Elevation */
 .md-card {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 8px;
   box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
-  border: 1px solid #dadce0;
+  border: 1px solid var(--border-color);
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
@@ -17,14 +17,14 @@
 .md-title {
   font-size: 24px;
   font-weight: 500;
-  color: #202124;
+  color: var(--text-main);
   margin: 0 0 4px 0;
   letter-spacing: -0.25px;
 }
 
 .md-subtitle {
   font-size: 14px;
-  color: #5f6368;
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -52,35 +52,35 @@
 }
 
 .md-btn-primary {
-  background-color: #1a73e8;
-  color: #ffffff;
+  background-color: var(--primary-bg);
+  color: var(--text-on-color);
   box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3);
 }
 
 .md-btn-primary:hover:not(:disabled) {
-  background-color: #1557b0;
+  background-color: var(--primary-hover);
   box-shadow: 0 1px 3px 1px rgba(60,64,67,0.15);
 }
 
 .md-btn-outlined {
   background-color: transparent;
-  color: #1a73e8;
-  border-color: #dadce0;
+  color: var(--primary);
+  border-color: var(--border-color);
 }
 
 .md-btn-outlined:hover:not(:disabled) {
-  background-color: #f8f9fa;
-  border-color: #1a73e8;
+  background-color: var(--bg-base);
+  border-color: var(--primary);
 }
 
 .md-btn-text {
   background-color: transparent;
-  color: #5f6368;
+  color: var(--text-muted);
 }
 
 .md-btn-text:hover:not(:disabled) {
-  background-color: #f1f3f4;
-  color: #202124;
+  background-color: var(--bg-muted);
+  color: var(--text-main);
 }
 
 .md-btn:disabled {
@@ -102,19 +102,37 @@
 }
 
 .status-active {
-  background-color: #e6f4ea;
-  color: #137333;
+  background-color: var(--success-soft);
+  color: var(--success);
 }
 
 .status-draft {
-  background-color: #fef7e0;
-  color: #b45309;
+  background-color: var(--warning-soft);
+  color: var(--warning);
 }
 
 .status-completed {
-  background-color: #e8f0fe;
-  color: #1a73e8;
+  background-color: var(--primary-soft);
+  color: var(--primary);
 }
+
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.risk-green { color: var(--success); background: var(--success-soft); border-color: var(--success-soft); }
+.risk-yellow { color: var(--warning); background: var(--warning-soft); border-color: var(--warning-soft); }
+.risk-red { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-soft); }
+.risk-unavailable { color: var(--text-muted); background: var(--bg-muted); border-color: var(--border-color); }
 
 /* Exam Management Section */
 .exam-manager-container {
@@ -153,8 +171,8 @@
   font-family: 'Roboto Mono', monospace;
   font-weight: 700;
   font-size: 14px;
-  color: #1a73e8;
-  background: #e8f0fe;
+  color: var(--primary);
+  background: var(--primary-soft);
   padding: 4px 8px;
   border-radius: 4px;
 }
@@ -162,7 +180,7 @@
 .exam-card-title {
   font-size: 16px;
   font-weight: 500;
-  color: #202124;
+  color: var(--text-main);
   margin: 0 0 16px 0;
   line-height: 1.4;
 }
@@ -179,7 +197,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #5f6368;
+  color: var(--text-muted);
 }
 
 .exam-card-actions {
@@ -187,33 +205,33 @@
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  border-top: 1px solid #f1f3f4;
+  border-top: 1px solid var(--bg-muted);
   padding-top: 16px;
 }
 
 /* Empty State */
 .md-empty-card {
-  background: #ffffff;
+  background: var(--bg-surface);
   border-radius: 8px;
-  border: 1px dashed #dadce0;
+  border: 1px dashed var(--border-color);
   padding: 48px 24px;
   text-align: center;
 }
 
 .md-empty-icon {
-  color: #9aa0a6;
+  color: var(--text-muted);
   margin-bottom: 12px;
 }
 
 .md-empty-card h3 {
   margin: 0 0 8px 0;
   font-size: 18px;
-  color: #202124;
+  color: var(--text-main);
 }
 
 .md-empty-card p {
   margin: 0;
-  color: #5f6368;
+  color: var(--text-muted);
   font-size: 14px;
 }
 
@@ -236,7 +254,7 @@
 }
 
 .md-modal-card {
-  background: #ffffff;
+  background: var(--bg-surface);
   width: 520px;
   max-width: 92vw;
   max-height: calc(100vh - 40px);
@@ -257,7 +275,7 @@
   justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f1f3f4;
+  border-bottom: 1px solid var(--bg-muted);
   flex-shrink: 0;
 }
 
@@ -272,7 +290,7 @@
 .md-icon-btn {
   background: transparent;
   border: none;
-  color: #5f6368;
+  color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
   border-radius: 50%;
@@ -283,8 +301,8 @@
 }
 
 .md-icon-btn:hover {
-  background: #f1f3f4;
-  color: #202124;
+  background: var(--bg-muted);
+  color: var(--text-main);
 }
 
 /* Form Controls */
@@ -298,12 +316,12 @@
 .md-form-group label {
   font-size: 13px;
   font-weight: 500;
-  color: #3c4043;
+  color: var(--text-main);
 }
 
 .md-input, .md-select {
   padding: 10px 12px;
-  border: 1px solid #dadce0;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
@@ -312,18 +330,18 @@
 }
 
 .md-input:focus, .md-select:focus {
-  border-color: #1a73e8;
+  border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
 }
 
 .md-file-input {
   font-size: 13px;
-  color: #5f6368;
+  color: var(--text-muted);
 }
 
 .md-help-text {
   font-size: 12px;
-  color: #70757a;
+  color: var(--text-muted);
 }
 
 .md-modal-actions {
@@ -332,7 +350,7 @@
   gap: 12px;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid #f1f3f4;
+  border-top: 1px solid var(--bg-muted);
   flex-shrink: 0;
 }
 
@@ -347,9 +365,9 @@
 }
 
 .md-alert-error {
-  background-color: #fce8e6;
-  color: #c5221f;
-  border: 1px solid #fad2cf;
+  background-color: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-soft);
 }
 
 /* Student List Material Component */
@@ -362,7 +380,7 @@
 
 .student-list-header {
   padding: 16px 20px;
-  border-bottom: 1px solid #dadce0;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -372,7 +390,7 @@
   margin: 0;
   font-size: 16px;
   font-weight: 500;
-  color: #202124;
+  color: var(--text-main);
 }
 
 .student-items {
@@ -386,29 +404,29 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  border-bottom: 1px solid #f1f3f4;
+  border-bottom: 1px solid var(--bg-muted);
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
 
 .student-item:hover {
-  background-color: #f8f9fa;
+  background-color: var(--bg-base);
 }
 
 .student-item.selected {
-  background-color: #e8f0fe;
-  border-left: 4px solid #1a73e8;
+  background-color: var(--primary-soft);
+  border-left: 4px solid var(--primary);
 }
 
 .student-info-name {
   font-size: 14px;
   font-weight: 500;
-  color: #202124;
+  color: var(--text-main);
 }
 
 .student-info-sub {
   font-size: 12px;
-  color: #5f6368;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -432,22 +450,22 @@
 .alert-item {
   padding: 12px 16px;
   border-radius: 8px;
-  border-left: 4px solid #dadce0;
-  background: #ffffff;
-  border: 1px solid #dadce0;
+  border-left: 4px solid var(--border-color);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   box-shadow: 0 1px 2px rgba(60,64,67,0.08);
 }
 
 .alert-severity-5, .alert-severity-4 {
-  border-left: 4px solid #d93025;
+  border-left: 4px solid var(--danger);
 }
 
 .alert-severity-3 {
-  border-left: 4px solid #f9ab00;
+  border-left: 4px solid var(--warning);
 }
 
 .alert-severity-2, .alert-severity-1 {
-  border-left: 4px solid #188038;
+  border-left: 4px solid var(--success);
 }
 
 /* Evidence Review Component */
@@ -464,7 +482,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border-bottom: 2px solid #e8eaed;
+  border-bottom: 2px solid var(--border-color);
   margin-bottom: 20px;
 }
 
@@ -479,24 +497,24 @@
   font-family: 'Roboto', sans-serif;
   font-size: 14px;
   font-weight: 500;
-  color: #5f6368;
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: -2px;
 }
 
 .exam-tab-btn:hover {
-  color: #1a73e8;
+  color: var(--primary);
 }
 
 .exam-tab-btn.active {
-  color: #1a73e8;
-  border-bottom-color: #1a73e8;
+  color: var(--primary);
+  border-bottom-color: var(--primary);
 }
 
 .tab-count-pill {
-  background: #e8eaed;
-  color: #3c4043;
+  background: var(--bg-muted);
+  color: var(--text-main);
   font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
@@ -504,14 +522,14 @@
 }
 
 .exam-tab-btn.active .tab-count-pill {
-  background: #e8f0fe;
-  color: #1a73e8;
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 /* LIVE Pulse & Completed Cards */
 .live-pulse {
-  background-color: #e6f4ea !important;
-  color: #137333 !important;
+  background-color: var(--success-soft) !important;
+  color: var(--success) !important;
   font-weight: 700 !important;
   letter-spacing: 0.5px;
 }
@@ -519,7 +537,7 @@
 .live-dot {
   width: 8px;
   height: 8px;
-  background-color: #188038;
+  background-color: var(--success-bg);
   border-radius: 50%;
   display: inline-block;
   animation: pulse-ring 1.5s infinite ease-in-out;
@@ -532,32 +550,32 @@
 }
 
 .completed-card {
-  background-color: #fafafa !important;
-  border-color: #e8eaed !important;
+  background-color: var(--bg-base) !important;
+  border-color: var(--border-color) !important;
   opacity: 0.95;
 }
 
 .completed-card:hover {
-  border-color: #dadce0 !important;
+  border-color: var(--border-color) !important;
 }
 
 .btn-end-exam {
-  color: #d93025 !important;
-  border-color: #fad2cf !important;
+  color: var(--danger) !important;
+  border-color: var(--danger-soft) !important;
 }
 
 .btn-end-exam:hover {
-  background-color: #fce8e6 !important;
-  border-color: #d93025 !important;
+  background-color: var(--danger-soft) !important;
+  border-color: var(--danger) !important;
 }
 
 .md-btn-danger {
-  background-color: #d93025 !important;
-  color: #ffffff !important;
+  background-color: var(--danger-bg) !important;
+  color: var(--text-on-color) !important;
 }
 
 .md-btn-danger:hover {
-  background-color: #c5221f !important;
+  background-color: var(--danger-bg) !important;
 }
 
 /* Exam Summary Component */
@@ -579,7 +597,7 @@
   gap: 6px;
   background: transparent;
   border: none;
-  color: #1a73e8;
+  color: var(--primary);
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -590,7 +608,7 @@
 }
 
 .back-btn-material:hover {
-  background-color: #e8f0fe;
+  background-color: var(--primary-soft);
 }
 
 .summary-title-row {
@@ -602,19 +620,19 @@
 .summary-title {
   font-size: 24px;
   font-weight: 500;
-  color: #202124;
+  color: var(--text-main);
   margin: 0;
 }
 
 .summary-subtitle {
   font-size: 13px;
-  color: #5f6368;
+  color: var(--text-muted);
   margin: 4px 0 0 0;
 }
 
 .status-chip.completed {
-  background-color: #f1f3f4;
-  color: #5f6368;
+  background-color: var(--bg-muted);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
   padding: 3px 8px;
@@ -630,8 +648,8 @@
 }
 
 .summary-stat-card {
-  background: #ffffff;
-  border: 1px solid #dadce0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 20px;
   display: flex;
@@ -647,33 +665,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f1f3f4;
-  color: #5f6368;
+  background: var(--bg-muted);
+  color: var(--text-muted);
 }
 
 .stat-icon-wrapper.blue {
-  background: #e8f0fe;
-  color: #1a73e8;
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .stat-icon-wrapper.amber {
-  background: #fef7e0;
-  color: #b45309;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .risk-high-stat .stat-icon-wrapper {
-  background: #fce8e6;
-  color: #d93025;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .risk-med-stat .stat-icon-wrapper {
-  background: #fef7e0;
-  color: #b45309;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .risk-low-stat .stat-icon-wrapper {
-  background: #e6f4ea;
-  color: #137333;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .stat-content {
@@ -683,21 +701,21 @@
 
 .stat-label {
   font-size: 13px;
-  color: #5f6368;
+  color: var(--text-muted);
   font-weight: 400;
 }
 
 .stat-value {
   font-size: 22px;
   font-weight: 700;
-  color: #202124;
+  color: var(--text-main);
   margin-top: 2px;
 }
 
 /* Summary Roster Table Card */
 .summary-table-card {
-  background: #ffffff;
-  border: 1px solid #dadce0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(60,64,67,0.1);
   overflow: hidden;
@@ -705,7 +723,7 @@
 
 .summary-table-header {
   padding: 16px 20px;
-  border-bottom: 1px solid #e8eaed;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -715,13 +733,13 @@
   margin: 0;
   font-size: 16px;
   font-weight: 500;
-  color: #202124;
+  color: var(--text-main);
 }
 
 .count-pill {
   font-size: 12px;
-  background: #f1f3f4;
-  color: #5f6368;
+  background: var(--bg-muted);
+  color: var(--text-muted);
   padding: 4px 10px;
   border-radius: 12px;
   font-weight: 500;
@@ -739,42 +757,42 @@
 }
 
 .summary-table th {
-  background: #f8f9fa;
-  color: #5f6368;
+  background: var(--bg-base);
+  color: var(--text-muted);
   font-weight: 500;
   font-size: 13px;
   padding: 12px 20px;
-  border-bottom: 1px solid #e8eaed;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .summary-table td {
   padding: 14px 20px;
-  border-bottom: 1px solid #f1f3f4;
+  border-bottom: 1px solid var(--bg-muted);
   font-size: 14px;
-  color: #202124;
+  color: var(--text-main);
 }
 
 .summary-table-row:hover {
-  background-color: #f8f9fa;
+  background-color: var(--bg-base);
 }
 
 .student-id-text {
   font-family: 'Roboto Mono', monospace;
   font-weight: 500;
-  color: #1a73e8;
+  color: var(--primary);
 }
 
 .violation-count-badge {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: #f1f3f4;
-  color: #5f6368;
+  background: var(--bg-muted);
+  color: var(--text-muted);
 }
 
 .violation-count-badge.has-violations {
-  background: #fef7e0;
-  color: #b45309;
+  background: var(--warning-soft);
+  color: var(--warning);
   font-weight: 500;
 }
 
@@ -789,22 +807,22 @@
 }
 
 .submission-badge.submitted {
-  background: #e6f4ea;
-  color: #137333;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .submission-badge.unsubmitted {
-  background: #f1f3f4;
-  color: #5f6368;
+  background: var(--bg-muted);
+  color: var(--text-muted);
 }
 
 .evidence-action-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #ffffff;
-  border: 1px solid #dadce0;
-  color: #1a73e8;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--primary);
   font-size: 13px;
   font-weight: 500;
   padding: 6px 12px;
@@ -814,8 +832,8 @@
 }
 
 .evidence-action-btn:hover {
-  background: #e8f0fe;
-  border-color: #1a73e8;
+  background: var(--primary-soft);
+  border-color: var(--primary);
 }
 
 /* Modal Overlay & Dialog */
@@ -837,7 +855,7 @@
 }
 
 .modal-dialog.large-modal {
-  background: #ffffff;
+  background: var(--bg-surface);
   width: 800px;
   max-width: 92vw;
   max-height: calc(100vh - 40px);
@@ -851,7 +869,7 @@
 
 .modal-header {
   padding: 16px 20px;
-  border-bottom: 1px solid #e8eaed;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -861,14 +879,14 @@
 .modal-header h3 {
   margin: 0;
   font-size: 18px;
-  color: #202124;
+  color: var(--text-main);
 }
 
 .modal-close-btn {
   background: transparent;
   border: none;
   font-size: 24px;
-  color: #5f6368;
+  color: var(--text-muted);
   cursor: pointer;
   padding: 0 4px;
 }

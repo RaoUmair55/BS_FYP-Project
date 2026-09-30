@@ -126,7 +126,12 @@ This modular design guarantees that:
 - `src/models/Session.js` — Added compound index `{ examId: 1, status: 1 }`.
 - `src/routes/violations.js` — Added `GET /violations/priority-queue` returning unreviewed violations sorted by `severity: -1, timestamp: -1` enriched with candidate identity.
 
-### Part G — Testing & Verification Suites
+### Part G — Dual-Environment Exam Support & Multi-Tenant Scoping
+- `src/models/Exam.js` — Added `examType: { type: String, enum: ['online', 'physical_lab'], default: 'online' }` schema field.
+- `src/routes/exams.js` — Scoped `GET /` and `POST /exams` with `createdBy` examiner ownership checks, returning `examType` across `GET /exams/code/:code` and summary endpoints.
+- `src/routes/sessions.js` & `src/routes/violations.js` — Scoped active sessions, alert feeds, and priority queues to the authenticated examiner's exams, preserving global visibility for `admin`.
+
+### Part H — Testing & Verification Suites
 - `scripts/test_auth_system.js` — Automated unit/integration test suite for Part A.
 - `scripts/test_verification_system.js` — Automated integration test suite for Part B.
 - `scripts/test_http_endpoints.js` — HTTP end-to-end endpoint test suite.
@@ -219,7 +224,7 @@ curl -X POST http://localhost:5000/auth/forgot-password \
   -H "Content-Type: application/json" \
   -d '{ "email": "alan.turing@university.edu" }'
 
-# Reset password using token printed in server console
+# Reset password using the token delivered in the email preview
 curl -X POST http://localhost:5000/auth/reset-password \
   -H "Content-Type: application/json" \
   -d '{
@@ -414,5 +419,4 @@ FAILURE BREAKDOWN: No request failures recorded (100% Success).
 1. **Tail Latency Reduction**: P99 write latency dropped from `771.01ms` down to `536.99ms` (**30.4% reduction**).
 2. **Elimination of Peak Spikes**: Max peak write latency was cut from `1394.91ms` to `640.80ms` (**54.1% reduction**), and max dashboard read latency plummeted from `1230.66ms` to `310.59ms` (**74.8% reduction**).
 3. **Database Efficiency**: Compound indexes ensure lookups by `sessionId` and `reviewed` execute via `IXSCAN`, preventing full collection scans under concurrent multi-student loads.
-
 

@@ -56,7 +56,7 @@ export default function UserManagerView({
             <div className="admin-toolbar">
                 <div className="admin-filter-group">
                     <div className="google-search-input">
-                        <Search size={16} color="#5f6368" />
+                        <Search size={16} color="var(--text-muted)" />
                         <input 
                             type="text" 
                             placeholder="Search examiner by name or email..." 
@@ -81,21 +81,21 @@ export default function UserManagerView({
                     </button>
                 </div>
 
-                <div style={{ fontSize: '13px', color: '#5f6368' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                     Total Users: <strong>{filteredUsers.length}</strong>
                 </div>
             </div>
 
             {/* Main Table */}
             {loading ? (
-                <div style={{ padding: '60px', textAlign: 'center', color: '#5f6368' }}>
+                <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <div className="auth-spinner" style={{ margin: '0 auto 16px auto' }}></div>
                     <span>Loading registered users & examiners...</span>
                 </div>
             ) : filteredUsers.length === 0 ? (
-                <div className="admin-card" style={{ padding: '60px', textAlign: 'center', color: '#5f6368' }}>
-                    <Users size={40} color="#dadce0" style={{ margin: '0 auto 12px auto' }} />
-                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#202124', marginBottom: '4px' }}>No users found</div>
+                <div className="admin-card" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Users size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px auto' }} />
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>No users found</div>
                     <div style={{ fontSize: '13px' }}>No user accounts match your selected filter criteria.</div>
                 </div>
             ) : (
@@ -123,8 +123,8 @@ export default function UserManagerView({
                                                     width: '32px',
                                                     height: '32px',
                                                     borderRadius: '50%',
-                                                    background: isAdmin ? 'linear-gradient(135deg, #1a73e8, #7c3aed)' : '#f1f3f4',
-                                                    color: isAdmin ? '#ffffff' : '#3c4043',
+                                                    background: isAdmin ? 'linear-gradient(135deg, var(--primary-bg), #7c3aed)' : 'var(--bg-muted)',
+                                                    color: isAdmin ? 'var(--text-on-color)' : 'var(--text-main)',
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
@@ -134,15 +134,15 @@ export default function UserManagerView({
                                                     {(user.name || 'U')[0].toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <div style={{ fontWeight: 600, color: '#202124', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <div style={{ fontWeight: 600, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                         {user.name}
                                                         {isSelf && (
-                                                            <span style={{ fontSize: '10px', background: '#e8f0fe', color: '#1a73e8', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                                            <span style={{ fontSize: '10px', background: 'var(--primary-soft)', color: 'var(--primary)', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
                                                                 YOU
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div style={{ fontSize: '12px', color: '#5f6368', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         <Mail size={12} />
                                                         {user.email}
                                                     </div>
@@ -151,22 +151,22 @@ export default function UserManagerView({
                                         </td>
                                         <td>
                                             {isAdmin ? (
-                                                <span className="admin-chip chip-paper" style={{ background: '#e8f0fe', color: '#1a73e8', fontWeight: 700 }}>
+                                                <span className="admin-chip chip-paper" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700 }}>
                                                     🛡️ Administrator
                                                 </span>
                                             ) : (
-                                                <span className="admin-chip chip-verification" style={{ background: '#f1f3f4', color: '#5f6368' }}>
+                                                <span className="admin-chip chip-verification" style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)' }}>
                                                     Teacher / Examiner
                                                 </span>
                                             )}
                                         </td>
                                         <td>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#3c4043' }}>
-                                                <Layers size={14} color="#5f6368" />
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--text-main)' }}>
+                                                <Layers size={14} color="var(--text-muted)" />
                                                 <span>{user.examsCount || 0} exams</span>
                                             </div>
                                         </td>
-                                        <td style={{ fontSize: '12px', color: '#5f6368' }}>
+                                        <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                                             {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
                                         </td>
                                         <td style={{ textAlign: 'right' }}>
@@ -177,7 +177,7 @@ export default function UserManagerView({
                                                     title="Demote to standard teacher"
                                                     style={{ fontSize: '12px', padding: '5px 10px' }}
                                                 >
-                                                    <UserX size={13} color="#d93025" />
+                                                    <UserX size={13} color="var(--danger)" />
                                                     Demote to Teacher
                                                 </button>
                                             ) : (
@@ -205,7 +205,7 @@ export default function UserManagerView({
                 <div className="lightbox-overlay" onClick={() => !isUpdating && setSelectedUserForRoleChange(null)}>
                     <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-dialog-header">
-                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: selectedUserForRoleChange.role === 'admin' ? '#fce8e6' : '#e8f0fe', color: selectedUserForRoleChange.role === 'admin' ? '#d93025' : '#1a73e8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: selectedUserForRoleChange.role === 'admin' ? 'var(--danger-soft)' : 'var(--primary-soft)', color: selectedUserForRoleChange.role === 'admin' ? 'var(--danger)' : 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Shield size={20} />
                             </div>
                             <h3 className="modal-dialog-title">

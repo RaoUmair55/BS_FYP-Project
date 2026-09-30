@@ -92,13 +92,16 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                 </div>
                 <span className="md-badge status-active">
                     <Users size={12} />
-                    <span>{sortedSessions.length} Live</span>
+                    <span>
+                        {sortedSessions.filter(s => s.status === 'active').length} Live
+                        {sortedSessions.some(s => s.status === 'terminated') && ` • ${sortedSessions.filter(s => s.status === 'terminated').length} Terminated`}
+                    </span>
                 </span>
             </div>
 
-            <div style={{ padding: '8px 16px', borderBottom: '1px solid #dadce0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f3f4', padding: '6px 12px', borderRadius: '6px' }}>
-                    <Search size={16} style={{ color: '#5f6368' }} />
+            <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-muted)', padding: '6px 12px', borderRadius: '6px' }}>
+                    <Search size={16} style={{ color: 'var(--text-muted)' }} />
                     <input 
                         type="text" 
                         placeholder="Search student name, roll #, or exam..." 
@@ -126,37 +129,72 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                         const displayName = s.studentName || s.studentId || 'Candidate';
                         const displayRoll = s.rollNumber || s.studentId;
                         const timeInfo = formatRemainingTime(s.endTime);
+                        const isTerminated = s.status === 'terminated';
+                        const isCompleted = s.status === 'completed';
 
                         return (
                             <div 
                                 key={sid}
                                 onClick={() => onSelectStudent(sid)}
                                 className={`student-item ${isSelected ? 'selected' : ''}`}
+                                style={{
+                                    borderLeft: isTerminated ? '3px solid var(--danger)' : isCompleted ? '3px solid var(--success)' : undefined,
+                                    background: isTerminated ? 'rgba(239, 68, 68, 0.04)' : undefined
+                                }}
                             >
-                                <div style={{ overflow: 'hidden' }}>
-                                    <div className="student-info-name" style={{ fontWeight: 600, fontSize: '13.5px', color: '#202124', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ overflow: 'hidden', flex: 1 }}>
+                                    <div className="student-info-name" style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-main)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         <span>{displayName}</span>
-                                        {timeInfo && (
+                                        {isTerminated ? (
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '1px 6px',
+                                                borderRadius: '8px',
+                                                fontWeight: 600,
+                                                background: 'var(--danger-soft)',
+                                                color: 'var(--danger)',
+                                                border: '1px solid #fca5a5'
+                                            }} title={s.terminationReason || 'Session Terminated'}>
+                                                🛑 Terminated
+                                            </span>
+                                        ) : isCompleted ? (
+                                            <span style={{
+                                                fontSize: '10px',
+                                                padding: '1px 6px',
+                                                borderRadius: '8px',
+                                                fontWeight: 600,
+                                                background: 'var(--success-soft)',
+                                                color: 'var(--success)',
+                                                border: '1px solid #a7f3d0'
+                                            }}>
+                                                ✅ Submitted
+                                            </span>
+                                        ) : timeInfo && (
                                             <span style={{
                                                 fontSize: '10px',
                                                 padding: '1px 5px',
                                                 borderRadius: '8px',
                                                 fontWeight: 600,
-                                                background: timeInfo.isLobby ? '#e0f2fe' : timeInfo.isUrgent ? '#fee2e2' : '#f1f5f9',
-                                                color: timeInfo.isLobby ? '#0369a1' : timeInfo.isUrgent ? '#b91c1c' : '#475569'
+                                                background: timeInfo.isLobby ? 'var(--primary-soft)' : timeInfo.isUrgent ? 'var(--danger-soft)' : 'var(--bg-muted)',
+                                                color: timeInfo.isLobby ? '#0369a1' : timeInfo.isUrgent ? 'var(--danger)' : 'var(--text-muted)'
                                             }}>
                                                 ⏱️ {timeInfo.text}
                                             </span>
                                         )}
                                     </div>
-                                    <div className="student-info-sub" style={{ fontSize: '11.5px', color: '#5f6368', marginTop: '2px' }}>
+                                    <div className="student-info-sub" style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
                                         <span style={{ fontWeight: 500 }}>{displayRoll}</span> &bull; Exam: {s.examId}
                                         <span title={`Session ID: ${sid}`} style={{ opacity: 0.5, fontSize: '10px', marginLeft: '4px' }}>
                                             ({String(sid).substring(0, 6)}...)
                                         </span>
                                     </div>
+                                    {isTerminated && s.terminationReason && (
+                                        <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            Reason: {s.terminationReason}
+                                        </div>
+                                    )}
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                                     {pendingAlerts > 0 && (
                                         <span className="md-badge status-draft" style={{ fontSize: '11px', padding: '2px 6px' }}>
                                             <Clock size={10} />

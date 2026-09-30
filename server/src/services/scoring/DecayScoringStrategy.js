@@ -1,20 +1,22 @@
 const ScoringStrategy = require('./ScoringStrategy');
 
-// Decay rate calculated for a 15-minute half-life.
-// Formula: k = ln(2) / half_life => 0.693 / 15 ≈ 0.0462
-const DECAY_RATE_PER_MINUTE = 0.0462;
+// Decay rate calculated for a 30-minute half-life.
+// Formula: k = ln(2) / half_life => 0.693 / 30 ≈ 0.0231
+const DECAY_RATE_PER_MINUTE = 0.0231;
 
 // The sum of weights is scaled to 0-100.
 // A raw sum of 10 points (e.g. two recent severity 5 violations) gives 100% risk.
 const MAX_RAW_SCORE = 10.0;
 
 /**
- * Exponential Decay Scoring Strategy
- * Calculates a 0-100 risk score where older violations decay over time (15-minute half-life).
+ * Exponential Decay Scoring Strategy with Cumulative Baseline
+ * Calculates a 0-100 risk score where recent violations produce an acute burst,
+ * while confirmed/unreviewed violations retain a persistent baseline floor so
+ * integrity violations do not evaporate to 0% during or after an exam.
  */
 class DecayScoringStrategy extends ScoringStrategy {
     /**
-     * Calculate normalized risk score using exponential time decay.
+     * Calculate normalized risk score using exponential time decay + persistent baseline.
      * @param {Array<Object>} violations - Array of violation objects with severity and timestamp
      * @param {Date} [referenceTime=new Date()] - Reference timestamp for decay calculation
      * @returns {number} Score from 0 to 100
@@ -25,22 +27,31 @@ class DecayScoringStrategy extends ScoringStrategy {
         }
 
         const now = referenceTime instanceof Date ? referenceTime : new Date(referenceTime);
-        let sumOfWeights = 0;
+        let recentBurstWeight = 0;
+        let cumulativeBaseWeight = 0;
 
         for (let violation of violations) {
             const violationTime = new Date(violation.timestamp);
-            // Calculate diff in minutes, ensure it's >= 0 (no future violations)
             const diffMinutes = Math.max(0, (now - violationTime) / (1000 * 60));
-
-            // weight = severity * e^(-k * t)
             const severity = typeof violation.severity === 'number' ? violation.severity : 1;
-            const weight = severity * Math.exp(-DECAY_RATE_PER_MINUTE * diffMinutes);
-            sumOfWeights += weight;
+
+            // Recency factor with 30-minute half-life
+            const recencyFactor = Math.exp(-DECAY_RATE_PER_MINUTE * diffMinutes);
+            recentBurstWeight += severity * recencyFactor;
+
+            // Cumulative baseline: ensures past violations maintain a floor
+            cumulativeBaseWeight += severity * 0.55;
         }
 
+        // Total weight combines active recency burst and cumulative baseline
+        const totalWeight = Math.max(
+            (recentBurstWeight * 0.55) + (cumulativeBaseWeight * 0.45),
+            cumulativeBaseWeight * 0.6
+        );
+
         // Normalize to 0-100 and cap at 100
-        let riskScore = (sumOfWeights / MAX_RAW_SCORE) * 100;
-        return Math.min(100, Math.round(riskScore));
+        let riskScore = (totalWeight / MAX_RAW_SCORE) * 100;
+        return Math.min(100, Math.max(1, Math.round(riskScore)));
     }
 }
 

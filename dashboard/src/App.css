@@ -14,6 +14,23 @@
 
   --bg-base: #f8f9fa;
   --bg-surface: #ffffff;
+  --bg-muted: #f1f3f4;
+  --primary: #1a73e8;
+  --primary-bg: #1a73e8;
+  --primary-hover: #1557b0;
+  --primary-soft: #e8f0fe;
+  --primary-bright: #4285f4;
+  --success: #137333;
+  --success-bg: #188038;
+  --success-soft: #e6f4ea;
+  --warning: #b06000;
+  --warning-bg: #f9ab00;
+  --warning-soft: #fef7e0;
+  --danger: #d93025;
+  --danger-bg: #d93025;
+  --danger-soft: #fce8e6;
+  --text-on-color: #ffffff;
+  --border-color: #dadce0;
   
   --text-main: #202124;
   --text-muted: #5f6368;
@@ -23,14 +40,53 @@
   --status-amber: #f9ab00;
   --status-red: #d93025;
 
-  --border-color: #dadce0;
-
   --font-sans: 'Roboto', system-ui, sans-serif;
   --font-mono: 'Roboto Mono', monospace;
   
   --elevation-1: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
   --elevation-2: 0 1px 2px 0 rgba(60,64,67,0.3), 0 2px 6px 2px rgba(60,64,67,0.15);
   --elevation-3: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-base: #111318;
+  --bg-surface: #1b1d23;
+  --bg-muted: #252832;
+  --text-main: #e8eaed;
+  --text-muted: #a8adb7;
+  --text-highlight: #a8c7fa;
+  --primary: #a8c7fa;
+  --primary-bg: #185abc;
+  --primary-hover: #174ea6;
+  --primary-soft: #26364d;
+  --primary-bright: #8ab4f8;
+  --success: #81c995;
+  --success-bg: #1e6d42;
+  --success-soft: #1d3529;
+  --warning: #fdd663;
+  --warning-bg: #8a5a00;
+  --warning-soft: #3c321d;
+  --danger: #f28b82;
+  --danger-bg: #b3261e;
+  --danger-soft: #442725;
+  --text-on-color: #ffffff;
+  --border-color: #3a3d46;
+  --status-green: #81c995;
+  --status-amber: #fdd663;
+  --status-red: #f28b82;
+  --elevation-1: 0 1px 3px rgba(0,0,0,0.35);
+  --elevation-2: 0 3px 10px rgba(0,0,0,0.4);
+  --elevation-3: 0 8px 24px rgba(0,0,0,0.45);
+  --google-blue: #a8c7fa;
+  --google-red: #f28b82;
+  --google-yellow: #fdd663;
+  --google-green: #81c995;
+  --google-grey-100: #252832;
+  --google-grey-200: #30333c;
+  --google-grey-300: #3a3d46;
+  --google-grey-800: #c4c7c5;
+  --google-grey-900: #e8eaed;
 }
 
 body, html {

@@ -48,23 +48,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Confirm Decline (Gracefully Exit Application)
   btnConfirmDecline.addEventListener('click', async () => {
-    try {
-      const sessionInfo = await window.api.getSessionInfo();
-      const serverUrl = sessionInfo.serverUrl || 'http://localhost:5000';
-      const sessionId = sessionInfo.sessionId;
-
-      if (sessionId) {
-        // Optionally mark consent declined or end session on server
-        await fetch(`${serverUrl}/sessions/${sessionId}/consent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ consentGiven: false })
-        }).catch(() => {});
-      }
-    } catch (e) {
-      // Ignore
-    } finally {
-      await window.api.declineConsent();
-    }
+    await window.api.declineConsent();
   });
 });

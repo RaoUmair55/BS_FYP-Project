@@ -31,11 +31,11 @@ export default function Login({ onNavigate }) {
         }
     };
 
-    const handleDemoLogin = async () => {
+    const handleDemoLogin = async (role = 'admin') => {
         setError('');
-        setIsDemoSubmitting(true);
+        setIsDemoSubmitting(role);
         try {
-            await demoLogin();
+            await demoLogin(role);
         } catch (err) {
             setError(err.message || 'Failed to authenticate demo account');
         } finally {
@@ -132,25 +132,45 @@ export default function Login({ onNavigate }) {
                 </form>
 
                 {/* Demo Sign-in: Enabled in development or when VITE_ENABLE_DEMO_LOGIN=true */}
-                {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                {import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' && (
                     <>
                         <div className="auth-divider">or quick evaluation</div>
 
-                        <button
-                            type="button"
-                            className="auth-demo-btn"
-                            onClick={handleDemoLogin}
-                            disabled={isSubmitting || isDemoSubmitting}
-                        >
-                            {isDemoSubmitting ? (
-                                <span className="auth-spinner dark" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
-                            ) : (
-                                <>
-                                    <Sparkles size={15} style={{ color: 'var(--google-blue)' }} />
-                                    <span>1-Click Demo Sign In</span>
-                                </>
-                            )}
-                        </button>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <button
+                                type="button"
+                                className="auth-demo-btn"
+                                onClick={() => handleDemoLogin('admin')}
+                                disabled={isSubmitting || Boolean(isDemoSubmitting)}
+                                style={{ margin: 0, justifyContent: 'center' }}
+                            >
+                                {isDemoSubmitting === 'admin' ? (
+                                    <span className="auth-spinner dark" style={{ width: 14, height: 14, borderWidth: 2 }}></span>
+                                ) : (
+                                    <>
+                                        <Shield size={14} style={{ color: 'var(--google-blue)' }} />
+                                        <span>Demo Admin</span>
+                                    </>
+                                )}
+                            </button>
+
+                            <button
+                                type="button"
+                                className="auth-demo-btn"
+                                onClick={() => handleDemoLogin('teacher')}
+                                disabled={isSubmitting || Boolean(isDemoSubmitting)}
+                                style={{ margin: 0, justifyContent: 'center' }}
+                            >
+                                {isDemoSubmitting === 'teacher' ? (
+                                    <span className="auth-spinner dark" style={{ width: 14, height: 14, borderWidth: 2 }}></span>
+                                ) : (
+                                    <>
+                                        <Sparkles size={14} style={{ color: '#10b981' }} />
+                                        <span>Demo Teacher</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </>
                 )}
 

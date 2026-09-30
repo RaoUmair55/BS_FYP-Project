@@ -5,10 +5,11 @@ import {
     Filter, Video, Users, Smartphone, Eye, Globe, Layers, ChevronDown, ChevronUp 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { assetUrl } from '../services/api';
 import { groupViolationsList } from './PriorityQueue';
 import './Components.css';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
     if (!typeStr) return "Unknown";
@@ -31,6 +32,11 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
     }
+    if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
+        const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
+        const appName = details?.object_class ? ` in ${details.object_class}` : '';
+        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing Notes/File Opened${appName}`;
+    }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
             return `Unauthorized App (${details.object_class})`;
@@ -52,7 +58,7 @@ function timeAgo(dateString) {
     return `${Math.floor(minutes / 60)}h ago`;
 }
 
-export default function AlertFeed({ violations, onSelectViolation, onReviewViolation }) {
+export default function AlertFeed({ violations, onSelectViolation, onReviewViolation, examFilter }) {
     const { authFetch } = useAuth();
     const [filter, setFilter] = useState('all'); // 'all', 'unreviewed', 'reviewed'
     const [enableGrouping, setEnableGrouping] = useState(true);
@@ -114,13 +120,14 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
     // Filter violations (exclude dismissed from active live feed)
     const filteredViolations = useMemo(() => {
         return (violations || []).filter(v => {
+            if (examFilter && String(v.examId || '').toUpperCase() !== String(examFilter).toUpperCase()) return false;
             const isReviewed = Boolean(v.reviewed);
             const isDismissed = v.decision === 'dismissed';
             if (filter === 'unreviewed') return !isReviewed && !isDismissed;
             if (filter === 'reviewed') return isReviewed;
             return !isDismissed;
         });
-    }, [violations, filter]);
+    }, [violations, filter, examFilter]);
 
     // Apply Client-Side 2-Minute Grouping
     const displayItems = useMemo(() => {
@@ -128,15 +135,15 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
         return groupViolationsList(filteredViolations, 2 * 60 * 1000);
     }, [filteredViolations, enableGrouping]);
 
-    const unreviewedCount = (violations || []).filter(v => !v.reviewed && v.decision !== 'dismissed').length;
+    const unreviewedCount = filteredViolations.filter(v => !v.reviewed && v.decision !== 'dismissed').length;
 
     return (
         <div className="md-card alert-feed-card">
             {/* Header & Filter Bar */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #dadce0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8f9fa', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-base)', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Filter size={16} style={{ color: '#5f6368' }} />
-                    <span style={{ fontSize: '14px', fontWeight: 500, color: '#202124' }}>Alert Triage</span>
+                    <Filter size={16} style={{ color: 'var(--text-muted)' }} />
+                    <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-main)' }}>Alert Triage</span>
                     {unreviewedCount > 0 && (
                         <span className="md-badge status-draft" style={{ fontSize: '11px' }}>
                             {unreviewedCount} Needs Review
@@ -200,35 +207,35 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                 className={`alert-item alert-severity-${group.severity}`}
                                 style={{
                                     opacity: isReviewed ? 0.75 : 1.0,
-                                    background: isReviewed ? '#f8f9fa' : '#ffffff',
-                                    border: isReviewed ? '1px solid #e8eaed' : '1px solid #1a73e8'
+                                    background: isReviewed ? 'var(--bg-base)' : 'var(--bg-surface)',
+                                    border: isReviewed ? '1px solid var(--border-color)' : '1px solid var(--primary)'
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                        <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
+                                        <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)' }}>
                                             {formatType(group.type, group.details)}
                                         </span>
                                         {isGrouped && (
                                             <span style={{
                                                 fontSize: '11px',
                                                 fontWeight: 700,
-                                                color: '#b45309',
-                                                backgroundColor: '#fef7e0',
-                                                border: '1px solid #ffeeba',
+                                                color: 'var(--warning)',
+                                                backgroundColor: 'var(--warning-soft)',
+                                                border: '1px solid var(--warning-soft)',
                                                 padding: '2px 6px',
                                                 borderRadius: '10px'
                                             }}>
                                                 {group.count}× in 2m
                                             </span>
                                         )}
-                                        <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', color: '#3c4043' }}>
+                                        <span className="md-badge" style={{ fontSize: '11px', background: 'var(--bg-muted)', color: 'var(--text-main)' }}>
                                             Sev {group.severity}
                                         </span>
                                     </div>
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '12px', color: '#70757a' }}>{timeAgo(group.timestamp)}</span>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{timeAgo(group.timestamp)}</span>
                                         {isReviewed ? (
                                             <span className={`md-badge ${decision === 'confirmed' ? 'status-active' : 'status-completed'}`} style={{ fontSize: '11px' }}>
                                                 {decision === 'confirmed' ? <CheckCircle size={12} /> : <XCircle size={12} />}
@@ -243,11 +250,30 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                     </div>
                                 </div>
 
-                                <div style={{ fontSize: '12px', color: '#5f6368', fontFamily: 'monospace', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: '8px' }}>
                                     Session: {group.sessionId ? (group.sessionId.substring(0, 16) + '...') : 'Unknown'}
-                                    {group.details?.object_class && ` • Item: ${group.details.object_class}`}
+                                    {group.details?.object_class && ` • App: ${group.details.object_class}`}
+                                    {group.details?.fileName && ` • File: ${group.details.fileName}`}
                                     {group.details?.duration && ` • Duration: ${group.details.duration.toFixed(1)}s`}
                                 </div>
+
+                                {group.details?.reason && (
+                                    <div style={{
+                                        fontSize: '12px',
+                                        color: 'var(--warning)',
+                                        backgroundColor: 'var(--warning-soft)',
+                                        border: '1px solid var(--warning-soft)',
+                                        borderRadius: '4px',
+                                        padding: '4px 8px',
+                                        marginBottom: '8px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <span>⚠️</span>
+                                        <strong>{group.details.reason}</strong>
+                                    </div>
+                                )}
 
                                 {group.screenshotPath && (
                                     <div 
@@ -256,7 +282,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                             marginBottom: '8px', 
                                             borderRadius: '6px', 
                                             overflow: 'hidden', 
-                                            border: '1px solid #dadce0', 
+                                            border: '1px solid var(--border-color)',
                                             maxHeight: '180px', 
                                             background: '#0f172a',
                                             cursor: onSelectViolation ? 'pointer' : 'default'
@@ -265,9 +291,9 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                         title={onSelectViolation ? "Click to open candidate Evidence Review" : "Violation screenshot"}
                                     >
                                         <img 
-                                            src={group.screenshotPath.startsWith('http://') || group.screenshotPath.startsWith('https://') 
+                                            src={assetUrl(group.screenshotPath.startsWith('http://') || group.screenshotPath.startsWith('https://')
                                                 ? group.screenshotPath 
-                                                : `${API_BASE.replace(/\/$/, '')}/${group.screenshotPath.replace(/^\//, '')}`} 
+                                                : `${API_BASE.replace(/\/$/, '')}/${group.screenshotPath.replace(/^\//, '')}`)}
                                             alt="Alert Evidence Snapshot" 
                                             style={{ width: '100%', maxHeight: '180px', objectFit: 'contain', display: 'block' }} 
                                         />
@@ -275,18 +301,18 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                 )}
 
                                 {group.reviewNote && (
-                                    <div style={{ fontSize: '12px', color: '#3c4043', background: '#f1f3f4', padding: '6px 10px', borderRadius: '4px', marginBottom: '8px', fontStyle: 'italic' }}>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-main)', background: 'var(--bg-muted)', padding: '6px 10px', borderRadius: '4px', marginBottom: '8px', fontStyle: 'italic' }}>
                                         Note: "{group.reviewNote}"
                                     </div>
                                 )}
 
                                 {/* Action Buttons */}
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginTop: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginTop: '8px', borderTop: '1px solid var(--bg-muted)', paddingTop: '8px' }}>
                                     {!isReviewed ? (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <button 
                                                 className="md-btn md-btn-sm" 
-                                                style={{ background: '#e6f4ea', color: '#137333', border: '1px solid #a7f3d0' }}
+                                                style={{ background: 'var(--success-soft)', color: 'var(--success)', border: '1px solid #a7f3d0' }}
                                                 onClick={() => handleQuickReview(group, 'confirmed')}
                                             >
                                                 <Check size={14} />
@@ -295,7 +321,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
 
                                             <button 
                                                 className="md-btn md-btn-sm" 
-                                                style={{ background: '#f1f3f4', color: '#5f6368', border: '1px solid #dadce0' }}
+                                                style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
                                                 onClick={() => handleQuickReview(group, 'dismissed')}
                                             >
                                                 <X size={14} />
@@ -363,15 +389,15 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                     <div style={{
                                         marginTop: '10px',
                                         paddingTop: '10px',
-                                        borderTop: '1px dashed #dadce0',
+                                        borderTop: '1px dashed var(--border-color)',
                                         display: 'flex',
                                         flexDirection: 'column',
                                         gap: '6px',
-                                        background: '#f8f9fa',
+                                        background: 'var(--bg-base)',
                                         padding: '8px 12px',
                                         borderRadius: '6px'
                                     }}>
-                                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#5f6368', textTransform: 'uppercase' }}>
+                                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                                             Grouped Instances ({group.items.length})
                                         </span>
                                         {group.items.map((item, idx) => (
@@ -383,24 +409,24 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                                     justifyContent: 'space-between',
                                                     fontSize: '12px',
                                                     padding: '4px 0',
-                                                    borderBottom: idx < group.items.length - 1 ? '1px solid #e8eaed' : 'none'
+                                                    borderBottom: idx < group.items.length - 1 ? '1px solid var(--border-color)' : 'none'
                                                 }}
                                             >
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ fontWeight: 600, color: '#5f6368' }}>#{idx + 1}</span>
-                                                    <Clock size={12} color="#5f6368" />
+                                                    <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>#{idx + 1}</span>
+                                                    <Clock size={12} color="var(--text-muted)" />
                                                     <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
                                                     {item.details?.confidence && (
-                                                        <span style={{ color: '#5f6368' }}>({(item.details.confidence * 100).toFixed(0)}% conf)</span>
+                                                        <span style={{ color: 'var(--text-muted)' }}>({(item.details.confidence * 100).toFixed(0)}% conf)</span>
                                                     )}
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {item.screenshotPath && (
                                                         <a 
-                                                            href={item.screenshotPath.startsWith('http') ? item.screenshotPath : `${API_BASE}${item.screenshotPath}`}
+                                                            href={assetUrl(item.screenshotPath.startsWith('http') ? item.screenshotPath : `${API_BASE}${item.screenshotPath}`)}
                                                             target="_blank" 
                                                             rel="noreferrer"
-                                                            style={{ color: '#1a73e8', textDecoration: 'none', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '2px' }}
+                                                            style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '2px' }}
                                                         >
                                                             <ExternalLink size={11} />
                                                             <span>Snapshot</span>
@@ -408,14 +434,14 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                                     )}
                                                     <button
                                                         className="md-btn md-btn-sm"
-                                                        style={{ padding: '2px 6px', fontSize: '11px', background: '#e6f4ea', color: '#137333', border: 'none' }}
+                                                        style={{ padding: '2px 6px', fontSize: '11px', background: 'var(--success-soft)', color: 'var(--success)', border: 'none' }}
                                                         onClick={() => handleQuickReview(item, 'confirmed')}
                                                     >
                                                         Confirm
                                                     </button>
                                                     <button
                                                         className="md-btn md-btn-sm"
-                                                        style={{ padding: '2px 6px', fontSize: '11px', background: '#f1f3f4', color: '#5f6368', border: 'none' }}
+                                                        style={{ padding: '2px 6px', fontSize: '11px', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: 'none' }}
                                                         onClick={() => handleQuickReview(item, 'dismissed')}
                                                     >
                                                         Dismiss
@@ -445,7 +471,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                         <form onSubmit={handleNoteModalSubmit}>
                             <div className="md-form-group">
                                 <label>Violation Type</label>
-                                <div style={{ fontSize: '14px', fontWeight: 500, color: '#202124' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-main)' }}>
                                     {formatType(selectedViolationForNote.type)} (Severity {selectedViolationForNote.severity})
                                 </div>
                             </div>

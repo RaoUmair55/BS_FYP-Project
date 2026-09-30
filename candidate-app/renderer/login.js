@@ -29,14 +29,20 @@ async function handleLogin() {
     } catch (e) {}
 
     let allowedApplications = [];
-    // Check if the exam code exists on the backend if available
-    try {
+    let examType = 'online';
+    let rules = {};
+    // Confirm the exam before starting local monitoring.
+    {
       const checkRes = await fetch(`${serverUrl}/exams/code/${encodeURIComponent(examId)}`);
       if (checkRes.ok) {
         const examData = await checkRes.json();
         if (examData.status && examData.status.toLowerCase() !== 'active') {
           throw new Error(`Exam "${examData.title || examId}" is currently ${examData.status.toUpperCase()} and not accepting candidates.`);
         }
+        if (examData.examType) {
+          examType = examData.examType;
+        }
+        rules = examData.rules || {};
         if (examData.allowedApplications && Array.isArray(examData.allowedApplications)) {
           allowedApplications = examData.allowedApplications;
         }
@@ -48,16 +54,13 @@ async function handleLogin() {
           throw new Error(`Exam code "${examId}" not found. Please verify the code with your instructor.`);
         } else if (errJson.error) {
           throw new Error(errJson.error);
+        } else {
+          throw new Error(`Could not verify exam code (${checkRes.status}). Please try again.`);
         }
-      }
-    } catch (fetchErr) {
-      // If network error / backend unreachable, we warn or re-throw specific message
-      if (fetchErr.message && !fetchErr.message.includes('Failed to fetch')) {
-        throw fetchErr;
       }
     }
     
-    const entryData = { examId, allowedApplications };
+    const entryData = { examId, allowedApplications, examType, rules };
     sessionStorage.setItem('sessionInfo', JSON.stringify(entryData));
     localStorage.setItem('sessionInfo', JSON.stringify(entryData));
 

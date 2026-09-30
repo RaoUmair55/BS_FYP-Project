@@ -81,8 +81,6 @@ router.post('/send', async (req, res) => {
                 previewUrl: mailResult.previewUrl,
                 messageId: mailResult.messageId
             },
-            // Include challenge payload in response body for convenient development/testing
-            testPayload: challenge.payload
         });
     } catch (err) {
         console.error('Verification send error:', err);

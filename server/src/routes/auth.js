@@ -7,6 +7,7 @@ const { z } = require('zod');
 const Teacher = require('../models/Teacher');
 const RefreshToken = require('../models/RefreshToken');
 const AuthAuditLog = require('../models/AuthAuditLog');
+const mailService = require('../services/mail');
 const { generateAccessToken, generateRefreshToken, hashToken } = require('../utils/tokens');
 const { requireAuth } = require('../middleware/authMiddleware');
 
@@ -95,7 +96,7 @@ router.post('/signup', async (req, res) => {
         if (!validation.success) {
             return res.status(400).json({
                 error: 'Validation failed',
-                details: validation.error.errors.map(e => e.message)
+                details: validation.error.issues.map(e => e.message)
             });
         }
 
@@ -174,7 +175,7 @@ router.post('/login', loginLimiter, async (req, res) => {
         if (!validation.success) {
             return res.status(400).json({
                 error: 'Validation failed',
-                details: validation.error.errors.map(e => e.message)
+                details: validation.error.issues.map(e => e.message)
             });
         }
 
@@ -373,15 +374,21 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
         const teacher = await Teacher.findOne({ email: normalizedEmail });
 
         if (teacher) {
-            const resetSecret = process.env.RESET_TOKEN_SECRET || 'dev_reset_token_secret_fallback_key_32bytes!!';
+            const resetSecret = process.env.RESET_TOKEN_SECRET;
+            if (!resetSecret) throw new Error('RESET_TOKEN_SECRET is required');
             const resetToken = jwt.sign(
                 { teacherId: teacher._id.toString(), email: teacher.email, type: 'password_reset' },
                 resetSecret,
                 { expiresIn: '30m' }
             );
 
-            // Log token to console for testability in FYP / development
-            console.log(`[AUTH] Password reset token generated for ${teacher.email}: ${resetToken}`);
+            const resetLink = `${process.env.DASHBOARD_URL || 'http://localhost:5173'}/reset-password?token=${encodeURIComponent(resetToken)}`;
+            const mailResult = await mailService.send({
+                to: teacher.email,
+                subject: 'Reset your IntegrityFlow password',
+                html: `<p>Use this link within 30 minutes to reset your password:</p><p><a href="${resetLink}">Reset password</a></p>`
+            });
+            if (!mailResult.success) console.error('[AUTH] Password reset email failed:', mailResult.error);
 
             await AuthAuditLog.create({
                 teacherId: teacher._id,
@@ -410,12 +417,13 @@ router.post('/reset-password', async (req, res) => {
         if (!validation.success) {
             return res.status(400).json({
                 error: 'Validation failed',
-                details: validation.error.errors.map(e => e.message)
+                details: validation.error.issues.map(e => e.message)
             });
         }
 
         const { token, newPassword } = validation.data;
-        const resetSecret = process.env.RESET_TOKEN_SECRET || 'dev_reset_token_secret_fallback_key_32bytes!!';
+        const resetSecret = process.env.RESET_TOKEN_SECRET;
+        if (!resetSecret) throw new Error('RESET_TOKEN_SECRET is required');
 
         let decoded;
         try {

@@ -3,25 +3,34 @@ const Message = require('../models/Message');
 const Session = require('../models/Session');
 const Exam = require('../models/Exam');
 const { requireAuth } = require('../middleware/authMiddleware');
+const { ownsExam, requireOwnedExam } = require('../middleware/examAccess');
+const { broadcastToExam } = require('../sockets/violationSocket');
 
 const router = express.Router();
 
 /**
  * POST /messages — Send message (Candidate or Teacher)
  */
-router.post('/messages', async (req, res) => {
+router.post('/messages', (req, res, next) => req.body?.sender === 'teacher' || req.body?.isBroadcast ? requireAuth(req, res, next) : next(), async (req, res) => {
     try {
         const { sessionId, examId, sender, senderName, rollNumber, studentId, text, isBroadcast } = req.body;
 
-        if (!text || !text.trim()) {
+        if (typeof text !== 'string' || !text.trim()) {
             return res.status(400).json({ error: 'Message text is required' });
         }
 
-        if (!examId) {
+        if (typeof examId !== 'string' || !examId.trim()) {
             return res.status(400).json({ error: 'examId is required' });
         }
 
         const normalizedSender = (sender === 'teacher') ? 'teacher' : 'student';
+        if (normalizedSender === 'teacher' && !await ownsExam(req, examId)) return res.status(404).json({ error: 'Exam not found' });
+        if (normalizedSender === 'student') {
+            const session = sessionId && await Session.findById(sessionId);
+            if (!session || session.status !== 'active' || session.examId.toUpperCase() !== examId.toUpperCase()) {
+                return res.status(404).json({ error: 'Active session not found' });
+            }
+        }
         let resolvedName = senderName || (normalizedSender === 'teacher' ? 'Examiner' : 'Candidate');
         let resolvedRoll = rollNumber || '';
         let resolvedStudentId = studentId || '';
@@ -59,9 +68,9 @@ router.post('/messages', async (req, res) => {
         const io = req.app.locals.io;
         if (io) {
             if (saved.isBroadcast) {
-                io.emit('examAnnouncement', saved);
+                await broadcastToExam(io, saved.examId, 'examAnnouncement', saved);
             }
-            io.emit('chatMessage', saved);
+            await broadcastToExam(io, saved.examId, 'chatMessage', saved);
         }
 
         res.status(201).json({ success: true, message: saved, ...saved.toObject() });
@@ -89,7 +98,8 @@ router.get('/messages/:sessionId', async (req, res) => {
             });
         } catch (e) {}
 
-        const activeExamId = (examId || (session ? session.examId : null) || '').toUpperCase();
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        const activeExamId = session.examId.toUpperCase();
 
         const query = {
             $or: [
@@ -119,7 +129,7 @@ router.get('/messages/:sessionId', async (req, res) => {
 /**
  * GET /exams/:examId/messages — Get all messages for an entire exam (Teacher-facing)
  */
-router.get('/exams/:examId/messages', requireAuth, async (req, res) => {
+router.get('/exams/:examId/messages', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         const { examId } = req.params;
         const messages = await Message.find({ examId: examId.toUpperCase() }).sort({ timestamp: 1 });
@@ -133,8 +143,10 @@ router.get('/exams/:examId/messages', requireAuth, async (req, res) => {
 /**
  * PATCH /messages/:messageId/read — Mark message as read
  */
-router.patch('/messages/:messageId/read', async (req, res) => {
+router.patch('/messages/:messageId/read', requireAuth, async (req, res) => {
     try {
+        const message = await Message.findById(req.params.messageId);
+        if (!message || !await ownsExam(req, message.examId)) return res.status(404).json({ error: 'Message not found' });
         const updated = await Message.findByIdAndUpdate(
             req.params.messageId, 
             { read: true }, 

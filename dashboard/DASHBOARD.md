@@ -15,11 +15,12 @@
 | :--- | :--- | :--- |
 | **1. Exam Creation & Code System** | Backend `Exam` model, `POST /exams` paper upload, custom/auto code generation, candidate app code validation. | **COMPLETE** ✅ |
 | **2. Violation Review & Triage Workflow** | Backend `PATCH /violations/:violationId/review`, Socket.io `violationReviewed` broadcast, AlertFeed quick confirm/dismiss, notes modal, unreviewed badges. | **COMPLETE** ✅ |
-| **3. Historical Exam View & Analytics Summary** | Backend `GET /exams?status=completed` filter, `GET /exams/:examId/summary` analytics aggregator, ExamManager tabs, End Exam confirmation dialog, ExamSummary stat cards & candidate roster. | **COMPLETE** ✅ |
+| **3. Historical Exam View & Analytics Summary** | Backend `GET /exams?status=completed` filter, dedicated History destination, `GET /exams/:examId/summary` analytics aggregator, End Exam confirmation dialog, ExamSummary stat cards & candidate roster. | **COMPLETE** ✅ |
 | **4. Secure In-Memory Auth & Full Examiner Auth UI Flow** | `AuthContext` with strict in-memory tokens & silent refresh on mount, Axios 401 retry interceptor, Material `Login`, `Signup`, `ForgotPassword`, `ResetPassword`, and App route protection. | **COMPLETE** ✅ |
 | **5. Candidate Identity & Real Student Names** | Dashboard `StudentList` displays `studentName` (primary) and `rollNumber` (secondary), `EvidenceViewer` header displays `Viewing: [Student Name] ([Roll Number])`, `ExamSummary` candidate roster and CSV export include real student names. | **COMPLETE** ✅ |
-| **6. Multi-Student Scalability & Performance** | MongoDB compound indexes (`{ sessionId: 1, timestamp: -1 }`, `{ reviewed: 1 }`, `{ sessionId: 1, reviewed: 1 }`, `{ examId: 1, status: 1 }`), `GET /violations/priority-queue`, cross-student Severity-First Priority Queue tab, client-side 2-minute repeated alert grouping. | **COMPLETE** ✅ |
+| **6. Multi-Student Scalability & Performance** | MongoDB compound indexes (`{ sessionId: 1, timestamp: -1 }`, `{ reviewed: 1 }`, `{ sessionId: 1, reviewed: 1 }`, `{ examId: 1, status: 1 }`), `GET /violations/priority-queue`, cross-student Severity-First Priority Queue view, client-side 2-minute repeated alert grouping. | **COMPLETE** ✅ |
 | **7. Multi-Tenant Examiner Data Isolation** | Strict scoping on `GET /exams`, `GET /sessions/active`, `GET /violations`, and Priority Queue to exams created by the authenticated examiner (`createdBy`), with full super-access preserved for `admin` role. | **COMPLETE** ✅ |
+| **8. Dual-Environment Exam Modes (Online Remote vs. Physical Lab)** | `ExamManager` supports 🌐 Remote Online (Full Webcam AI Vision/Voice) and 🏫 Physical Lab (No Cam/Mic Needed, Process Whitelist, USB Flash Guard & Clipboard Block) with card badges and automatic student self-check bypassing. | **COMPLETE** ✅ |
 
 ---
 
@@ -48,7 +49,10 @@ The dashboard enforces a clean, accessible **Material Design** visual direction:
     - **Completed Exam**: `#5F6368` (Settled muted gray background)
     - **Confirmed Violation**: `#D93025` (Material Red badge, background `#FCE8E6`)
     - **Dismissed Violation**: `#5F6368` (Muted Gray badge, background `#F1F3F4`)
-    - **Pending Review**: `#1A73E8` (Primary Blue badge, background `#E8F0FE`)
+  - **Pending Review**: `#1A73E8` (Primary Blue badge, background `#E8F0FE`)
+  - **Dark theme**: uses the same semantic tokens for surfaces, text, borders, and status colors; the examiner can toggle it from the header, and the preference is saved in local browser settings.
+  - Risk badges use green below 30, amber from 30 to 60, red above 60, and a neutral placeholder while a score is unavailable.
+  - Violation chart colors stay attached to violation types so the legend does not recolor when counts change.
 
 * **Elevation & Depth**:
   - Material card surface shadow: `box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15)`
@@ -71,6 +75,23 @@ The dashboard enforces a clean, accessible **Material Design** visual direction:
     - `dashboard/public/logo.svg`: Scalable vector logo used across dashboard header and views.
     - `dashboard/src/assets/`: Source asset copies for React imports if needed.
     - `scripts/generate_branding_assets.py`: Central python generation script to update branding assets simultaneously across Electron and React.
+
+---
+
+## What This Does
+
+## Examiner Dashboard Information Architecture
+
+The authenticated dashboard uses four persistent destinations so urgent work stays separate from setup and reference tasks:
+
+- **Live Monitoring** groups the active candidate roster, severity-first Priority Queue, Live Feed, Webcam Grid, Evidence Review, and Exam Chat. The Priority Queue is the default review view; selecting a candidate opens that candidate's evidence. A live badge shows unreviewed severity 4–5 violations across the examiner's active exams.
+- **Exams** contains active exams by default, with drafts in a secondary filter. Creation, paper upload/release, activation, and ending an exam remain beside the relevant exam.
+- **History** contains completed exams and the existing exam summary/roster view. This keeps historical reference separate from live operations.
+- **Admin** appears only for administrators and contains **Overview**, **Evidence & Storage**, **Audit Log**, and **Users & Access**.
+
+Login, signup, password reset, and account recovery remain standalone authentication screens before the dashboard. Teacher identity and sign-out stay in the header profile control. Grouping live triage together prioritizes time-sensitive action; separating setup and completed records reduces noise when an examiner is responding to active alerts.
+
+Live Monitoring shows a dedicated empty state when no exam is active, with a direct route to Exams. The visual language retains the Material palette, Roboto typography, shared card elevation, and risk colors. Small animated alert and empty-state accents add status and depth; they respect the operating system's reduced-motion setting. Dark theme uses the same semantic palette and is available throughout authentication and dashboard screens.
 
 ---
 
@@ -183,13 +204,13 @@ However, collapsing or merging these records inside the database or backend API 
 
 - `dashboard/src/components/PriorityQueue.jsx`: Added the cross-student, severity-ranked triage feed with live Socket.io re-sorting, 2-minute consecutive grouping, inline confirm/dismiss actions, and evidence timeline drill-down.
 - `dashboard/src/components/AlertFeed.jsx`: Integrated 2-minute repeated alert grouping (`3× Head Turned Away`) with expandable child instances and preserved per-student triage workflow.
-- `dashboard/src/components/PriorityQueue.css`: Dedicated styling for the Priority Queue tab, severity color bars, grouped counter badges, and nested instance lists.
+- `dashboard/src/components/Components.css`: Shared styling for the Priority Queue tab and other dashboard components.
 - `dashboard/src/components/StudentList.jsx`: Updated candidate list items to render `studentName` as primary text and `rollNumber` as secondary subtitle. Retained `sessionId` in hover tooltip and updated search filtering to match name, roll number, exam code, and session ID.
 - `dashboard/src/components/EvidenceViewer.jsx`: Updated header title to `"Viewing: [studentName] ([rollNumber])"`, fixed endpoint URL in `fetchSessionData`, and retained debug metadata.
 - `dashboard/src/components/ExamSummary.jsx`: Updated historical exam summary candidate roster table to show `studentName` (primary) and `rollNumber` (secondary). Updated CSV export generation with `Student Name` and `Roll Number` columns.
 - `dashboard/src/components/CandidateGrid.jsx`: Real-time candidate gallery with verification photos, live connection indicators, dynamic risk gauges, 1-click +5m/+10m exam extensions, direct evidence review, and 1-on-1 chat launcher.
 - `dashboard/src/components/LiveExamChat.jsx`: Zoom/Meet-style proctored exam communication center supporting exam-wide broadcast announcements, candidate channels with student Name & Roll Number, unread counters, and instant responses.
-- `dashboard/src/pages/Dashboard.jsx`: Top navigation toolbar integration with "Priority Queue" tab (primary triage view with `Zap` icon) and responsive mobile drawer navigation.
+- `dashboard/src/pages/Dashboard.jsx`: Persistent navigation for Live Monitoring, Exams, History, and administrator tools; live high-severity alert count; and an explicit no-active-exams state.
 - `dashboard/src/pages/Dashboard.css`: Full responsive overhaul with media queries (`1200px`, `992px`, `768px`, `600px`), fluid split-view to vertical stack transition, hidden scrollbar touch sub-tabs, and mobile header wrap.
 - `dashboard/src/components/Components.css`: Responsive modal card constraints (`94vw`/`90vh`), auto-fit candidate card grid (`minmax(280px, 1fr)`), table horizontal scroll wrappers, and touch tap target optimizations.
 - `dashboard/DASHBOARD.md`: Updated with candidate identity flow notes, Priority Queue specs, client-side grouping architecture notes, and testing procedures.
@@ -203,16 +224,16 @@ The examiner dashboard features a responsive layout ensuring full functionality 
 | Breakpoint Tier | Max Width | Target Devices | Layout Behavior |
 | :--- | :--- | :--- | :--- |
 | **Large Desktop** | $\ge 1200\text{px}$ | 1080p / 1440p / 4K Monitors | 2-Column Split View (`.dashboard-left` 380px, `.dashboard-right` flex 1), full fixed viewport height (`100vh - 64px`). |
-| **Medium Desktop / Laptop** | $992\text{px} - 1200\text{px}$ | 13"–15" Laptops, Surface Pro | Sidebar scales to 320px, compact gutters (`16px`), all 4 sub-tabs fit cleanly. |
+| **Medium Desktop / Laptop** | $992\text{px} - 1200\text{px}$ | 13"–15" Laptops, Surface Pro | Compact navigation and gutters (`16px`); monitoring split view scales the candidate roster to 290px. |
 | **Tablet Viewport** | $768\text{px} - 992\text{px}$ | iPad, Android Tablets (Portrait & Landscape) | Dashboard switches to fluid **single-column vertical stack**; candidate roster top with scroll limit, right panel expands below with minimum height 520px. |
 | **Mobile Viewport** | $< 768\text{px}$ | Smartphones, narrow browser windows | Header compresses into wrapped flex row; `.sub-tabs` and `.exam-tabs-bar` enable frictionless horizontal swiping without scrollbars; modals fit comfortably with `94vw` bounds. |
 
 ### Key Responsive Features
 1. **Adaptive Header & Mobile Navigation Drawer**:
-   - **Desktop ($\ge 992\text{px}$)**: Full horizontal Material navigation bar displaying brand logo, navigation tabs (`Exams & Analytics`, `Live Monitoring`, `Admin Console`), sound chime toggle, online connection pill, and teacher profile / demo sign-in controls.
+   - **Desktop ($\ge 992\text{px}$)**: Full horizontal Material navigation bar displaying brand logo, navigation tabs (`Live Monitoring`, `Exams`, `History`, and administrator tools), the live high-severity alert count, sound toggle, connection state, and teacher profile.
    - **Tablets & Mobile ($< 992\text{px}$)**: Header automatically compresses into a clean, single-line app bar with quick sound toggle, live status indicator dot, and a touch hamburger menu button (`Menu` / `X`).
    - **Slide-Down Mobile Drawer**: Tapping the hamburger opens an overlay menu containing navigation items, active tab indicators, and full user profile / demo login controls.
-2. **Touch-Friendly Sub-Tabs**: The 5 monitoring sub-tabs (`Priority Queue`, `Live Feed`, `Webcam Grid`, `Evidence Review`, `Exam Chat`) use CSS flex and `overflow-x: auto; white-space: nowrap; scrollbar-width: none;` allowing examiners on tablets/phones to swipe between views without clipped or wrapped text.
+2. **Touch-Friendly Sub-Tabs**: The five monitoring views (`Priority Queue`, `Live Feed`, `Webcam Grid`, `Evidence Review`, `Exam Chat`) remain in a scrollable secondary switcher, keeping the persistent navigation focused on major destinations.
 3. **Auto-Reflow Candidate Grid**: Candidate webcam cards reflow dynamically using `grid-template-columns: repeat(auto-fill, minmax(280px, 1fr))` on desktop/tablets and `1fr` on mobile devices.
 4. **Table & Card Containment**: Analytics tables and summary cards incorporate touch-safe horizontal wrappers preventing viewport overflow while keeping data rows fully readable.
 
@@ -242,13 +263,13 @@ The examiner dashboard features a responsive layout ensuring full functionality 
 
 ### 1. Priority Queue Severity Ordering Verification
 1. Ensure at least two test candidate sessions are active.
-2. Trigger a low-severity infraction for Student A (e.g. `head_pose_turn`, severity 0.3) at time $T_1$.
-3. Trigger a high-severity infraction for Student B (e.g. `multiple_faces`, severity 0.9) at time $T_2$ ($T_2 > T_1$).
+2. Trigger a low-severity infraction for Student A (e.g. `head_turn_away`, severity 2) at time $T_1$.
+3. Trigger a high-severity infraction for Student B (e.g. `second_person_detected`, severity 4) at time $T_2$ ($T_2 > T_1$).
 4. Open the **Priority Queue** tab in the Examiner Dashboard.
-5. **Verify**: Student B's high-severity infraction (0.9) appears **above** Student A's low-severity infraction (0.3), confirming severity-descending sorting takes priority over chronological arrival time.
+5. **Verify**: Student B's severity-4 infraction appears **above** Student A's severity-2 infraction.
 
 ### 2. Grouped Repeated Violations Verification (2-Minute Sliding Window)
-1. Trigger 3 consecutive `head_pose_turn` infractions for Student A within 30 seconds.
+1. Trigger 3 consecutive `head_turn_away` infractions for Student A within 30 seconds.
 2. In both the **Priority Queue** and the candidate's **Live Feed**:
    - Confirm the 3 infractions collapse into **one single grouped card** displaying `"3× Head Turned Away"` with the latest timestamp.
    - Click the expand toggle / chevron: confirm the card smoothly expands to display all 3 individual instances with their discrete timestamps, review controls, and snapshot links.

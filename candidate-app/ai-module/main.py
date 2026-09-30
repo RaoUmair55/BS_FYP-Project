@@ -1,20 +1,24 @@
+import warnings
+warnings.filterwarnings('ignore')
 import uvicorn
 import os
+import json
 import requests
 import threading
 import time
 import psutil
 from whitelist_enforcer import WhitelistEnforcer
 from usb_monitor import USBMonitor
-from ai_monitor import AIMonitor
-from voice_monitor import VoiceMonitor
 import server
 
-ELECTRON_RECEIVER_URL = "http://127.0.0.1:8766/violation"
+ELECTRON_RECEIVER_URL = f"http://127.0.0.1:{int(os.getenv('ELECTRON_RECEIVER_PORT', '8766'))}/violation"
 
 def send_violation_to_electron(payload):
+    is_self_check_env = os.environ.get("IS_SELF_CHECK", "false").lower() in ("true", "1")
+    if is_self_check_env:
+        return
     try:
-        requests.post(ELECTRON_RECEIVER_URL, json=payload, timeout=2.0)
+        requests.post(ELECTRON_RECEIVER_URL, json=payload, timeout=8.0).raise_for_status()
     except Exception as e:
         print(f"[AI Module] Failed to send violation to Electron: {e}")
 
@@ -53,7 +57,11 @@ if __name__ == "__main__":
     )
     # Inject enforcer instance so server can use it for check_running_apps
     server.enforcer = enforcer
-    enforcer.start()
+    exam_rules = json.loads(os.environ.get('EXAM_RULES', '{}'))
+    if not is_self_check and exam_rules.get('enforceAppWhitelist') is not False:
+        enforcer.start()
+    elif is_self_check:
+        print("[AI Module] Self-check mode active: Whitelist continuous background enforcement paused.")
     
     usb_monitor = USBMonitor(
         session_id=exam_session_id,
@@ -62,37 +70,50 @@ if __name__ == "__main__":
     )
     # Inject usb_monitor instance so server can use it for /check-usb
     server.usb_monitor = usb_monitor
-    usb_monitor.start()
-
-    voice_monitor = VoiceMonitor(
-        session_id=exam_session_id,
-        on_violation_callback=send_violation_to_electron,
-        is_self_check=is_self_check
-    )
-    # Inject voice_monitor instance so server can use it for /set-reference-voice
-    server.voice_monitor = voice_monitor
-    
     if not is_self_check:
-        try:
-            monitor = AIMonitor(
-                session_id=exam_session_id,
-                on_violation_callback=send_violation_to_electron
-            )
-            monitor.start()
-        except Exception as e:
-            print(f"[AI Module Warning] Could not start AIMonitor: {e}")
-
-        try:
-            voice_monitor.start()
-        except Exception as e:
-            print(f"[AI Module Warning] Could not start VoiceMonitor: {e}")
+        usb_monitor.start()
     else:
-        print("[AI Module] Self-check mode active. Skipping AIMonitor and VoiceMonitor continuous streams until exam starts.")
+        print("[AI Module] Self-check mode active: USB continuous background monitoring paused.")
+
+    exam_type = os.environ.get("EXAM_TYPE", "online").lower()
+    is_physical_lab = (exam_type == "physical_lab")
+    voice_monitor = None
+    
+    if is_physical_lab:
+        server.voice_monitor = None
+        print("[AI Module] 🏫 Physical Lab Exam Mode active. Webcam AIMonitor and VoiceMonitor are bypassed.")
+    else:
+        from voice_monitor import VoiceMonitor
+        voice_monitor = VoiceMonitor(
+            session_id=exam_session_id,
+            on_violation_callback=send_violation_to_electron,
+            is_self_check=is_self_check
+        )
+        # Inject voice_monitor instance so server can use it for /set-reference-voice
+        server.voice_monitor = voice_monitor
+
+        if not is_self_check:
+            try:
+                from ai_monitor import AIMonitor
+                monitor = AIMonitor(
+                    session_id=exam_session_id,
+                    on_violation_callback=send_violation_to_electron
+                )
+                monitor.start()
+            except Exception as e:
+                print(f"[AI Module Warning] Could not start AIMonitor: {e}")
+
+            try:
+                voice_monitor.start()
+            except Exception as e:
+                print(f"[AI Module Warning] Could not start VoiceMonitor: {e}")
+        else:
+            print("[AI Module] Self-check mode active. Skipping AIMonitor and VoiceMonitor continuous streams until exam starts.")
     
     try:
         uvicorn.run(server.app, host="127.0.0.1", port=8000)
     finally:
         enforcer.stop()
         usb_monitor.stop()
-        voice_monitor.stop()
-
+        if voice_monitor:
+            voice_monitor.stop()

@@ -7,7 +7,8 @@ class LinkVerificationStrategy extends VerificationStrategy {
      */
     async generateChallenge(teacherId, email) {
         const idStr = teacherId ? teacherId.toString() : '';
-        const secret = process.env.EMAIL_TOKEN_SECRET || 'dev_email_token_secret_fallback_32bytes!!';
+        const secret = process.env.EMAIL_TOKEN_SECRET;
+        if (!secret) throw new Error('EMAIL_TOKEN_SECRET is required');
         
         const payload = jwt.sign(
             { teacherId: idStr, email, purpose: 'email_verification' },
@@ -33,7 +34,8 @@ class LinkVerificationStrategy extends VerificationStrategy {
                 return { valid: false, reason: 'Verification token is required.' };
             }
 
-            const secret = process.env.EMAIL_TOKEN_SECRET || 'dev_email_token_secret_fallback_32bytes!!';
+            const secret = process.env.EMAIL_TOKEN_SECRET;
+            if (!secret) throw new Error('EMAIL_TOKEN_SECRET is required');
             const decoded = jwt.verify(submittedValue, secret);
 
             if (decoded.purpose !== 'email_verification') {

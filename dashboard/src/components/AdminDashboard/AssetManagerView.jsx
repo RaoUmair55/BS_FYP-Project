@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { assetUrl } from '../../services/api';
 import { 
     FileText, 
     Image, 
@@ -80,7 +81,7 @@ export default function AssetManagerView({
     const handleDownload = (item) => {
         if (!item.url) return;
         const link = document.createElement('a');
-        link.href = item.url;
+        link.href = assetUrl(item.url);
         link.target = '_blank';
         link.download = item.filename || 'download';
         document.body.appendChild(link);
@@ -111,7 +112,7 @@ export default function AssetManagerView({
                 <div className="admin-filter-group">
                     {/* Search Input */}
                     <div className="google-search-input">
-                        <Search size={16} color="#5f6368" />
+                        <Search size={16} color="var(--text-muted)" />
                         <input 
                             type="text" 
                             placeholder="Search candidate, exam, file..." 
@@ -134,10 +135,10 @@ export default function AssetManagerView({
                     </select>
 
                     {/* View Switcher */}
-                    <div style={{ display: 'flex', border: '1px solid #dadce0', borderRadius: '6px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
                         <button 
                             className="asset-icon-btn" 
-                            style={{ borderRadius: 0, border: 'none', background: viewMode === 'grid' ? '#e8f0fe' : '#fff', color: viewMode === 'grid' ? '#1a73e8' : '#5f6368' }}
+                            style={{ borderRadius: 0, border: 'none', background: viewMode === 'grid' ? 'var(--primary-soft)' : 'var(--bg-surface)', color: viewMode === 'grid' ? 'var(--primary)' : 'var(--text-muted)' }}
                             onClick={() => setViewMode('grid')}
                             title="Grid View"
                         >
@@ -145,7 +146,7 @@ export default function AssetManagerView({
                         </button>
                         <button 
                             className="asset-icon-btn" 
-                            style={{ borderRadius: 0, border: 'none', borderLeft: '1px solid #dadce0', background: viewMode === 'table' ? '#e8f0fe' : '#fff', color: viewMode === 'table' ? '#1a73e8' : '#5f6368' }}
+                            style={{ borderRadius: 0, border: 'none', borderLeft: '1px solid var(--border-color)', background: viewMode === 'table' ? 'var(--primary-soft)' : 'var(--bg-surface)', color: viewMode === 'table' ? 'var(--primary)' : 'var(--text-muted)' }}
                             onClick={() => setViewMode('table')}
                             title="Table View"
                         >
@@ -177,16 +178,16 @@ export default function AssetManagerView({
                     )}
 
                     <button className="google-btn google-btn-outlined" onClick={onPurgeExam} title="Clean up all media for a specific completed exam">
-                        <FolderX size={14} color="#d93025" />
+                        <FolderX size={14} color="var(--danger)" />
                         Purge by Exam
                     </button>
                 </div>
             </div>
 
             {/* Selection Status Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#5f6368', padding: '0 4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: 'var(--text-muted)', padding: '0 4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={toggleSelectAll}>
-                    {isAllSelected ? <CheckSquare size={16} color="#1a73e8" /> : <Square size={16} color="#5f6368" />}
+                    {isAllSelected ? <CheckSquare size={16} color="var(--primary)" /> : <Square size={16} color="var(--text-muted)" />}
                     <span>Select All ({filteredAssets.length} items)</span>
                 </div>
                 {selectedIds.length > 0 && (
@@ -196,14 +197,14 @@ export default function AssetManagerView({
 
             {/* Main Content Area */}
             {loading ? (
-                <div style={{ padding: '60px', textAlign: 'center', color: '#5f6368' }}>
+                <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <div className="auth-spinner" style={{ margin: '0 auto 16px auto' }}></div>
-                    <span>Loading assets from Cloudinary & Database...</span>
+                    <span>Loading evidence assets...</span>
                 </div>
             ) : filteredAssets.length === 0 ? (
-                <div className="admin-card" style={{ padding: '60px', textAlign: 'center', color: '#5f6368' }}>
-                    <FileText size={40} color="#dadce0" style={{ margin: '0 auto 12px auto' }} />
-                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#202124', marginBottom: '4px' }}>No media assets found</div>
+                <div className="admin-card" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <FileText size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px auto' }} />
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>No media assets found</div>
                     <div style={{ fontSize: '13px' }}>No files match your selected filter or search criteria.</div>
                 </div>
             ) : viewMode === 'grid' ? (
@@ -218,16 +219,16 @@ export default function AssetManagerView({
                                 
                                 {/* Selection Checkbox */}
                                 <div className="asset-checkbox-wrapper" onClick={() => toggleSelectItem(item.id)}>
-                                    {isSelected ? <CheckSquare size={18} color="#1a73e8" /> : <Square size={18} color="#5f6368" />}
+                                    {isSelected ? <CheckSquare size={18} color="var(--primary)" /> : <Square size={18} color="var(--text-muted)" />}
                                 </div>
 
                                 {/* Preview Area */}
-                                <div className="asset-preview-container" onClick={() => onPreview(item)}>
+                                <div className="asset-preview-container" onClick={() => onPreview({ ...item, url: assetUrl(item.url) })}>
                                     {isImage && item.url ? (
-                                        <img src={item.url} alt={item.title} className="asset-preview-img" loading="lazy" />
+                                        <img src={assetUrl(item.url)} alt={item.title} className="asset-preview-img" loading="lazy" />
                                     ) : (
                                         <div className="asset-paper-icon-preview">
-                                            <FileText size={36} color="#64748b" />
+                                            <FileText size={36} color="var(--text-muted)" />
                                             <span style={{ fontSize: '11px', color: '#94a3b8' }}>{item.filename || 'Document'}</span>
                                         </div>
                                     )}
@@ -238,7 +239,7 @@ export default function AssetManagerView({
                                     <div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                                             {getAssetChip(item.assetType)}
-                                            <span style={{ fontSize: '11px', color: '#80868b' }}>
+                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                                 {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''}
                                             </span>
                                         </div>
@@ -256,14 +257,14 @@ export default function AssetManagerView({
                                     {/* Action Footer */}
                                     <div className="asset-card-footer">
                                         <div className="asset-action-btn-group">
-                                            <button className="asset-icon-btn" onClick={() => onPreview(item)} title="Quick Preview">
+                                            <button className="asset-icon-btn" onClick={() => onPreview({ ...item, url: assetUrl(item.url) })} title="Quick Preview">
                                                 <Eye size={14} />
                                             </button>
                                             <button className="asset-icon-btn" onClick={() => handleDownload(item)} title="Download / Open Cloudinary CDN">
                                                 <Download size={14} />
                                             </button>
-                                            <button className="asset-icon-btn" onClick={() => handleCopyLink(item.url, item.id)} title="Copy CDN Link">
-                                                {copiedId === item.id ? <Check size={14} color="#188038" /> : <Copy size={14} />}
+                                            <button className="asset-icon-btn" onClick={() => handleCopyLink(assetUrl(item.url), item.id)} title="Copy CDN Link">
+                                                {copiedId === item.id ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
                                             </button>
                                         </div>
                                         <button 
@@ -287,7 +288,7 @@ export default function AssetManagerView({
                             <tr>
                                 <th style={{ width: '40px' }}>
                                     <div onClick={toggleSelectAll} style={{ cursor: 'pointer' }}>
-                                        {isAllSelected ? <CheckSquare size={16} color="#1a73e8" /> : <Square size={16} color="#5f6368" />}
+                                        {isAllSelected ? <CheckSquare size={16} color="var(--primary)" /> : <Square size={16} color="var(--text-muted)" />}
                                     </div>
                                 </th>
                                 <th>Category</th>
@@ -302,38 +303,38 @@ export default function AssetManagerView({
                             {filteredAssets.map(item => {
                                 const isSelected = selectedIds.includes(item.id);
                                 return (
-                                    <tr key={item.id} style={{ background: isSelected ? '#f8fafd' : 'transparent' }}>
+                                    <tr key={item.id} style={{ background: isSelected ? 'var(--bg-base)' : 'transparent' }}>
                                         <td>
                                             <div onClick={() => toggleSelectItem(item.id)} style={{ cursor: 'pointer' }}>
-                                                {isSelected ? <CheckSquare size={16} color="#1a73e8" /> : <Square size={16} color="#5f6368" />}
+                                                {isSelected ? <CheckSquare size={16} color="var(--primary)" /> : <Square size={16} color="var(--text-muted)" />}
                                             </div>
                                         </td>
                                         <td>{getAssetChip(item.assetType)}</td>
                                         <td>
-                                            <div style={{ fontWeight: 600, color: '#202124' }}>
+                                            <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>
                                                 {item.candidateName || item.title}
                                             </div>
                                             {item.rollNumber && (
-                                                <div style={{ fontSize: '11px', color: '#5f6368' }}>Roll: {item.rollNumber}</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Roll: {item.rollNumber}</div>
                                             )}
                                         </td>
-                                        <td><span className="md-badge" style={{ background: '#f1f3f4', fontSize: '11px' }}>{item.examId || 'N/A'}</span></td>
+                                        <td><span className="md-badge" style={{ background: 'var(--bg-muted)', fontSize: '11px' }}>{item.examId || 'N/A'}</span></td>
                                         <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.filename}>
                                             {item.filename}
                                         </td>
-                                        <td style={{ fontSize: '12px', color: '#5f6368' }}>
+                                        <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                                             {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'N/A'}
                                         </td>
                                         <td style={{ textAlign: 'right' }}>
                                             <div style={{ display: 'inline-flex', gap: '6px' }}>
-                                                <button className="asset-icon-btn" onClick={() => onPreview(item)} title="Quick Preview">
+                                                <button className="asset-icon-btn" onClick={() => onPreview({ ...item, url: assetUrl(item.url) })} title="Quick Preview">
                                                     <Eye size={14} />
                                                 </button>
                                                 <button className="asset-icon-btn" onClick={() => handleDownload(item)} title="Download / Open CDN">
                                                     <Download size={14} />
                                                 </button>
-                                                <button className="asset-icon-btn" onClick={() => handleCopyLink(item.url, item.id)} title="Copy Link">
-                                                    {copiedId === item.id ? <Check size={14} color="#188038" /> : <Copy size={14} />}
+                                                <button className="asset-icon-btn" onClick={() => handleCopyLink(assetUrl(item.url), item.id)} title="Copy Link">
+                                                    {copiedId === item.id ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
                                                 </button>
                                                 <button className="asset-icon-btn delete" onClick={() => onDeleteSingle(item)} title="Permanently Delete">
                                                     <Trash2 size={14} />

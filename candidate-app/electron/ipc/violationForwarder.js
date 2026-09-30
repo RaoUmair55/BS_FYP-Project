@@ -1,31 +1,49 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const path = require('path');
-const { forwardViolationToServer } = require('./pythonBridge');
+const { forwardViolationToServer, getExamActive } = require('./pythonBridge');
 
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const ELECTRON_RECEIVER_PORT = process.env.ELECTRON_RECEIVER_PORT || 8766;
 
 let server;
+let onLocalViolationCallback = null;
 
-function startReceiver() {
+function setViolationListener(cb) {
+  onLocalViolationCallback = cb;
+}
+
+function startReceiver(onViolationCallback) {
+  if (onViolationCallback) {
+    onLocalViolationCallback = onViolationCallback;
+  }
   return new Promise((resolve, reject) => {
     const app = express();
     app.use(express.json());
 
     app.post('/violation', async (req, res) => {
       const violationPayload = req.body;
+      if (!getExamActive()) {
+        console.log(`[ViolationReceiver] Pre-exam violation dropped: ${violationPayload?.type} (Student in pre-check phase)`);
+        return res.status(200).json({ status: 'ignored_pre_exam' });
+      }
       console.log('[ViolationReceiver] Received violation from Python:', violationPayload);
       
-      // Immediately respond to Python so we don't block it
-      res.status(202).json({ status: 'accepted', message: 'Violation received and queued for forwarding' });
-      
-      // Forward to backend asynchronously
-      await forwardViolationToServer(violationPayload);
+      // Notify Electron main process listener if registered
+      if (typeof onLocalViolationCallback === 'function') {
+        try {
+          onLocalViolationCallback(violationPayload);
+        } catch (cbErr) {
+          console.error('[ViolationReceiver] Error in local violation callback:', cbErr);
+        }
+      }
+
+      const saved = await forwardViolationToServer(violationPayload);
+      res.status(saved ? 202 : 503).json({ status: saved ? 'accepted' : 'failed' });
     });
 
-    server = app.listen(ELECTRON_RECEIVER_PORT, () => {
+    server = app.listen(ELECTRON_RECEIVER_PORT, '127.0.0.1', () => {
       console.log(`[ViolationReceiver] Listening for Python violations on port ${ELECTRON_RECEIVER_PORT}`);
       resolve();
     });
@@ -46,5 +64,6 @@ function stopReceiver() {
 
 module.exports = {
   startReceiver,
-  stopReceiver
+  stopReceiver,
+  setViolationListener
 };

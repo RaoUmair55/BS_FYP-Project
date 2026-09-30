@@ -38,6 +38,7 @@ class AIMonitor:
         Initializes the AIMonitor with session details, configuration, and ML models.
         """
         self.session_id = session_id
+        self.exam_rules = json.loads(os.environ.get('EXAM_RULES', '{}'))
         self.on_violation = on_violation or on_violation_callback
         self.is_active = False
         self.running = False
@@ -794,6 +795,13 @@ class AIMonitor:
                 )
 
     def _emit_violation(self, violation_type, severity, details, frame=None):
+        rule_for_type = {
+            'cell_phone': 'detectCellPhone',
+            'second_person_detected': 'detectMultiplePersons',
+            'head_turn_away': 'detectLookingAway',
+        }.get(violation_type)
+        if rule_for_type and self.exam_rules.get(rule_for_type) is False:
+            return
         """
         Constructs the violation event matching the standard schema and emits it with webcam evidence.
         """

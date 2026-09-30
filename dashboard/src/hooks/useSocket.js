@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import api from '../services/api';
+import { getInMemoryToken, subscribeTokenChange } from '../context/AuthContext';
 
 export default function useSocket() {
     const [connected, setConnected] = useState(false);
@@ -15,13 +16,18 @@ export default function useSocket() {
         const serverUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         console.log(`Connecting to Socket.io server at ${serverUrl}`);
         
-        socketRef.current = io(serverUrl);
+        socketRef.current = io(serverUrl, { 
+            auth: (cb) => cb({ token: getInMemoryToken() }),
+            autoConnect: true,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 2000
+        });
         const socket = socketRef.current;
 
         // Fetch recent initial violations so Live Feed is populated immediately
         const fetchInitialViolations = async () => {
             try {
-                const res = await api.get('/violations');
+                const res = await api.get('/violations?active=true');
                 if (res.data && Array.isArray(res.data)) {
                     setViolations(res.data.slice(0, 50));
                 }
@@ -30,6 +36,17 @@ export default function useSocket() {
             }
         };
         fetchInitialViolations();
+
+        // Subscribe to auth token updates to reconnect socket when teacher logs in / refreshes
+        const unsubscribeToken = subscribeTokenChange((token) => {
+            if (token) {
+                socket.auth = { token };
+                if (!socket.connected) {
+                    socket.connect();
+                }
+                fetchInitialViolations();
+            }
+        });
 
         socket.on('connect', () => {
             console.log('Socket connected:', socket.id);
@@ -84,6 +101,7 @@ export default function useSocket() {
 
         // Cleanup on unmount
         return () => {
+            unsubscribeToken();
             if (socket) {
                 socket.disconnect();
             }

@@ -97,7 +97,7 @@ class VoiceMonitor:
         candidates = []
         if self.session_id and str(self.session_id).lower() not in ("unknown-session", "null", "undefined", "none"):
             candidates.append(self._get_reference_path(self.session_id))
-        candidates.append(os.path.join(self.storage_dir, "voice_reference_latest.npy"))
+        # A missing session profile must not silently reuse another candidate's voice.
         
         # Check specific candidates first
         for path in candidates:
@@ -109,18 +109,6 @@ class VoiceMonitor:
                 except Exception as e:
                     print(f"[VoiceMonitor Warning] Could not load persisted reference voice from {path}: {e}")
 
-        # Fallback: load the most recently modified profile in storage_dir
-        try:
-            profile_files = [
-                os.path.join(self.storage_dir, f) for f in os.listdir(self.storage_dir)
-                if f.startswith("voice_reference_") and f.endswith(".npy")
-            ]
-            if profile_files:
-                newest_file = max(profile_files, key=os.path.getmtime)
-                self.reference_embedding = np.load(newest_file)
-                print(f"[VoiceMonitor] Fallback: Loaded newest reference voice embedding from: {newest_file}")
-        except Exception as e:
-            print(f"[VoiceMonitor Warning] Fallback loading failed: {e}")
 
     def set_reference_voice(self, audio_data, session_id: Optional[str] = None) -> dict:
         """

@@ -8,7 +8,9 @@ const Exam = require('../models/Exam');
 const { broadcastViolation, broadcastRiskScoreUpdate, broadcastViolationReview } = require('../sockets/violationSocket');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
+const { requireOwnedSession, requireOwnedViolation } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
+const { broadcastToExam } = require('../sockets/violationSocket');
 const multer = require('multer');
 
 // Configure multer for screenshot uploads using memory storage
@@ -22,6 +24,17 @@ const router = express.Router();
 // POST /violation — Machine-to-machine (Candidate App -> Server, intentionally open)
 router.post('/violation', upload.single('screenshot'), async (req, res) => {
     try {
+        if (!mongoose.Types.ObjectId.isValid(req.body.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
+        const session = await Session.findById(req.body.sessionId);
+        if (!session) return res.status(404).json({ error: 'Exam session not found' });
+        
+        // If session was already terminated or completed, acknowledge gracefully so client buffer doesn't loop
+        if (session.status !== 'active') {
+            return res.status(200).json({ message: 'Session is no longer active', status: session.status, terminated: true });
+        }
+        const numericSeverity = Number(req.body.severity);
+        if (!Number.isInteger(numericSeverity) || numericSeverity < 1 || numericSeverity > 5) return res.status(400).json({ error: 'Invalid severity' });
+        if (typeof req.body.type !== 'string' || !Violation.schema.path('type').enumValues.includes(req.body.type)) return res.status(400).json({ error: 'Invalid violation type' });
         let details = req.body.details;
         if (typeof details === 'string') {
             try {
@@ -29,7 +42,7 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
             } catch (e) {}
         }
         
-        let screenshotPath = req.body.screenshotPath || null;
+        let screenshotPath = null;
         if (req.file) {
             try {
                 const uniqueFilename = `screenshot-${Date.now()}-${req.file.originalname || 'snapshot.jpg'}`;
@@ -40,7 +53,7 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
             }
         }
         
-        const severity = parseInt(req.body.severity, 10) || req.body.severity;
+        const severity = numericSeverity;
         
         const newViolation = new Violation({
             sessionId: req.body.sessionId,
@@ -65,7 +78,9 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
 
         const savedViolation = await newViolation.save();
         const io = req.app.locals.io;
-        broadcastViolation(io, savedViolation);
+        if (session.status === 'active') {
+            broadcastViolation(io, { ...savedViolation.toObject(), examId: session.examId });
+        }
 
         try {
             const scoreData = await calculateRiskScore(savedViolation.sessionId);
@@ -85,6 +100,7 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
 router.get('/violations', requireAuth, async (req, res) => {
     try {
         const query = {};
+        const activeOnly = req.query.active === 'true';
         if (req.query.reviewed !== undefined) {
             query.reviewed = req.query.reviewed === 'true';
         }
@@ -93,9 +109,10 @@ router.get('/violations', requireAuth, async (req, res) => {
         const isAdmin = req.teacher?.role === 'admin';
 
         // Enforce teacher isolation: only return violations from exams owned by this teacher
+        let myCodes = null;
         if (!isAdmin && currentTeacherId) {
             const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
-            const myCodes = [];
+            myCodes = [];
             myExams.forEach(e => {
                 if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
                 if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
@@ -106,22 +123,46 @@ router.get('/violations', requireAuth, async (req, res) => {
                 return res.json([]);
             }
 
-            const mySessions = await Session.find({ examId: { $in: myCodes } }).select('_id sessionId studentId').lean();
-            const mySessionIds = [];
-            mySessions.forEach(s => {
-                mySessionIds.push(String(s._id));
-                if (s.sessionId) mySessionIds.push(String(s.sessionId));
-                if (s.studentId) mySessionIds.push(String(s.studentId));
-            });
+            if (!activeOnly) {
+                const mySessions = await Session.find({ examId: { $in: myCodes } }).select('_id sessionId studentId').lean();
+                const mySessionIds = [];
+                mySessions.forEach(s => {
+                    mySessionIds.push(String(s._id));
+                    if (s.sessionId) mySessionIds.push(String(s.sessionId));
+                    if (s.studentId) mySessionIds.push(String(s.studentId));
+                });
 
-            if (mySessionIds.length === 0) {
-                return res.json([]);
+                if (mySessionIds.length === 0) {
+                    return res.json([]);
+                }
+                query.sessionId = { $in: mySessionIds };
             }
-            query.sessionId = { $in: mySessionIds };
+        }
+
+        let sessionById = null;
+        if (activeOnly) {
+            const sessionFilter = { status: 'active' };
+            if (myCodes) sessionFilter.examId = { $in: myCodes };
+            const activeSessions = await Session.find(sessionFilter).select('_id sessionId studentId examId').lean();
+            const activeSessionIds = [];
+            sessionById = new Map();
+            activeSessions.forEach(session => {
+                [session._id, session.sessionId, session.studentId].filter(Boolean).forEach(id => {
+                    const key = String(id);
+                    activeSessionIds.push(key);
+                    sessionById.set(key, session);
+                });
+            });
+            if (activeSessionIds.length === 0) return res.json([]);
+            query.sessionId = { $in: activeSessionIds };
         }
 
         const violations = await Violation.find(query).sort({ timestamp: -1 });
-        res.json(violations);
+        const result = activeOnly ? violations.map(violation => ({
+            ...violation.toObject(),
+            examId: sessionById.get(String(violation.sessionId))?.examId || null
+        })) : violations;
+        res.json(result);
     } catch (err) {
         console.error('Error fetching all violations:', err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -131,34 +172,59 @@ router.get('/violations', requireAuth, async (req, res) => {
 // GET /violations/priority-queue — Priority Queue for Cross-Student Unreviewed Violations (Teacher-facing, protected)
 router.get('/violations/priority-queue', requireAuth, async (req, res) => {
     try {
+        const { autoExpireFinishedExams } = require('../utils/examLifecycle');
+        await autoExpireFinishedExams(req.app.locals.io);
+
         const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
         const isAdmin = req.teacher?.role === 'admin';
 
-        const sessionFilter = { status: 'active' };
-
+        // Find currently active exams (scoped by teacher RBAC)
+        const activeExamFilter = { status: 'active' };
         if (!isAdmin && currentTeacherId) {
-            const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
-            const myCodes = [];
-            myExams.forEach(e => {
-                if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
-                if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
-                if (e._id) myCodes.push(e._id.toString());
-            });
-
-            if (myCodes.length === 0) {
-                return res.json([]);
-            }
-
-            if (req.query.examId) {
-                sessionFilter.examId = req.query.examId;
-            } else {
-                sessionFilter.examId = { $in: myCodes };
-            }
-        } else if (req.query.examId) {
-            sessionFilter.examId = req.query.examId;
+            activeExamFilter.$or = [
+                { createdBy: currentTeacherId },
+                { status: 'active' }
+            ];
         }
 
-        // 1. Fetch active sessions (scoped to teacher's exams and optional examId filter)
+        const activeExams = await Exam.find(activeExamFilter).select('examCode examId _id').lean();
+        const activeExamCodes = [];
+        activeExams.forEach(e => {
+            if (e.examCode) activeExamCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
+            if (e.examId) activeExamCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+        });
+
+        // If no exams are active, return empty priority queue immediately
+        if (activeExamCodes.length === 0) {
+            return res.json([]);
+        }
+
+        // Include sessions from currently active exams
+        const statusCondition = {
+            $or: [
+                { status: 'active' },
+                { 
+                    status: { $in: ['terminated', 'completed'] }, 
+                    startTime: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } 
+                }
+            ]
+        };
+
+        const sessionFilter = { 
+            ...statusCondition,
+            examId: { $in: activeExamCodes }
+        };
+
+        if (req.query.examId) {
+            const requestedCode = req.query.examId.trim();
+            const matchesActive = activeExamCodes.some(r => r.test(requestedCode));
+            if (!matchesActive) {
+                return res.json([]);
+            }
+            sessionFilter.examId = new RegExp('^' + requestedCode + '$', 'i');
+        }
+
+        // 1. Fetch relevant sessions (scoped to active exams and optional examId filter)
         const activeSessions = await Session.find(sessionFilter).lean();
         
         if (activeSessions.length === 0) {
@@ -221,7 +287,7 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
 });
 
 // GET /violations/:sessionId — Get violations for specific session (Teacher-facing, protected)
-router.get('/violations/:sessionId', requireAuth, async (req, res) => {
+router.get('/violations/:sessionId', requireAuth, requireOwnedSession, async (req, res) => {
     try {
         const query = { sessionId: req.params.sessionId };
         if (req.query.reviewed !== undefined) {
@@ -236,7 +302,7 @@ router.get('/violations/:sessionId', requireAuth, async (req, res) => {
 });
 
 // PATCH /violations/:violationId/review — Review a violation (Teacher-facing, protected)
-router.patch('/violations/:violationId/review', requireAuth, async (req, res) => {
+router.patch('/violations/:violationId/review', requireAuth, requireOwnedViolation, async (req, res) => {
     try {
         const { reviewed, reviewNote, decision } = req.body;
         

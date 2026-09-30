@@ -105,13 +105,13 @@ export default function AuthModal({ isOpen, onClose }) {
         }}>
             {/* Google Material 3 Design Card */}
             <div style={{
-                backgroundColor: '#ffffff',
+                backgroundColor: 'var(--bg-surface)',
                 width: '100%',
                 maxWidth: '448px',
                 borderRadius: '28px',
                 padding: '36px 40px',
                 boxShadow: '0 4px 24px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(60, 64, 67, 0.2)',
-                border: '1px solid #dadce0',
+                border: '1px solid var(--border-color)',
                 position: 'relative',
                 boxSizing: 'border-box',
                 animation: 'googleModalFadeIn 0.2s cubic-bezier(0, 0, 0.2, 1)'
@@ -133,11 +133,11 @@ export default function AuthModal({ isOpen, onClose }) {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: '#5f6368',
+                            color: 'var(--text-muted)',
                             cursor: 'pointer',
                             transition: 'background-color 0.15s ease'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f3f4'}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-muted)'}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
                         <X size={20} />
@@ -156,9 +156,9 @@ export default function AuthModal({ isOpen, onClose }) {
                             alignItems: 'center',
                             justifyContent: 'center'
                         }}>
-                            <Shield size={22} color="#1a73e8" fill="rgba(26, 115, 232, 0.2)" strokeWidth={2.2} />
+                            <Shield size={22} color="var(--primary)" fill="rgba(26, 115, 232, 0.2)" strokeWidth={2.2} />
                         </div>
-                        <span style={{ fontSize: '19px', fontWeight: 500, color: '#202124', letterSpacing: '-0.3px' }}>
+                        <span style={{ fontSize: '19px', fontWeight: 500, color: 'var(--text-main)', letterSpacing: '-0.3px' }}>
                             IntegrityFlow
                         </span>
                     </div>
@@ -167,7 +167,7 @@ export default function AuthModal({ isOpen, onClose }) {
                         fontSize: '24px',
                         lineHeight: '32px',
                         fontWeight: 400,
-                        color: '#202124',
+                        color: 'var(--text-main)',
                         margin: '0 0 6px 0'
                     }}>
                         {isSignUp ? 'Create an examiner account' : 'Sign in'}
@@ -175,7 +175,7 @@ export default function AuthModal({ isOpen, onClose }) {
                     <p style={{
                         fontSize: '14px',
                         lineHeight: '20px',
-                        color: '#5f6368',
+                        color: 'var(--text-muted)',
                         margin: 0
                     }}>
                         {isSignUp ? 'Set up credentials to manage exams and proctoring' : 'to continue to IntegrityFlow Examiner Portal'}
@@ -183,7 +183,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 </div>
 
                 {/* 1-Click Quick Demo Sign-in Button */}
-                <button
+                {import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' && <button
                     type="button"
                     onClick={handleQuickDemoLogin}
                     disabled={loading}
@@ -194,10 +194,10 @@ export default function AuthModal({ isOpen, onClose }) {
                         justifyContent: 'center',
                         gap: '10px',
                         padding: '10px 16px',
-                        backgroundColor: '#f8fafd',
-                        border: '1px solid #c2e7ff',
+                        backgroundColor: 'var(--bg-base)',
+                        border: '1px solid var(--primary-soft)',
                         borderRadius: '100px',
-                        color: '#004a77',
+                        color: 'var(--primary)',
                         fontSize: '14px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -205,29 +205,29 @@ export default function AuthModal({ isOpen, onClose }) {
                         marginBottom: '18px'
                     }}
                     onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#eaf1fb';
+                        e.currentTarget.style.backgroundColor = 'var(--primary-soft)';
                         e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08)';
                     }}
                     onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f8fafd';
+                        e.currentTarget.style.backgroundColor = 'var(--bg-base)';
                         e.currentTarget.style.boxShadow = 'none';
                     }}
                 >
-                    <Sparkles size={16} color="#1a73e8" />
+                    <Sparkles size={16} color="var(--primary)" />
                     <span>{loading ? 'Signing in...' : 'Sign in as Demo Examiner'}</span>
-                </button>
+                </button>}
 
                 {/* Divider */}
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     margin: '16px 0 20px 0',
-                    color: '#70757a',
+                    color: 'var(--text-muted)',
                     fontSize: '13px'
                 }}>
-                    <div style={{ flex: 1, height: '1px', backgroundColor: '#dadce0' }} />
+                    <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
                     <span style={{ padding: '0 12px' }}>or</span>
-                    <div style={{ flex: 1, height: '1px', backgroundColor: '#dadce0' }} />
+                    <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color)' }} />
                 </div>
 
                 {/* General Error Banner */}
@@ -237,10 +237,10 @@ export default function AuthModal({ isOpen, onClose }) {
                         alignItems: 'flex-start',
                         gap: '10px',
                         padding: '12px 14px',
-                        backgroundColor: '#fce8e6',
-                        border: '1px solid #fad2cf',
+                        backgroundColor: 'var(--danger-soft)',
+                        border: '1px solid var(--danger-soft)',
                         borderRadius: '8px',
-                        color: '#c5221f',
+                        color: 'var(--danger)',
                         fontSize: '13px',
                         marginBottom: '18px',
                         lineHeight: '18px'
@@ -268,24 +268,24 @@ export default function AuthModal({ isOpen, onClose }) {
                                     boxSizing: 'border-box',
                                     padding: '13px 15px',
                                     fontSize: '14px',
-                                    color: '#202124',
-                                    backgroundColor: '#ffffff',
-                                    border: `1px solid ${fieldErrors.name ? '#d93025' : '#dadce0'}`,
+                                    color: 'var(--text-main)',
+                                    backgroundColor: 'var(--bg-surface)',
+                                    border: `1px solid ${fieldErrors.name ? 'var(--danger)' : 'var(--border-color)'}`,
                                     borderRadius: '4px',
                                     outline: 'none',
                                     transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                                 }}
                                 onFocus={(e) => {
-                                    e.currentTarget.style.borderColor = fieldErrors.name ? '#d93025' : '#1a73e8';
+                                    e.currentTarget.style.borderColor = fieldErrors.name ? 'var(--danger)' : 'var(--primary)';
                                     e.currentTarget.style.boxShadow = `0 0 0 1px ${fieldErrors.name ? '#d93025' : '#1a73e8'}`;
                                 }}
                                 onBlur={(e) => {
-                                    e.currentTarget.style.borderColor = fieldErrors.name ? '#d93025' : '#dadce0';
+                                    e.currentTarget.style.borderColor = fieldErrors.name ? 'var(--danger)' : 'var(--border-color)';
                                     e.currentTarget.style.boxShadow = 'none';
                                 }}
                             />
                             {fieldErrors.name && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px', color: '#d93025', fontSize: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px', color: 'var(--danger)', fontSize: '12px' }}>
                                     <AlertCircle size={13} />
                                     <span>{fieldErrors.name}</span>
                                 </div>
@@ -308,24 +308,24 @@ export default function AuthModal({ isOpen, onClose }) {
                                 boxSizing: 'border-box',
                                 padding: '13px 15px',
                                 fontSize: '14px',
-                                color: '#202124',
-                                backgroundColor: '#ffffff',
-                                border: `1px solid ${fieldErrors.email ? '#d93025' : '#dadce0'}`,
+                                color: 'var(--text-main)',
+                                backgroundColor: 'var(--bg-surface)',
+                                border: `1px solid ${fieldErrors.email ? 'var(--danger)' : 'var(--border-color)'}`,
                                 borderRadius: '4px',
                                 outline: 'none',
                                 transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                             }}
                             onFocus={(e) => {
-                                e.currentTarget.style.borderColor = fieldErrors.email ? '#d93025' : '#1a73e8';
+                                e.currentTarget.style.borderColor = fieldErrors.email ? 'var(--danger)' : 'var(--primary)';
                                 e.currentTarget.style.boxShadow = `0 0 0 1px ${fieldErrors.email ? '#d93025' : '#1a73e8'}`;
                             }}
                             onBlur={(e) => {
-                                e.currentTarget.style.borderColor = fieldErrors.email ? '#d93025' : '#dadce0';
+                                e.currentTarget.style.borderColor = fieldErrors.email ? 'var(--danger)' : 'var(--border-color)';
                                 e.currentTarget.style.boxShadow = 'none';
                             }}
                         />
                         {fieldErrors.email && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px', color: '#d93025', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px', color: 'var(--danger)', fontSize: '12px' }}>
                                 <AlertCircle size={13} />
                                 <span>{fieldErrors.email}</span>
                             </div>
@@ -348,19 +348,19 @@ export default function AuthModal({ isOpen, onClose }) {
                                     boxSizing: 'border-box',
                                     padding: '13px 44px 13px 15px',
                                     fontSize: '14px',
-                                    color: '#202124',
-                                    backgroundColor: '#ffffff',
-                                    border: `1px solid ${fieldErrors.password ? '#d93025' : '#dadce0'}`,
+                                    color: 'var(--text-main)',
+                                    backgroundColor: 'var(--bg-surface)',
+                                    border: `1px solid ${fieldErrors.password ? 'var(--danger)' : 'var(--border-color)'}`,
                                     borderRadius: '4px',
                                     outline: 'none',
                                     transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
                                 }}
                                 onFocus={(e) => {
-                                    e.currentTarget.style.borderColor = fieldErrors.password ? '#d93025' : '#1a73e8';
+                                    e.currentTarget.style.borderColor = fieldErrors.password ? 'var(--danger)' : 'var(--primary)';
                                     e.currentTarget.style.boxShadow = `0 0 0 1px ${fieldErrors.password ? '#d93025' : '#1a73e8'}`;
                                 }}
                                 onBlur={(e) => {
-                                    e.currentTarget.style.borderColor = fieldErrors.password ? '#d93025' : '#dadce0';
+                                    e.currentTarget.style.borderColor = fieldErrors.password ? 'var(--danger)' : 'var(--border-color)';
                                     e.currentTarget.style.boxShadow = 'none';
                                 }}
                             />
@@ -375,7 +375,7 @@ export default function AuthModal({ isOpen, onClose }) {
                                     transform: 'translateY(-50%)',
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#5f6368',
+                                    color: 'var(--text-muted)',
                                     cursor: 'pointer',
                                     padding: '4px',
                                     display: 'flex',
@@ -388,7 +388,7 @@ export default function AuthModal({ isOpen, onClose }) {
                         </div>
 
                         {fieldErrors.password && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px', color: '#d93025', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px', color: 'var(--danger)', fontSize: '12px' }}>
                                 <AlertCircle size={13} />
                                 <span>{fieldErrors.password}</span>
                             </div>
@@ -399,12 +399,12 @@ export default function AuthModal({ isOpen, onClose }) {
                     {isSignUp && (
                         <div style={{
                             padding: '10px 12px',
-                            backgroundColor: '#f8f9fa',
+                            backgroundColor: 'var(--bg-base)',
                             borderRadius: '6px',
                             marginBottom: '20px',
-                            border: '1px solid #e8eaed'
+                            border: '1px solid var(--border-color)'
                         }}>
-                            <div style={{ fontSize: '12px', fontWeight: 500, color: '#5f6368', marginBottom: '6px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
                                 Password requirements:
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -413,13 +413,13 @@ export default function AuthModal({ isOpen, onClose }) {
                                     alignItems: 'center',
                                     gap: '6px',
                                     fontSize: '12px',
-                                    color: hasMinLength ? '#137333' : '#5f6368',
+                                    color: hasMinLength ? 'var(--success)' : 'var(--text-muted)',
                                     fontWeight: hasMinLength ? 500 : 400
                                 }}>
                                     {hasMinLength ? (
-                                        <CheckCircle2 size={14} color="#137333" />
+                                        <CheckCircle2 size={14} color="var(--success)" />
                                     ) : (
-                                        <Circle size={12} color="#9aa0a6" />
+                                        <Circle size={12} color="var(--text-muted)" />
                                     )}
                                     <span>At least 8 characters long</span>
                                 </div>
@@ -428,13 +428,13 @@ export default function AuthModal({ isOpen, onClose }) {
                                     alignItems: 'center',
                                     gap: '6px',
                                     fontSize: '12px',
-                                    color: hasNumber ? '#137333' : '#5f6368',
+                                    color: hasNumber ? 'var(--success)' : 'var(--text-muted)',
                                     fontWeight: hasNumber ? 500 : 400
                                 }}>
                                     {hasNumber ? (
-                                        <CheckCircle2 size={14} color="#137333" />
+                                        <CheckCircle2 size={14} color="var(--success)" />
                                     ) : (
-                                        <Circle size={12} color="#9aa0a6" />
+                                        <Circle size={12} color="var(--text-muted)" />
                                     )}
                                     <span>At least one number (0-9)</span>
                                 </div>
@@ -459,7 +459,7 @@ export default function AuthModal({ isOpen, onClose }) {
                             style={{
                                 background: 'transparent',
                                 border: 'none',
-                                color: '#1a73e8',
+                                color: 'var(--primary)',
                                 fontSize: '14px',
                                 fontWeight: 500,
                                 cursor: 'pointer',
@@ -467,7 +467,7 @@ export default function AuthModal({ isOpen, onClose }) {
                                 borderRadius: '4px',
                                 transition: 'background-color 0.15s ease'
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(26, 115, 232, 0.08)'}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--primary-soft)'}
                             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                             {isSignUp ? 'Sign in instead' : 'Create account'}
@@ -477,8 +477,8 @@ export default function AuthModal({ isOpen, onClose }) {
                             type="submit"
                             disabled={loading}
                             style={{
-                                backgroundColor: '#1a73e8',
-                                color: '#ffffff',
+                                backgroundColor: 'var(--primary-bg)',
+                                color: 'var(--text-on-color)',
                                 border: 'none',
                                 borderRadius: '100px',
                                 padding: '10px 24px',
@@ -489,8 +489,8 @@ export default function AuthModal({ isOpen, onClose }) {
                                 boxShadow: '0 1px 2px rgba(60,64,67,0.3)',
                                 opacity: loading ? 0.7 : 1
                             }}
-                            onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#1557d0')}
-                            onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = '#1a73e8')}
+                            onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = 'var(--primary-hover)')}
+                            onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = 'var(--primary-bg)')}
                         >
                             {loading ? 'Please wait...' : isSignUp ? 'Create' : 'Next'}
                         </button>

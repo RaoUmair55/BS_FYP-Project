@@ -4,6 +4,7 @@ const path = require('path');
 const Exam = require('../models/Exam');
 const Session = require('../models/Session');
 const { requireAuth } = require('../middleware/authMiddleware');
+const { requireOwnedExam } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
 const router = express.Router();
 
@@ -44,7 +45,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // POST /exam/:examId/paper (Teacher-facing)
-router.post('/:examId/paper', requireAuth, uploadMiddleware, async (req, res) => {
+router.post('/:examId/paper', requireAuth, requireOwnedExam, uploadMiddleware, async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
@@ -76,6 +77,7 @@ router.get('/:examId/paper', async (req, res) => {
     try {
         const examId = req.params.examId;
         const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(req.query.sessionId)) return res.status(403).json({ error: 'Active candidate session required' });
 
         // Security check - must have at least one active session for this exam
         const sessionQuery = [
@@ -85,10 +87,7 @@ router.get('/:examId/paper', async (req, res) => {
             sessionQuery.push({ examId: examId });
         }
 
-        const activeSession = await Session.findOne({ 
-            $or: sessionQuery,
-            status: "active" 
-        });
+        const activeSession = await Session.findOne({ _id: req.query.sessionId, $or: sessionQuery, status: 'active' });
         if (!activeSession) {
             return res.status(403).json({ error: 'Exam paper only available once candidate exam session is active.' });
         }

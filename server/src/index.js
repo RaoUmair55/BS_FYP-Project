@@ -9,6 +9,13 @@ require('dotenv').config();
 
 const connectDB = require('./config/db');
 const { initSocket } = require('./sockets/violationSocket');
+const { verifyAccessToken } = require('./utils/tokens');
+const Teacher = require('./models/Teacher');
+const Exam = require('./models/Exam');
+const Session = require('./models/Session');
+const Violation = require('./models/Violation');
+const Submission = require('./models/Submission');
+const { ownsExam } = require('./middleware/examAccess');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,14 +26,43 @@ app.use(helmet({
 }));
 app.use(cookieParser());
 app.use(cors({
-    origin: true,
+    origin: (origin, done) => done(null, !origin || origin === 'null' || origin === (process.env.DASHBOARD_URL || 'http://localhost:5173')),
     credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static uploads (for screenshots, papers, verification photos)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', async (req, res, next) => {
+    try {
+        const token = req.query.token || req.headers.authorization?.replace(/^Bearer /, '');
+        const decoded = verifyAccessToken(token);
+        const teacher = await Teacher.findById(decoded.teacherId);
+        if (!teacher) return res.status(401).json({ error: 'Authentication required' });
+        req.teacher = { teacherId: teacher._id.toString(), role: teacher.role };
+        const folder = req.path.split('/')[1];
+        const storedUrl = `/uploads${req.path}`;
+        let examCode = null;
+        if (folder === 'papers') {
+            const filename = path.basename(req.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const exam = await Exam.findOne({ paperPath: new RegExp(filename + '$') });
+            examCode = exam?.examCode;
+        } else if (folder === 'screenshots') {
+            const violation = await Violation.findOne({ screenshotPath: storedUrl });
+            const session = violation && await Session.findById(violation.sessionId);
+            examCode = session?.examId;
+        } else if (folder === 'verification') {
+            const session = await Session.findOne({ cameraVerificationPhoto: storedUrl });
+            examCode = session?.examId;
+        } else if (folder === 'submissions') {
+            const submission = await Submission.findOne({ filePath: storedUrl });
+            const session = submission && await Session.findById(submission.sessionId);
+            examCode = session?.examId;
+        }
+        if (!examCode || !await ownsExam(req, examCode)) return res.status(404).json({ error: 'Asset not found' });
+        next();
+    } catch (err) { res.status(401).json({ error: 'Authentication required' }); }
+}, express.static(path.join(__dirname, '../uploads')));
 
 // Initialize Socket.io
 const io = initSocket(server);
@@ -34,8 +70,15 @@ app.locals.io = io; // Make io accessible in routes
 
 // Connect to MongoDB and bootstrap Root Super Admin
 const seedAdmin = require('./config/seedAdmin');
+const { autoExpireFinishedExams } = require('./utils/examLifecycle');
+
 connectDB().then(() => {
     seedAdmin();
+    // Check and expire finished exams on startup and periodically every 10 seconds
+    autoExpireFinishedExams(io);
+    setInterval(() => {
+        autoExpireFinishedExams(io);
+    }, 10000);
 });
 
 // Mount Routes

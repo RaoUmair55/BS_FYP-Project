@@ -1,9 +1,9 @@
-const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
-const { checkPythonHealth, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop } = require('./ipc/pythonBridge');
+const { checkPythonHealth, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive } = require('./ipc/pythonBridge');
 const violationBuffer = require('./ipc/violationBuffer');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
@@ -25,12 +25,14 @@ let displayRemovedListener = null;
 let activeSessionInfo = {
   sessionId: null,
   examId: null,
+  examType: 'online',
   studentId: null,
   studentName: null,
   rollNumber: null,
   consentGiven: false,
   consentTimestamp: null,
   allowedApplications: [],
+  rules: {},
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
 };
 
@@ -66,7 +68,7 @@ async function createWindow() {
 
 async function waitForPythonReady() {
   console.log('[Electron] Waiting for Python backend to be ready...');
-  const maxAttempts = 25;
+  const maxAttempts = 90; // Up to 54 seconds for heavy ML models/DLLs on cold start
   
   for (let i = 0; i < maxAttempts; i++) {
     const isReady = await checkPythonHealth();
@@ -74,7 +76,7 @@ async function waitForPythonReady() {
       console.log(`[Electron] Python backend is ready on attempt ${i + 1}!`);
       return true;
     }
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1 second
+    await new Promise(resolve => setTimeout(resolve, 600)); // Poll every 600ms
   }
   
   return false;
@@ -124,10 +126,13 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   const pythonEnv = { 
     ...process.env, 
     PYTHONUNBUFFERED: '1',
+    PYTHONIOENCODING: 'utf-8',
     EXAM_SESSION_ID: activeSessionInfo.sessionId, 
+    EXAM_TYPE: activeSessionInfo.examType || 'online',
     APP_MODE: mode,
     IS_SELF_CHECK: isSelfCheck ? 'true' : 'false',
-    ALLOWED_APPLICATIONS: JSON.stringify(activeSessionInfo.allowedApplications || [])
+    ALLOWED_APPLICATIONS: JSON.stringify(activeSessionInfo.allowedApplications || []),
+    EXAM_RULES: JSON.stringify(activeSessionInfo.rules || {})
   };
   
   let proc;
@@ -152,7 +157,9 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
 
   proc.stderr.on('data', (data) => {
     const msg = data.toString().trim();
-    if (!msg.includes('INFO:') && !msg.includes('WARNING:')) {
+    const lower = msg.toLowerCase();
+    const isHarmlessWarning = lower.includes('warning') || lower.includes('info:') || lower.includes('pkg_resources') || lower.includes('deprecated');
+    if (!isHarmlessWarning) {
       lastPythonStderr = (lastPythonStderr + '\n' + msg).trim();
     }
     console.log(`[Python Log] ${msg}`);
@@ -188,9 +195,21 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     try {
       console.log('[Electron] app.whenReady entered');
-      // STARTUP ORDER 1: Start the local Express receiver first
       try {
-        await startReceiver();
+        await startReceiver((violationPayload) => {
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            const reason = violationPayload?.details?.reason || '';
+            const fileName = violationPayload?.details?.fileName || '';
+            if (fileName || reason.toLowerCase().includes('pre-existing')) {
+              console.log('[Electron] Pre-existing file blocked! Sending alert to candidate window:', fileName);
+              mainWindow.webContents.send('pre-existing-file-blocked', {
+                fileName: fileName || (reason.includes(':') ? reason.split(':').pop().trim() : 'Document'),
+                reason: reason,
+                appName: violationPayload?.details?.object_class || 'winword.exe'
+              });
+            }
+          }
+        });
       } catch (error) {
         console.error('[Electron] Failed to start receiver:', error);
         dialog.showErrorBox('Initialization Error', 'Failed to start local violation receiver. ' + error.message);
@@ -230,6 +249,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   console.log('[Electron] Cleaning up processes before quit...');
+  setExamActive(false);
   stopBufferRetryLoop();
   if (pythonProcess) {
     pythonProcess.killedIntentional = true;
@@ -261,11 +281,11 @@ ipcMain.on('test-violation', async (event, payload) => {
 ipcMain.handle('check-apps', async () => {
   try {
     const response = await fetch('http://127.0.0.1:8000/check-apps');
-    if (!response.ok) return { unauthorized_apps: [] };
+    if (!response.ok) return { error: 'App check unavailable' };
     return await response.json();
   } catch (error) {
     console.error('[Electron] Error fetching /check-apps:', error);
-    return { unauthorized_apps: [] };
+    return { error: 'App check unavailable' };
   }
 });
 
@@ -273,11 +293,11 @@ ipcMain.handle('check-apps', async () => {
 ipcMain.handle('check-usb-drives', async () => {
   try {
     const response = await fetch('http://127.0.0.1:8000/check-usb');
-    if (!response.ok) return { removable_drives: [] };
+    if (!response.ok) return { error: 'USB check unavailable' };
     return await response.json();
   } catch (error) {
     console.error('[Electron] Error fetching /check-usb:', error);
-    return { removable_drives: [] };
+    return { error: 'USB check unavailable' };
   }
 });
 
@@ -338,15 +358,18 @@ ipcMain.handle('get-session-info', () => {
 let isLoggingIn = false;
 
 // Handle Login / Exam Code Entry
-ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber, allowedApplications }) => {
+ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber, allowedApplications, examType, rules }) => {
   if (isLoggingIn) {
     console.log('[Electron] Login already in progress, ignoring duplicate invoke');
     return { success: false, error: 'Login in progress' };
   }
   isLoggingIn = true;
 
-  console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Allowed Apps:`, allowedApplications);
+  console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
+  setExamActive(false);
   activeSessionInfo.examId = examId;
+  if (examType) activeSessionInfo.examType = examType;
+  activeSessionInfo.rules = rules || {};
   if (studentId) activeSessionInfo.studentId = studentId;
   if (studentName) activeSessionInfo.studentName = studentName;
   if (rollNumber) activeSessionInfo.rollNumber = rollNumber;
@@ -508,11 +531,19 @@ ipcMain.handle('start-exam-mode', async () => {
     }
 
     if (mainWindow) {
+      clipboard.clear();
       await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
-      // mainWindow.webContents.openDevTools();
+      // Officially activate live proctoring & violation capture now that examScreen is active
+      setExamActive(true);
     }
     return { success: true };
   } else {
+    setExamActive(false);
     return { success: false, error: 'AI module failed to start in exam mode.' };
   }
+});
+
+ipcMain.handle('clear-clipboard', () => {
+  clipboard.clear();
+  return true;
 });

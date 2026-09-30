@@ -16,5 +16,7 @@ contextBridge.exposeInMainWorld('api', {
   getBufferStatus: async () => ipcRenderer.invoke('get-buffer-status'),
   onBufferStatusChanged: (callback) => ipcRenderer.on('buffer-status-changed', (_event, value) => callback(value)),
   setReferenceVoice: async (audioBase64) => ipcRenderer.invoke('set-reference-voice', audioBase64),
-  checkVoice: async () => ipcRenderer.invoke('check-voice')
+  checkVoice: async () => ipcRenderer.invoke('check-voice'),
+  clearClipboard: async () => ipcRenderer.invoke('clear-clipboard'),
+  onPreExistingFileBlocked: (callback) => ipcRenderer.on('pre-existing-file-blocked', (_event, data) => callback(data))
 });

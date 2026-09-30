@@ -69,7 +69,7 @@ export default function AuditLogView({
             <div className="admin-toolbar">
                 <div className="admin-filter-group">
                     <div className="google-search-input">
-                        <Search size={16} color="#5f6368" />
+                        <Search size={16} color="var(--text-muted)" />
                         <input 
                             type="text" 
                             placeholder="Search examiner, action, student..." 
@@ -109,14 +109,14 @@ export default function AuditLogView({
 
             {/* Main Audit Table */}
             {loading ? (
-                <div style={{ padding: '60px', textAlign: 'center', color: '#5f6368' }}>
+                <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <div className="auth-spinner" style={{ margin: '0 auto 16px auto' }}></div>
                     <span>Loading Teacher Action Audit Trail...</span>
                 </div>
             ) : filteredLogs.length === 0 ? (
-                <div className="admin-card" style={{ padding: '60px', textAlign: 'center', color: '#5f6368' }}>
-                    <Activity size={40} color="#dadce0" style={{ margin: '0 auto 12px auto' }} />
-                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#202124', marginBottom: '4px' }}>No audit records found</div>
+                <div className="admin-card" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Activity size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px auto' }} />
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>No audit records found</div>
                     <div style={{ fontSize: '13px' }}>Actions performed by teachers and examiners will automatically record here.</div>
                 </div>
             ) : (
@@ -140,33 +140,33 @@ export default function AuditLogView({
                                 return (
                                     <React.Fragment key={log._id}>
                                         <tr>
-                                            <td style={{ fontSize: '12px', color: '#5f6368', whiteSpace: 'nowrap' }}>
+                                            <td style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                                                 <div>{dateObj.toLocaleDateString()}</div>
-                                                <div style={{ color: '#80868b', fontSize: '11px' }}>{dateObj.toLocaleTimeString()}</div>
+                                                <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{dateObj.toLocaleTimeString()}</div>
                                             </td>
                                             <td>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#e8f0fe', color: '#1a73e8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700 }}>
+                                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700 }}>
                                                         {(log.teacherName || 'E')[0].toUpperCase()}
                                                     </div>
                                                     <div>
-                                                        <div style={{ fontWeight: 600, color: '#202124' }}>{log.teacherName || 'Examiner'}</div>
-                                                        <div style={{ fontSize: '11px', color: '#5f6368' }}>{log.teacherEmail}</div>
+                                                        <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{log.teacherName || 'Examiner'}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{log.teacherEmail}</div>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td>{getActionBadge(log.action)}</td>
                                             <td>
-                                                <div style={{ fontWeight: 500, color: '#202124' }}>
+                                                <div style={{ fontWeight: 500, color: 'var(--text-main)' }}>
                                                     {log.targetSummary || 'Action performed'}
                                                 </div>
                                                 {log.targetId && (
-                                                    <div style={{ fontSize: '11px', color: '#80868b', fontFamily: 'monospace' }}>
+                                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                                                         ID: {log.targetId}
                                                     </div>
                                                 )}
                                             </td>
-                                            <td style={{ fontSize: '12px', color: '#5f6368', fontFamily: 'monospace' }}>
+                                            <td style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                                                 {log.ipAddress || '127.0.0.1'}
                                             </td>
                                             <td style={{ textAlign: 'right' }}>
@@ -183,9 +183,9 @@ export default function AuditLogView({
                                         {/* Expandable JSON details row */}
                                         {isExpanded && (
                                             <tr>
-                                                <td colSpan="6" style={{ background: '#f8f9fa', padding: '16px', borderBottom: '1px solid #dadce0' }}>
-                                                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#3c4043', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                        <Info size={14} color="#1a73e8" />
+                                                <td colSpan="6" style={{ background: 'var(--bg-base)', padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <Info size={14} color="var(--primary)" />
                                                         Audit Action Event Payload
                                                     </div>
                                                     <pre style={{ margin: 0, padding: '12px', background: '#0f172a', color: '#38bdf8', borderRadius: '6px', fontSize: '12px', overflowX: 'auto' }}>

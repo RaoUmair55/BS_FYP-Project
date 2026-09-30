@@ -189,10 +189,10 @@ export default function LiveExamChat({
     });
 
     const innerChatContent = (
-        <div style={{ display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: isInline ? '480px' : 'auto', overflow: 'hidden', background: '#f8fafc' }}>
+        <div style={{ display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: isInline ? '480px' : 'auto', overflow: 'hidden', background: 'var(--bg-base)' }}>
             {/* Left Sidebar: Channels List */}
-            <div style={{ width: '260px', borderRight: '1px solid #e2e8f0', background: '#ffffff', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '11.5px', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ width: '260px', borderRight: '1px solid var(--border-color)', background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-base)', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span>CHANNELS</span>
                     <span className="badge" style={{ fontSize: '10px' }}>{Object.keys(candidateThreads).length + 1} Channels</span>
                 </div>
@@ -206,8 +206,8 @@ export default function LiveExamChat({
                             borderRadius: '8px',
                             marginBottom: '4px',
                             cursor: 'pointer',
-                            background: selectedSessionId === 'ALL' ? '#eff6ff' : 'transparent',
-                            border: selectedSessionId === 'ALL' ? '1.5px solid #3b82f6' : '1.5px solid transparent',
+                            background: selectedSessionId === 'ALL' ? 'var(--primary-soft)' : 'transparent',
+                            border: selectedSessionId === 'ALL' ? '1.5px solid var(--primary)' : '1.5px solid transparent',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
@@ -215,14 +215,14 @@ export default function LiveExamChat({
                         }}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#dbeafe', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <Megaphone size={14} />
                             </div>
                             <div>
-                                <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#1e293b' }}>
+                                <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main)' }}>
                                     📢 All Candidates
                                 </div>
-                                <div style={{ fontSize: '10.5px', color: '#64748b' }}>
+                                <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
                                     Broadcast announcements
                                 </div>
                             </div>
@@ -242,8 +242,8 @@ export default function LiveExamChat({
                                     borderRadius: '8px',
                                     marginBottom: '4px',
                                     cursor: 'pointer',
-                                    background: isSelected ? '#eff6ff' : 'transparent',
-                                    border: isSelected ? '1.5px solid #3b82f6' : '1.5px solid transparent',
+                                    background: isSelected ? 'var(--primary-soft)' : 'transparent',
+                                    border: isSelected ? '1.5px solid var(--primary)' : '1.5px solid transparent',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
@@ -251,21 +251,21 @@ export default function LiveExamChat({
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--bg-muted)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                         <User size={14} />
                                     </div>
                                     <div style={{ overflow: 'hidden' }}>
-                                        <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {th.studentName}
                                         </div>
-                                        <div style={{ fontSize: '10.5px', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {th.rollNumber ? `Roll: ${th.rollNumber}` : 'Candidate'}
                                         </div>
                                     </div>
                                 </div>
 
                                 {th.unreadCount > 0 && (
-                                    <span style={{ background: '#ef4444', color: '#ffffff', fontSize: '9.5px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', flexShrink: 0 }}>
+                                    <span style={{ background: 'var(--danger-bg)', color: 'var(--text-on-color)', fontSize: '9.5px', fontWeight: 700, padding: '1px 5px', borderRadius: '10px', flexShrink: 0 }}>
                                         {th.unreadCount}
                                     </span>
                                 )}
@@ -276,26 +276,26 @@ export default function LiveExamChat({
             </div>
 
             {/* Right Area: Active Message Conversation */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
                 {/* Channel Header Banner */}
-                <div style={{ padding: '10px 16px', background: '#ffffff', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ padding: '10px 16px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--bg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {selectedSessionId === 'ALL' ? (
                             <>
-                                <Megaphone size={16} style={{ color: '#2563eb' }} />
-                                <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#1e293b' }}>
+                                <Megaphone size={16} style={{ color: 'var(--primary)' }} />
+                                <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)' }}>
                                     Exam-Wide Broadcast & Clarifications
                                 </span>
                             </>
                         ) : (
                             <>
-                                <MessageCircle size={16} style={{ color: '#2563eb' }} />
+                                <MessageCircle size={16} style={{ color: 'var(--primary)' }} />
                                 <div>
-                                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#1e293b' }}>
+                                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)' }}>
                                         Direct Thread: {activeThread?.studentName || 'Candidate'}
                                     </span>
                                     {activeThread?.rollNumber && (
-                                        <span style={{ fontSize: '11.5px', color: '#64748b', marginLeft: '6px' }}>
+                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginLeft: '6px' }}>
                                             (Roll: {activeThread.rollNumber})
                                         </span>
                                     )}
@@ -304,8 +304,8 @@ export default function LiveExamChat({
                         )}
                     </div>
 
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>
-                        Exam Scope: <strong style={{ color: '#1e293b' }}>{selectedExamId || 'None'}</strong>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Exam Scope: <strong style={{ color: 'var(--text-main)' }}>{selectedExamId || 'None'}</strong>
                     </div>
                 </div>
 
@@ -341,10 +341,10 @@ export default function LiveExamChat({
                                         alignSelf: isTeacher ? 'flex-end' : 'flex-start'
                                     }}
                                 >
-                                    <div style={{ fontSize: '10.5px', color: '#64748b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                         <strong>{msg.senderName} {msg.rollNumber ? `(${msg.rollNumber})` : ''}</strong>
                                         {isBroadcast && (
-                                            <span style={{ background: '#fef3c7', color: '#92400e', fontSize: '9px', padding: '1px 4px', borderRadius: '3px', fontWeight: 600 }}>
+                                            <span style={{ background: 'var(--warning-soft)', color: 'var(--warning)', fontSize: '9px', padding: '1px 4px', borderRadius: '3px', fontWeight: 600 }}>
                                                 ANNOUNCEMENT
                                             </span>
                                         )}
@@ -356,9 +356,9 @@ export default function LiveExamChat({
                                         borderRadius: '10px',
                                         fontSize: '13px',
                                         lineHeight: 1.4,
-                                        background: isBroadcast ? '#fef3c7' : isTeacher ? '#2563eb' : '#ffffff',
-                                        color: isBroadcast ? '#78350f' : isTeacher ? '#ffffff' : '#1e293b',
-                                        border: isBroadcast ? '1px solid #fde68a' : isTeacher ? 'none' : '1px solid #e2e8f0',
+                                        background: isBroadcast ? 'var(--warning-soft)' : isTeacher ? 'var(--primary-bg)' : 'var(--bg-surface)',
+                                        color: isBroadcast ? 'var(--warning)' : isTeacher ? 'var(--text-on-color)' : 'var(--text-main)',
+                                        border: isBroadcast ? '1px solid var(--warning-soft)' : isTeacher ? 'none' : '1px solid var(--border-color)',
                                         boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                                     }}>
                                         {msg.text}
@@ -371,7 +371,7 @@ export default function LiveExamChat({
                 </div>
 
                 {/* Message Input Box */}
-                <form onSubmit={handleSendMessage} style={{ padding: '10px 14px', background: '#ffffff', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <form onSubmit={handleSendMessage} style={{ padding: '10px 14px', background: 'var(--bg-surface)', borderTop: '1px solid var(--bg-muted)', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input 
                         type="text"
                         className="md-input"
@@ -399,7 +399,7 @@ export default function LiveExamChat({
 
     if (isInline) {
         return (
-            <div style={{ height: 'calc(100vh - 210px)', minHeight: '480px', display: 'flex', flexDirection: 'column', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+            <div style={{ height: 'calc(100vh - 210px)', minHeight: '480px', display: 'flex', flexDirection: 'column', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
                 {innerChatContent}
             </div>
         );
@@ -421,7 +421,7 @@ export default function LiveExamChat({
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div style={{ padding: '12px 18px', background: '#1a73e8', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ padding: '12px 18px', background: 'var(--primary-bg)', color: 'var(--text-on-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <MessageSquare size={18} />
                         <div>
@@ -440,7 +440,7 @@ export default function LiveExamChat({
                         style={{ 
                             background: 'rgba(255,255,255,0.2)', 
                             border: 'none', 
-                            color: '#ffffff', 
+                            color: 'var(--text-on-color)', 
                             cursor: 'pointer', 
                             padding: '5px', 
                             borderRadius: '4px', 

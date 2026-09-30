@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { getViolations } from '../services/api';
+import { assetUrl } from '../services/api';
 import { 
     Check, X, Clock, CheckCircle, XCircle, Eye, Camera, AlertTriangle, 
     ShieldCheck, FileText, Download, Paperclip, AlertOctagon, MessageSquare, 
     Send, UserX, AlertCircle, Image, Maximize2, ChevronDown, ChevronUp,
-    Layers, Filter, Sparkles, Smartphone, Users
+    Layers, Filter, Sparkles, Smartphone, Users, Copy, CheckCheck, ExternalLink, FileCode
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
@@ -32,6 +33,11 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
     }
+    if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
+        const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
+        const appName = details?.object_class ? ` in ${details.object_class}` : '';
+        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing File Opened${appName}`;
+    }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
             return `Unauthorized App (${details.object_class})`;
@@ -45,43 +51,61 @@ function formatType(typeStr, details = {}) {
 }
 
 function getCategoryInfo(typeStr, details = {}) {
-    if (!typeStr) return { key: 'other', label: 'General Alert', icon: '⚠️', color: '#5f6368', badgeBg: '#f1f3f4' };
+    if (!typeStr) return { key: 'other', label: 'General Alert', icon: '⚠️', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
+    if (typeStr === 'pre_existing_file' || details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName) {
+        return { 
+            key: 'files',
+            label: `📂 Pre-Existing File`, 
+            icon: '📂', 
+            color: 'var(--warning)', 
+            badgeBg: 'var(--warning-soft)' 
+        };
+    }
     if (typeStr.includes('object') || typeStr.includes('phone') || details?.object_class) {
         const item = details?.object_class ? details.object_class.toLowerCase() : 'Mobile / Object';
         return { 
             key: 'objects',
             label: `📱 ${item.charAt(0).toUpperCase() + item.slice(1)}`, 
             icon: '📱', 
-            color: '#b91c1c', 
-            badgeBg: '#fee2e2' 
+            color: 'var(--danger)', 
+            badgeBg: 'var(--danger-soft)' 
         };
     }
     if (typeStr.includes('head') || typeStr.includes('turn') || typeStr.includes('gaze')) {
-        return { key: 'head', label: '👤 Head / Gaze Turn', icon: '👤', color: '#b45309', badgeBg: '#fef3c7' };
+        return { key: 'head', label: '👤 Head / Gaze Turn', icon: '👤', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('second_person') || typeStr.includes('multiple_faces')) {
-        return { key: 'people', label: '👥 Second Person', icon: '👥', color: '#b91c1c', badgeBg: '#fee2e2' };
+        return { key: 'people', label: '👥 Second Person', icon: '👥', color: 'var(--danger)', badgeBg: 'var(--danger-soft)' };
     }
     if (typeStr.includes('no_face')) {
-        return { key: 'noface', label: '👁️ Face Missing', icon: '👁️', color: '#c2410c', badgeBg: '#ffedd5' };
+        return { key: 'noface', label: '👁️ Face Missing', icon: '👁️', color: 'var(--danger)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('app') || typeStr.includes('window')) {
-        return { key: 'app', label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: '#e0e7ff' };
+        return { key: 'app', label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: 'var(--primary-soft)' };
     }
     if (typeStr.includes('camera') || typeStr.includes('dark')) {
-        return { key: 'camera', label: '🌑 Camera Feed Dark', icon: '🌑', color: '#4b5563', badgeBg: '#f3f4f6' };
+        return { key: 'camera', label: '🌑 Camera Feed Dark', icon: '🌑', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
     }
-    return { key: 'other', label: '⚠️ Suspicious Activity', icon: '⚠️', color: '#b45309', badgeBg: '#fef3c7' };
+    return { key: 'other', label: '⚠️ Suspicious Activity', icon: '⚠️', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
 }
 
 export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const { authFetch } = useAuth();
+    const [mainTab, setMainTab] = useState('submission'); // 'submission', 'evidence', 'identity'
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
     const [sessionData, setSessionData] = useState(null);
     const [submissions, setSubmissions] = useState([]);
+    const [copiedSubId, setCopiedSubId] = useState(null);
     const [cameraActionLoading, setCameraActionLoading] = useState(false);
     const [showDismissedLogs, setShowDismissedLogs] = useState(false);
+
+    const handleCopyAnswer = (text, id) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        setCopiedSubId(id);
+        setTimeout(() => setCopiedSubId(null), 2500);
+    };
 
     // Filtering & Categorized Accordion States
     const [categoryFilter, setCategoryFilter] = useState('all'); // 'all', 'objects', 'head', 'people', 'noface', 'app'
@@ -135,6 +159,9 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             .then(data => {
                 if (Array.isArray(data)) {
                     setSubmissions(data);
+                    if (data.length > 0) {
+                        setMainTab('submission');
+                    }
                 }
             })
             .catch(err => console.error("Error fetching submissions:", err));
@@ -375,17 +402,17 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
 
                 {/* Candidate Action Control Bar Header */}
-                <div style={{ background: isTerminated ? '#fce8e6' : '#e8f0fe', border: isTerminated ? '1px solid #fad2cf' : '1px solid #c2e7ff', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ background: isTerminated ? 'var(--danger-soft)' : 'var(--primary-soft)', border: isTerminated ? '1px solid var(--danger-soft)' : '1px solid var(--primary-soft)', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
+                            <span style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-main)' }}>
                                 Viewing: {studentDisplayName}{rollDisplay}
                             </span>
-                            <span className={`md-badge ${isTerminated ? 'status-completed' : 'status-active'}`} style={{ textTransform: 'uppercase', background: isTerminated ? '#d93025' : '#188038', color: '#ffffff' }}>
+                            <span className={`md-badge ${isTerminated ? 'status-completed' : 'status-active'}`} style={{ textTransform: 'uppercase', background: isTerminated ? 'var(--danger-bg)' : 'var(--success-bg)', color: 'var(--text-on-color)' }}>
                                 {isTerminated ? 'Terminated' : 'Active Live'}
                             </span>
                         </div>
-                        <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '2px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                             Exam: <strong>{sessionData?.examId || ''}</strong> &bull; Session: <span title={String(sessionId)} style={{ cursor: 'help' }}>{String(sessionId).substring(0, 8)}...</span>
                             {sessionData?.warnings && sessionData.warnings.length > 0 && ` &bull; Warnings Sent: ${sessionData.warnings.length}`}
                         </div>
@@ -395,7 +422,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <button 
                                 className="md-btn md-btn-sm" 
-                                style={{ background: '#ffffff', color: '#1a73e8', border: '1px solid #1a73e8' }}
+                                style={{ background: 'var(--bg-surface)', color: 'var(--primary)', border: '1px solid var(--primary)' }}
                                 onClick={() => {
                                     setWarnMessage("Please remain facing the camera directly at all times.");
                                     setShowWarnModal(true);
@@ -406,7 +433,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                             </button>
                             <button 
                                 className="md-btn md-btn-sm" 
-                                style={{ background: '#d93025', color: '#ffffff', border: 'none' }}
+                                style={{ background: 'var(--danger-bg)', color: 'var(--text-on-color)', border: 'none' }}
                                 onClick={() => setShowTerminateModal(true)}
                             >
                                 <UserX size={14} />
@@ -414,63 +441,346 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                             </button>
                         </div>
                     ) : (
-                        <div style={{ color: '#d93025', fontSize: '12px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ color: 'var(--danger)', fontSize: '12px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <AlertCircle size={14} />
                             <span>Session Terminated: "{sessionData?.terminationReason || 'Integrity Violation'}"</span>
                         </div>
                     )}
                 </div>
 
-                {/* Candidate Exam Submissions Section */}
-                {submissions.length > 0 && (
-                    <div className="alert-item" style={{ background: '#f8f9fa', border: '1px solid #1a73e8', borderRadius: '8px', padding: '14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <FileText size={18} style={{ color: '#1a73e8' }} />
-                                <span style={{ fontWeight: 600, fontSize: '14px', color: '#202124' }}>
-                                    Candidate Answer Submission
-                                </span>
-                            </div>
-                            <span className="md-badge status-active">
-                                <CheckCircle size={12} />
-                                <span>Submitted</span>
-                            </span>
-                        </div>
-
-                        {submissions.map((sub, idx) => (
-                            <div key={sub._id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12.5px', background: '#fff', border: '1px solid #dadce0', borderRadius: '6px', padding: '8px 12px' }}>
-                                <span>📄 {sub.originalName || 'answer_script.pdf'}</span>
-                                {sub.fileUrl && (
-                                    <a 
-                                        href={sub.fileUrl.startsWith('http') ? sub.fileUrl : `${API_BASE_URL}${sub.fileUrl}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        style={{ color: '#1a73e8', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontWeight: 500 }}
-                                    >
-                                        <Download size={13} />
-                                        <span>Download Script</span>
-                                    </a>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Categorized Filter & Accordion Toolbar */}
+                {/* Segmented Top Navigation Tabs */}
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
+                    gap: '8px',
+                    borderBottom: '2px solid var(--border-color)',
+                    paddingBottom: '2px',
+                    marginTop: '2px',
+                    marginBottom: '4px'
+                }}>
+                    <button
+                        type="button"
+                        onClick={() => setMainTab('submission')}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: mainTab === 'submission' ? '3px solid var(--primary)' : '3px solid transparent',
+                            padding: '8px 14px',
+                            fontSize: '13.5px',
+                            fontWeight: mainTab === 'submission' ? 600 : 500,
+                            color: mainTab === 'submission' ? 'var(--primary)' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            transition: 'all 0.15s ease',
+                            marginBottom: '-2px'
+                        }}
+                    >
+                        <FileText size={16} />
+                        <span>Final Submission</span>
+                        <span className="md-badge" style={{
+                            fontSize: '11px',
+                            padding: '2px 7px',
+                            background: submissions.length > 0 ? 'var(--primary-soft)' : 'var(--bg-muted)',
+                            color: submissions.length > 0 ? 'var(--primary)' : 'var(--text-muted)'
+                        }}>
+                            {submissions.length > 0 ? `${submissions.length} Submitted` : 'None'}
+                        </span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setMainTab('evidence')}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: mainTab === 'evidence' ? '3px solid var(--primary)' : '3px solid transparent',
+                            padding: '8px 14px',
+                            fontSize: '13.5px',
+                            fontWeight: mainTab === 'evidence' ? 600 : 500,
+                            color: mainTab === 'evidence' ? 'var(--primary)' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            transition: 'all 0.15s ease',
+                            marginBottom: '-2px'
+                        }}
+                    >
+                        <AlertOctagon size={16} />
+                        <span>Evidence Timeline</span>
+                        <span className="md-badge" style={{
+                            fontSize: '11px',
+                            padding: '2px 7px',
+                            background: activeViolations.length > 0 ? 'var(--danger-soft)' : 'var(--bg-muted)',
+                            color: activeViolations.length > 0 ? 'var(--danger)' : 'var(--text-muted)'
+                        }}>
+                            {activeViolations.length}
+                        </span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setMainTab('identity')}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: mainTab === 'identity' ? '3px solid var(--primary)' : '3px solid transparent',
+                            padding: '8px 14px',
+                            fontSize: '13.5px',
+                            fontWeight: mainTab === 'identity' ? 600 : 500,
+                            color: mainTab === 'identity' ? 'var(--primary)' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            transition: 'all 0.15s ease',
+                            marginBottom: '-2px'
+                        }}
+                    >
+                        <Camera size={16} />
+                        <span>Camera & Identity</span>
+                        <span className="md-badge" style={{
+                            fontSize: '11px',
+                            padding: '2px 7px',
+                            background: cameraPhotoUrl ? 'var(--success-soft)' : 'var(--bg-muted)',
+                            color: cameraPhotoUrl ? 'var(--success)' : 'var(--text-muted)'
+                        }}>
+                            {cameraPhotoUrl ? 'Verified' : 'No Photo'}
+                        </span>
+                    </button>
+                </div>
+
+                {/* Candidate Exam Submissions Section */}
+                {mainTab === 'submission' && (
+                    submissions.length > 0 ? (
+                        <div className="alert-item" style={{ 
+                            background: 'var(--bg-base)', 
+                            border: '1.5px solid var(--primary)', 
+                            borderRadius: '10px', 
+                            padding: '16px 18px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+                            marginBottom: '16px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{ 
+                                        background: 'var(--primary-soft)', 
+                                        color: 'var(--primary)', 
+                                        width: '36px', 
+                                        height: '36px', 
+                                        borderRadius: '8px', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center' 
+                                    }}>
+                                        <FileText size={20} />
+                                    </div>
+                                    <div>
+                                        <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
+                                            Candidate Final Answer & Submission
+                                        </h4>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                            {submissions[0]?.uploadedAt ? `Submitted on ${new Date(submissions[0].uploadedAt).toLocaleDateString()} at ${new Date(submissions[0].uploadedAt).toLocaleTimeString()}` : 'Official submission recorded'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    <span className="md-badge status-active" style={{ fontSize: '12px', padding: '4px 10px' }}>
+                                        <CheckCircle size={13} />
+                                        <span>Verified Submission</span>
+                                    </span>
+                                    {submissions[0]?.submissionType && (
+                                        <span className="md-badge" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontSize: '11px', textTransform: 'uppercase', padding: '4px 8px' }}>
+                                            Format: {submissions[0].submissionType}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {submissions.map((sub, idx) => {
+                                const isAuto = sub.autoSubmitted || (sub.answerText && sub.answerText.includes('[Auto-Submitted'));
+                                const textWords = sub.answerText ? sub.answerText.trim().split(/\s+/).filter(Boolean).length : 0;
+                                const textChars = sub.answerText ? sub.answerText.length : 0;
+
+                                return (
+                                    <div key={sub._id || idx} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                        {isAuto && (
+                                            <div style={{ 
+                                                background: '#fffbeb', 
+                                                border: '1px solid #fef3c7', 
+                                                color: '#92400e', 
+                                                padding: '8px 12px', 
+                                                borderRadius: '6px', 
+                                                fontSize: '12.5px', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '8px' 
+                                            }}>
+                                                <AlertTriangle size={15} style={{ color: '#d97706', flexShrink: 0 }} />
+                                                <span><strong>Auto-Finalized on Time Expiry:</strong> Candidate exam was automatically submitted by timer.</span>
+                                            </div>
+                                        )}
+
+                                        {/* 1. Typed Answer Script Viewer */}
+                                        {sub.answerText && (
+                                            <div style={{ 
+                                                background: 'var(--bg-surface)', 
+                                                border: '1px solid var(--border-color)', 
+                                                borderRadius: '8px', 
+                                                overflow: 'hidden' 
+                                            }}>
+                                                <div style={{ 
+                                                    display: 'flex', 
+                                                    alignItems: 'center', 
+                                                    justifyContent: 'space-between', 
+                                                    padding: '8px 14px', 
+                                                    background: 'var(--bg-muted)', 
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    fontSize: '12.5px',
+                                                    fontWeight: 600,
+                                                    color: 'var(--text-main)'
+                                                }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <FileCode size={15} style={{ color: 'var(--primary)' }} />
+                                                        <span>Typed Response Script</span>
+                                                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 400 }}>
+                                                            ({textWords} words • {textChars} characters)
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyAnswer(sub.answerText, sub._id || idx)}
+                                                        className="md-btn md-btn-sm md-btn-outlined"
+                                                        style={{ fontSize: '11px', padding: '3px 8px', gap: '4px', display: 'inline-flex', alignItems: 'center' }}
+                                                    >
+                                                        {copiedSubId === (sub._id || idx) ? (
+                                                            <>
+                                                                <CheckCheck size={12} style={{ color: 'var(--success)' }} />
+                                                                <span style={{ color: 'var(--success)' }}>Copied!</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Copy size={12} />
+                                                                <span>Copy Answer</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                                <div style={{ 
+                                                    padding: '14px 16px', 
+                                                    whiteSpace: 'pre-wrap', 
+                                                    fontFamily: 'inherit', 
+                                                    fontSize: '13.5px', 
+                                                    lineHeight: 1.65, 
+                                                    color: 'var(--text-main)', 
+                                                    maxHeight: '340px', 
+                                                    overflowY: 'auto',
+                                                    userSelect: 'text'
+                                                }}>
+                                                    {sub.answerText}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 2. Attached File Card */}
+                                        {(sub.filePath || sub.filename) && (
+                                            <div style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'space-between', 
+                                                background: 'var(--bg-surface)', 
+                                                border: '1px solid var(--border-color)', 
+                                                borderRadius: '8px', 
+                                                padding: '12px 16px',
+                                                flexWrap: 'wrap',
+                                                gap: '10px'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    <div style={{ 
+                                                        background: 'var(--primary-soft)', 
+                                                        color: 'var(--primary)', 
+                                                        width: '34px', 
+                                                        height: '34px', 
+                                                        borderRadius: '6px', 
+                                                        display: 'flex', 
+                                                        alignItems: 'center', 
+                                                        justifyContent: 'center',
+                                                        fontSize: '16px'
+                                                    }}>
+                                                        📄
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-main)' }}>
+                                                            {sub.filename || 'Candidate Solution Document'}
+                                                        </div>
+                                                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                                            {sub.fileSize ? `${(sub.fileSize / 1024).toFixed(1)} KB` : 'Uploaded Attachment'} • Attached during exam
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {sub.filePath && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <a 
+                                                            href={assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`)}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="md-btn md-btn-sm md-btn-outlined"
+                                                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                        >
+                                                            <ExternalLink size={13} />
+                                                            <span>Preview</span>
+                                                        </a>
+                                                        <a 
+                                                            href={assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`)}
+                                                            download={sub.filename || 'candidate_solution'}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="md-btn md-btn-sm md-btn-primary"
+                                                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                        >
+                                                            <Download size={13} />
+                                                            <span>Download Solution File</span>
+                                                        </a>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="md-empty-card" style={{ padding: '36px 20px', textAlign: 'center', background: 'var(--bg-base)', borderRadius: '10px', border: '1px dashed var(--border-color)', margin: '10px 0 16px' }}>
+                            <FileText size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 10px', display: 'block' }} />
+                            <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: 'var(--text-main)' }}>No Submission Recorded</h4>
+                            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+                                Candidate has not uploaded any solution files or submitted typed responses yet.
+                            </p>
+                        </div>
+                    )
+                )}
+
+                {/* TAB 2: Evidence Timeline & Incidents */}
+                {mainTab === 'evidence' && (
+                    <>
+                        {/* Categorized Filter & Accordion Toolbar */}
+                        <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
                     justifyContent: 'space-between',
-                    background: '#f8f9fa',
-                    border: '1px solid #dadce0',
+                    background: 'var(--bg-base)',
+                    border: '1px solid var(--border-color)',
                     borderRadius: '8px',
                     padding: '8px 12px',
                     flexWrap: 'wrap',
                     gap: '8px'
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Filter size={15} style={{ color: '#5f6368' }} />
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#202124' }}>
+                        <Filter size={15} style={{ color: 'var(--text-muted)' }} />
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
                             Evidence Timeline ({activeViolations.length} Active Incidents)
                         </span>
                     </div>
@@ -521,9 +831,9 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                 {/* Main Evidence Content */}
                 {filteredActiveViolations.length === 0 ? (
                     <div className="md-empty-card" style={{ border: 'none', background: 'transparent', padding: '30px 20px' }}>
-                        <CheckCircle size={36} style={{ color: '#188038', marginBottom: '8px' }} />
-                        <h4 style={{ margin: 0, fontSize: '15px', color: '#202124' }}>No Active Violations Found</h4>
-                        <p style={{ margin: '4px 0 0 0', color: '#5f6368', fontSize: '12.5px' }}>
+                        <CheckCircle size={36} style={{ color: 'var(--success)', marginBottom: '8px' }} />
+                        <h4 style={{ margin: 0, fontSize: '15px', color: 'var(--text-main)' }}>No Active Violations Found</h4>
+                        <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '12.5px' }}>
                             {dismissedViolations.length > 0 
                                 ? `${dismissedViolations.length} alert(s) were dismissed as false positives.` 
                                 : 'This candidate has maintained clean monitoring status.'}
@@ -542,11 +852,11 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     key={bundle.key}
                                     className="md-card"
                                     style={{
-                                        border: `1px solid ${bundle.maxSeverity >= 4 ? '#f5c2c7' : '#dadce0'}`,
+                                        border: `1px solid ${bundle.maxSeverity >= 4 ? 'var(--danger-soft)' : 'var(--border-color)'}`,
                                         borderLeft: `5px solid ${bundle.color}`,
                                         padding: 0,
                                         overflow: 'hidden',
-                                        background: '#fff'
+                                        background: 'var(--bg-surface)'
                                     }}
                                 >
                                     {/* Accordion Category Header */}
@@ -559,7 +869,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                             justifyContent: 'space-between',
                                             cursor: 'pointer',
                                             background: bundle.badgeBg,
-                                            borderBottom: isExpanded ? '1px solid #dadce0' : 'none',
+                                            borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none',
                                             userSelect: 'none'
                                         }}
                                     >
@@ -567,14 +877,14 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                             <span style={{ fontSize: '18px' }}>{bundle.icon}</span>
                                             <div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ fontSize: '14.5px', fontWeight: 600, color: '#202124' }}>
+                                                    <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)' }}>
                                                         {bundle.label}
                                                     </span>
                                                     <span style={{
                                                         fontSize: '11px',
                                                         fontWeight: 700,
                                                         color: bundle.color,
-                                                        background: '#fff',
+                                                        background: 'var(--bg-surface)',
                                                         padding: '2px 8px',
                                                         borderRadius: '10px',
                                                         border: `1px solid ${bundle.color}`
@@ -587,23 +897,23 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div style={{ fontSize: '11.5px', color: '#5f6368', marginTop: '2px' }}>
+                                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
                                                     Latest: {new Date(bundle.latestTimestamp).toLocaleTimeString()} &bull; Severity: {bundle.maxSeverity} &bull; {snapshots.length} Snapshots
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <span style={{ fontSize: '12px', fontWeight: 500, color: '#1a73e8' }}>
+                                            <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--primary)' }}>
                                                 {isExpanded ? 'Collapse Category' : `Expand (${bundle.items.length})`}
                                             </span>
-                                            {isExpanded ? <ChevronUp size={16} color="#1a73e8" /> : <ChevronDown size={16} color="#1a73e8" />}
+                                            {isExpanded ? <ChevronUp size={16} color="var(--primary)" /> : <ChevronDown size={16} color="var(--primary)" />}
                                         </div>
                                     </div>
 
                                     {/* Accordion Body: Evidence Snapshots & Decisions */}
                                     {isExpanded && (
-                                        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#fafbfc' }}>
+                                        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-base)' }}>
                                             {bundle.items.map((v, vIdx) => {
                                                 const isReviewed = Boolean(v.reviewed);
                                                 const decision = v.decision || 'pending';
@@ -617,28 +927,28 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                     <div 
                                                         key={v._id || vIdx}
                                                         style={{
-                                                            background: isReviewed ? '#f8f9fa' : '#ffffff',
-                                                            border: isReviewed ? '1px solid #e8eaed' : '1px solid #1a73e8',
+                                                            background: isReviewed ? 'var(--bg-base)' : 'var(--bg-surface)',
+                                                            border: isReviewed ? '1px solid var(--border-color)' : '1px solid var(--primary)',
                                                             borderRadius: '6px',
                                                             padding: '10px 14px'
                                                         }}
                                                     >
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                <span style={{ fontWeight: 600, fontSize: '13.5px', color: '#202124' }}>
+                                                                <span style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-main)' }}>
                                                                     #{vIdx + 1} &bull; {formatType(v.type, v.details)}
                                                                 </span>
                                                                 <span className="md-badge" style={{ fontSize: '10.5px' }}>
                                                                     Sev {v.severity}
                                                                 </span>
                                                                 {v.details?.confidence && (
-                                                                    <span style={{ fontSize: '11px', color: '#5f6368' }}>
+                                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                                                         ({Math.round(v.details.confidence * 100)}% conf)
                                                                     </span>
                                                                 )}
                                                             </div>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                <span style={{ fontSize: '11.5px', color: '#70757a' }}>
+                                                                <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
                                                                     {new Date(v.timestamp).toLocaleTimeString()}
                                                                 </span>
                                                                 {isReviewed ? (
@@ -655,7 +965,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                         </div>
 
                                                         {v.details?.reason && (
-                                                            <div style={{ fontSize: '11.5px', color: '#5f6368', marginBottom: '6px' }}>
+                                                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                                                                 Detail: {v.details.reason}
                                                             </div>
                                                         )}
@@ -667,17 +977,17 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                                     marginBottom: '8px', 
                                                                     borderRadius: '6px', 
                                                                     overflow: 'hidden', 
-                                                                    border: '1px solid #dadce0', 
+                                                                    border: '1px solid var(--border-color)', 
                                                                     background: '#000',
                                                                     position: 'relative',
                                                                     cursor: 'pointer',
                                                                     maxHeight: '220px'
                                                                 }}
-                                                                onClick={() => setModalImageSrc(imageSrc)}
+                                                                onClick={() => setModalImageSrc(assetUrl(imageSrc))}
                                                                 title="Click to zoom full screenshot"
                                                             >
                                                                 <img 
-                                                                    src={imageSrc} 
+                                                                    src={assetUrl(imageSrc)} 
                                                                     alt="Violation Evidence" 
                                                                     style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', display: 'block' }} 
                                                                 />
@@ -686,7 +996,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                                     bottom: 6,
                                                                     right: 6,
                                                                     background: 'rgba(0,0,0,0.7)',
-                                                                    color: '#fff',
+                                                                    color: 'var(--text-on-color)',
                                                                     padding: '2px 6px',
                                                                     borderRadius: '4px',
                                                                     fontSize: '11px',
@@ -700,10 +1010,10 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                         )}
 
                                                         {/* Inline Review Decision Controls */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #f1f3f4', paddingTop: '6px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--bg-muted)', paddingTop: '6px' }}>
                                                             <button 
                                                                 className="md-btn md-btn-sm" 
-                                                                style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0', fontSize: '11.5px', padding: '3px 8px' }}
+                                                                style={{ background: decision === 'confirmed' ? 'var(--success-soft)' : 'var(--bg-muted)', color: decision === 'confirmed' ? 'var(--success)' : 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '11.5px', padding: '3px 8px' }}
                                                                 onClick={() => handleReviewAction(v._id, 'confirmed')}
                                                             >
                                                                 <Check size={12} />
@@ -711,7 +1021,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                             </button>
                                                             <button 
                                                                 className="md-btn md-btn-sm" 
-                                                                style={{ background: '#ffffff', color: '#d93025', border: '1px solid #fad2cf', fontSize: '11.5px', padding: '3px 8px' }}
+                                                                style={{ background: 'var(--bg-surface)', color: 'var(--danger)', border: '1px solid var(--danger-soft)', fontSize: '11.5px', padding: '3px 8px' }}
                                                                 onClick={() => handleReviewAction(v._id, 'dismissed')}
                                                             >
                                                                 <X size={12} />
@@ -744,31 +1054,31 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     key={v._id} 
                                     className={`alert-item alert-severity-${v.severity}`}
                                     style={{
-                                        background: isReviewed ? '#f8f9fa' : '#ffffff',
-                                        border: isReviewed ? '1px solid #dadce0' : '1px solid #1a73e8'
+                                        background: isReviewed ? 'var(--bg-base)' : 'var(--bg-surface)',
+                                        border: isReviewed ? '1px solid var(--border-color)' : '1px solid var(--primary)'
                                     }}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                         <div>
-                                            <span style={{ fontWeight: 600, fontSize: '14.5px', color: '#202124' }}>
+                                            <span style={{ fontWeight: 600, fontSize: '14.5px', color: 'var(--text-main)' }}>
                                                 {formatType(v.type, v.details)}
                                             </span>
-                                            <span className="md-badge" style={{ fontSize: '11px', background: '#f1f3f4', marginLeft: '8px' }}>
+                                            <span className="md-badge" style={{ fontSize: '11px', background: 'var(--bg-muted)', marginLeft: '8px' }}>
                                                 Severity {v.severity}
                                             </span>
                                         </div>
-                                        <span style={{ fontSize: '12px', color: '#70757a' }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                                             {new Date(v.timestamp).toLocaleTimeString()}
                                         </span>
                                     </div>
 
                                     {imageSrc && (
                                         <div 
-                                            style={{ marginTop: '8px', marginBottom: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #dadce0', background: '#000', cursor: 'pointer' }}
-                                            onClick={() => setModalImageSrc(imageSrc)}
+                                            style={{ marginTop: '8px', marginBottom: '10px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-color)', background: '#000', cursor: 'pointer' }}
+                                            onClick={() => setModalImageSrc(assetUrl(imageSrc))}
                                         >
                                             <img 
-                                                src={imageSrc} 
+                                                src={assetUrl(imageSrc)} 
                                                 alt="Evidence Snapshot" 
                                                 style={{ width: '100%', maxHeight: '280px', objectFit: 'contain', display: 'block' }} 
                                             />
@@ -778,7 +1088,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
                                         <button 
                                             className="md-btn md-btn-sm" 
-                                            style={{ background: decision === 'confirmed' ? '#e6f4ea' : '#f1f3f4', color: decision === 'confirmed' ? '#137333' : '#5f6368', border: '1px solid #dadce0' }}
+                                            style={{ background: decision === 'confirmed' ? 'var(--success-soft)' : 'var(--bg-muted)', color: decision === 'confirmed' ? 'var(--success)' : 'var(--text-muted)', border: '1px solid var(--border-color)' }}
                                             onClick={() => handleReviewAction(v._id, 'confirmed')}
                                         >
                                             <Check size={14} />
@@ -786,7 +1096,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                         </button>
                                         <button 
                                             className="md-btn md-btn-sm" 
-                                            style={{ background: '#ffffff', color: '#d93025', border: '1px solid #fad2cf' }}
+                                            style={{ background: 'var(--bg-surface)', color: 'var(--danger)', border: '1px solid var(--danger-soft)' }}
                                             onClick={() => handleReviewAction(v._id, 'dismissed')}
                                         >
                                             <X size={14} />
@@ -801,12 +1111,12 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
 
                 {/* Dismissed / False Positive Audit Logs */}
                 {dismissedViolations.length > 0 && (
-                    <div style={{ marginTop: '16px', borderTop: '1px solid #e8eaed', paddingTop: '12px' }}>
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
                         <button 
                             type="button"
                             className="md-btn md-btn-sm md-btn-text"
                             onClick={() => setShowDismissedLogs(!showDismissedLogs)}
-                            style={{ color: '#5f6368', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', cursor: 'pointer' }}
+                            style={{ color: 'var(--text-muted)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', cursor: 'pointer' }}
                         >
                             <Clock size={13} />
                             <span>{showDismissedLogs ? 'Hide' : 'View'} Dismissed Logs ({dismissedViolations.length})</span>
@@ -815,17 +1125,130 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         {showDismissedLogs && (
                             <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 {dismissedViolations.map(dv => (
-                                    <div key={dv._id} style={{ background: '#f8f9fa', border: '1px dashed #dadce0', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#5f6368', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div key={dv._id} style={{ background: 'var(--bg-base)', border: '1px dashed var(--border-color)', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <div>
                                             <strong>{formatType(dv.type, dv.details)}</strong> (Severity {dv.severity}) • {new Date(dv.timestamp).toLocaleTimeString()}
                                         </div>
-                                        <span className="md-badge" style={{ background: '#e8eaed', color: '#5f6368', fontSize: '10px' }}>
+                                        <span className="md-badge" style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)', fontSize: '10px' }}>
                                             Dismissed
                                         </span>
                                     </div>
                                 ))}
                             </div>
                         )}
+                    </div>
+                )}
+                    </>
+                )}
+
+                {/* TAB 3: Pre-Exam Camera & Identity Verification */}
+                {mainTab === 'identity' && (
+                    <div className="alert-item" style={{
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '16px',
+                        marginBottom: '16px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ background: 'var(--primary-soft)', color: 'var(--primary)', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Camera size={20} />
+                                </div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
+                                        Candidate Pre-Exam Identity Verification
+                                    </h4>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                        Live camera snapshot captured during the self-check verification stage.
+                                    </div>
+                                </div>
+                            </div>
+                            <span className="md-badge" style={{
+                                background: cameraPhotoUrl ? 'var(--success-soft)' : 'var(--warning-soft)',
+                                color: cameraPhotoUrl ? 'var(--success)' : 'var(--warning)',
+                                fontSize: '12px',
+                                padding: '4px 10px'
+                            }}>
+                                {cameraPhotoUrl ? '✓ Photo Verified' : 'No Verification Photo'}
+                            </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: cameraPhotoUrl ? '280px 1fr' : '1fr', gap: '20px', alignItems: 'start' }}>
+                            {cameraPhotoUrl ? (
+                                <div 
+                                    style={{
+                                        borderRadius: '8px',
+                                        overflow: 'hidden',
+                                        border: '1px solid var(--border-color)',
+                                        background: '#000',
+                                        cursor: 'pointer',
+                                        position: 'relative'
+                                    }}
+                                    onClick={() => setModalImageSrc(cameraPhotoUrl)}
+                                    title="Click to enlarge verification photo"
+                                >
+                                    <img 
+                                        src={cameraPhotoUrl} 
+                                        alt="Candidate Verification Photo" 
+                                        style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', display: 'block' }}
+                                    />
+                                    <div style={{
+                                        position: 'absolute',
+                                        bottom: '8px',
+                                        right: '8px',
+                                        background: 'rgba(0,0,0,0.65)',
+                                        color: '#fff',
+                                        borderRadius: '4px',
+                                        padding: '3px 6px',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}>
+                                        <Maximize2 size={12} />
+                                        <span>Enlarge</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{
+                                    padding: '28px 20px',
+                                    background: 'var(--bg-base)',
+                                    borderRadius: '8px',
+                                    border: '1px dashed var(--border-color)',
+                                    textAlign: 'center',
+                                    color: 'var(--text-muted)',
+                                    fontSize: '13px'
+                                }}>
+                                    No pre-exam verification snapshot was recorded for this session.
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ background: 'var(--bg-base)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Candidate Name</div>
+                                    <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>{studentDisplayName}</div>
+                                </div>
+
+                                <div style={{ background: 'var(--bg-base)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Roll Number / ID</div>
+                                    <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>{sessionData?.rollNumber || sessionData?.studentId || 'N/A'}</div>
+                                </div>
+
+                                <div style={{ background: 'var(--bg-base)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Exam ID</div>
+                                    <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-main)', marginTop: '2px' }}>{sessionData?.examId || 'N/A'}</div>
+                                </div>
+
+                                <div style={{ background: 'var(--bg-base)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Session ID</div>
+                                    <div style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-muted)', marginTop: '2px' }}>{sessionId}</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -842,11 +1265,11 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         onClick={(e) => e.stopPropagation()} 
                         style={{ maxWidth: '90vw', maxHeight: '90vh', padding: '12px', background: '#0f172a', borderRadius: '8px' }}
                     >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', color: '#fff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', color: 'var(--text-on-color)' }}>
                             <span style={{ fontSize: '13px', fontWeight: 500 }}>High-Resolution Evidence Snapshot</span>
                             <button 
                                 onClick={() => setModalImageSrc(null)}
-                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px' }}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-on-color)', cursor: 'pointer', padding: '4px' }}
                             >
                                 <X size={20} />
                             </button>
@@ -865,7 +1288,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                 <div className="md-modal-overlay">
                     <div className="md-modal-card" style={{ maxWidth: '460px' }}>
                         <div className="md-modal-header">
-                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1a73e8' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
                                 <MessageSquare size={18} /> Send Warning to Candidate
                             </h3>
                             <button className="md-icon-btn" onClick={() => setShowWarnModal(false)}>
@@ -874,7 +1297,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         </div>
 
                         {warnSuccess ? (
-                            <div style={{ padding: '24px', textAlign: 'center', color: '#137333' }}>
+                            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--success)' }}>
                                 <CheckCircle size={36} style={{ marginBottom: '8px' }} />
                                 <div style={{ fontSize: '15px', fontWeight: 600 }}>Warning Sent to Candidate App!</div>
                             </div>
@@ -932,7 +1355,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                 <div className="md-modal-overlay">
                     <div className="md-modal-card" style={{ maxWidth: '460px' }}>
                         <div className="md-modal-header">
-                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d93025' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)' }}>
                                 <AlertOctagon size={18} /> Terminate Candidate Session
                             </h3>
                             <button className="md-icon-btn" onClick={() => setShowTerminateModal(false)}>
@@ -940,7 +1363,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                             </button>
                         </div>
                         <form onSubmit={handleTerminate}>
-                            <p style={{ color: '#5f6368', fontSize: '13px', margin: '0 0 16px 0' }}>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '0 0 16px 0' }}>
                                 Are you sure you want to terminate <strong>{studentDisplayName}</strong>'s exam session? The candidate app will be immediately locked out.
                             </p>
                             <div className="md-form-group">
@@ -967,7 +1390,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                 <button 
                                     type="submit" 
                                     className="md-btn"
-                                    style={{ background: '#d93025', color: '#ffffff' }}
+                                    style={{ background: 'var(--danger-bg)', color: 'var(--text-on-color)' }}
                                     disabled={actionSubmitting || !terminateReason.trim()}
                                 >
                                     {actionSubmitting ? 'Terminating...' : 'Confirm Termination'}

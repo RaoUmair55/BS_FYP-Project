@@ -23,9 +23,10 @@ IntegrityFlow is composed of three main components:
 
 ## Completed Modules & Features
 
-- **Module 1: Whitelist Enforcement**
+- **Module 1: Whitelist Enforcement & Pre-Existing Notes Guard**
   - Actively polls running system processes and enforces a strict whitelist.
   - Includes standard dev/system utilities (`git-remote-https.exe`, `phoneexperiencehost.exe`, etc.) in whitelist configuration.
+  - **Pre-Existing File Timestamp Guard**: Automatically monitors open file handles in teacher-allowed software (Word, VS Code, etc.) and flags files modified/created prior to the exam start time (`mtime < exam_start_time`).
   - Gracefully handles Dev vs. Exam modes, allowing developers to work safely without the AI module terminating their IDEs, while ruthlessly blocking cheating vectors during a real exam.
 
 - **Module 2: AI Computer Vision Monitoring & Lens Defense**
@@ -38,8 +39,11 @@ IntegrityFlow is composed of three main components:
   - Automatically captures lightweight, compressed screenshots (<200KB) the moment a violation is detected.
   - Evidence is instantly uploaded to the backend and viewable in the teacher dashboard with strict per-examiner and per-candidate isolation.
 
-- **Module 4: Pre-Exam Self-Check & Identity Verification**
+- **Module 4: Pre-Exam Self-Check & Dual-Environment Support**
   - Staging area validating candidate camera, microphone, external storage drives, displays, and background apps.
+  - **Dual-Mode Proctoring Architecture**:
+    - 🌐 **Remote Online Mode**: Full AI Vision (Webcam), Eye Tracking, Microphone, and Environment Detection.
+    - 🏫 **On-Campus Physical Lab Mode**: Bypasses camera/mic hardware checks (ideal for lab desktop towers without webcams), activating Shell Lockdown, USB Insertion Guard, and Process Whitelisting.
   - Enforces student identity capture (Full Name + Roll Number) and explicit informed consent.
 
 - **Module 5: Dynamic Exponential Severity Decay Engine**
@@ -49,8 +53,9 @@ IntegrityFlow is composed of three main components:
   - Visual dashboard gallery with candidate reference photos, real-time risk gauge indicators (Green/Amber/Red), and 1-click proctoring tools (+5m/+10m exam extensions, direct evidence review).
   - Multi-tenant data isolation: Examiners strictly view and manage their own created exams, active candidate sessions, and evidence, while Administrators retain global department-wide oversight.
 
-- **Module 7B: Secure In-App Paper Viewer & Answer Workspace**
+- **Module 7B: Secure In-App Paper Viewer, Workspace & Clipboard Lockdown**
   - Question papers (PDF/DOCX) rendered entirely inside Electron with dynamic anti-leak watermark overlays.
+  - **OS Clipboard & Copy-Paste Lockdown**: Automatically flushes the OS clipboard on exam start and intercepts `copy`, `cut`, `paste`, context menu (right-click), and keyboard shortcuts (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Shift+Insert`).
   - Supports auto-saved typed text answers and direct file submissions (.pdf, .docx, .zip, etc.).
 
 - **Module 8: In-Exam Live Chat & Proctor Broadcasts**

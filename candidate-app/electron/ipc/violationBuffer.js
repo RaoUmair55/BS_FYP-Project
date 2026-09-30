@@ -48,7 +48,7 @@ function readJsonStore() {
     return JSON.parse(raw);
   } catch (e) {
     console.error('[ViolationBuffer] Error reading JSON buffer:', e);
-    return { nextId: 1, violations: [] };
+    throw e;
   }
 }
 
@@ -60,6 +60,7 @@ function writeJsonStore(data) {
     fs.renameSync(tempPath, jsonStorePath);
   } catch (e) {
     console.error('[ViolationBuffer] Error writing atomic JSON store:', e);
+    throw e;
   }
 }
 

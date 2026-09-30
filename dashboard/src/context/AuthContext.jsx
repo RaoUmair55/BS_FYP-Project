@@ -199,18 +199,12 @@ export function AuthProvider({ children }) {
         return data;
     };
 
-    // 1-Click Quick Demo Login for testing/examiners/admins
+    // Optional local evaluation account; never ship a credential in source.
     const demoLogin = async (role = 'admin') => {
-        const demoEmail = role === 'admin' ? 'admin@integrityflow.edu' : 'proctor@integrityflow.edu';
-        const demoPassword = 'Password123!';
-        const demoName = role === 'admin' ? 'Super Administrator' : 'Dr. Integrity Examiner';
-
-        try {
-            return await login(demoEmail, demoPassword);
-        } catch (err) {
-            // Auto register demo user with specified role if not in DB yet
-            return await signup(demoName, demoEmail, demoPassword, role);
-        }
+        const demoEmail = role === 'admin' ? import.meta.env.VITE_DEMO_ADMIN_EMAIL : import.meta.env.VITE_DEMO_TEACHER_EMAIL;
+        const demoPassword = role === 'admin' ? import.meta.env.VITE_DEMO_ADMIN_PASSWORD : import.meta.env.VITE_DEMO_TEACHER_PASSWORD;
+        if (import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'true' || !demoEmail || !demoPassword) throw new Error('Demo login is not configured');
+        return login(demoEmail, demoPassword);
     };
 
     // Log Out action

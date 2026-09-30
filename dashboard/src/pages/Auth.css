@@ -2,6 +2,25 @@
    Material Design Authentication Styles (Login, Signup, Forgot, Reset)
    ========================================================================== */
 
+.auth-theme-shell { min-height: 100vh; background: var(--bg-base); }
+.auth-theme-toggle {
+  position: fixed;
+  z-index: 11000;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  box-shadow: var(--elevation-1);
+  cursor: pointer;
+}
+.auth-theme-toggle:hover { color: var(--primary); background: var(--primary-soft); }
+
 .auth-wrapper {
   min-height: 100vh;
   display: flex;
@@ -37,8 +56,8 @@
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #1a73e8, #4285f4);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--primary-bg), #4285f4);
+  color: var(--text-on-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,8 +143,8 @@
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background-color: #fce8e6;
-  border: 1px solid #fad2cf;
+  background-color: var(--danger-soft);
+  border: 1px solid var(--danger-soft);
   border-radius: 8px;
   color: var(--status-red);
   font-size: 13px;
@@ -138,8 +157,8 @@
   align-items: flex-start;
   gap: 10px;
   padding: 14px 16px;
-  background-color: #e6f4ea;
-  border: 1px solid #ceead6;
+  background-color: var(--success-soft);
+  border: 1px solid var(--success-soft);
   border-radius: 8px;
   color: var(--status-green);
   font-size: 13px;
@@ -188,7 +207,7 @@
 }
 
 .auth-link:hover {
-  color: #1557b0;
+  color: var(--primary);
   text-decoration: underline;
 }
 
@@ -196,7 +215,7 @@
   width: 100%;
   height: 44px;
   background-color: var(--google-blue);
-  color: #ffffff;
+  color: var(--text-on-color);
   border: none;
   border-radius: 8px;
   font-size: 14px;
@@ -213,7 +232,7 @@
 }
 
 .auth-submit-btn:hover:not(:disabled) {
-  background-color: #1557b0;
+  background-color: var(--primary-bg);
   box-shadow: 0 2px 4px rgba(26, 115, 232, 0.3);
 }
 
@@ -225,7 +244,7 @@
 .auth-demo-btn {
   width: 100%;
   height: 40px;
-  background-color: #f1f3f4;
+  background-color: var(--bg-muted);
   color: var(--text-main);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -241,8 +260,8 @@
 }
 
 .auth-demo-btn:hover:not(:disabled) {
-  background-color: #e8eaed;
-  border-color: #dadce0;
+  background-color: var(--bg-muted);
+  border-color: var(--border-color);
 }
 
 .auth-divider {
@@ -284,7 +303,7 @@
   width: 18px;
   height: 18px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+  border-top-color: var(--text-on-color);
   border-radius: 50%;
   animation: authSpin 0.7s linear infinite;
 }

@@ -7,8 +7,12 @@ const Teacher = require('../models/Teacher');
  */
 async function seedAdmin() {
     try {
-        const adminEmail = (process.env.ADMIN_EMAIL || 'admin@integrityflow.com').toLowerCase().trim();
-        const adminPassword = process.env.ADMIN_PASSWORD || 'AdminSecurePass2026!';
+        if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
+            console.warn('[BootstrapAdmin] ADMIN_EMAIL and ADMIN_PASSWORD are required to seed an administrator.');
+            return;
+        }
+        const adminEmail = process.env.ADMIN_EMAIL.toLowerCase().trim();
+        const adminPassword = process.env.ADMIN_PASSWORD;
         const adminName = process.env.ADMIN_NAME || 'System Administrator';
 
         let adminUser = await Teacher.findOne({ email: adminEmail });

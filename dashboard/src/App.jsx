@@ -5,7 +5,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
-import { Shield } from 'lucide-react';
+import { Shield, Moon, Sun } from 'lucide-react';
 import './App.css';
 import './pages/Auth.css';
 
@@ -25,10 +25,17 @@ function getInitialPage() {
 function MainRouter() {
     const { currentTeacher, isLoading } = useAuth();
     const [currentPage, setCurrentPage] = useState(getInitialPage);
+    const [theme, setTheme] = useState(() => localStorage.getItem('integrityflow-theme') === 'dark' ? 'dark' : 'light');
     const [resetToken, setResetToken] = useState(() => {
         const params = new URLSearchParams(window.location.search);
         return params.get('token') || '';
     });
+
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+        localStorage.setItem('integrityflow-theme', theme);
+    }, [theme]);
 
     // Listen to browser Back/Forward navigation
     useEffect(() => {
@@ -63,8 +70,8 @@ function MainRouter() {
                     width: 44,
                     height: 44,
                     borderRadius: 12,
-                    background: 'linear-gradient(135deg, #1a73e8, #4285f4)',
-                    color: '#fff',
+                    background: 'linear-gradient(135deg, var(--primary-bg), #4285f4)',
+                    color: 'var(--text-on-color)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -83,23 +90,35 @@ function MainRouter() {
 
     // 2. Unauthenticated: Only Login, Signup, ForgotPassword, and ResetPassword are reachable
     if (!currentTeacher) {
+        let authPage;
         switch (currentPage) {
             case 'signup':
-                return <Signup onNavigate={navigateTo} />;
+                authPage = <Signup onNavigate={navigateTo} />;
+                break;
             case 'forgot-password':
-                return <ForgotPassword onNavigate={navigateTo} />;
+                authPage = <ForgotPassword onNavigate={navigateTo} />;
+                break;
             case 'reset-password':
-                return <ResetPassword token={resetToken} onNavigate={navigateTo} />;
+                authPage = <ResetPassword token={resetToken} onNavigate={navigateTo} />;
+                break;
             case 'login':
             default:
-                return <Login onNavigate={navigateTo} />;
+                authPage = <Login onNavigate={navigateTo} />;
         }
+        return (
+            <div className="auth-theme-shell">
+                <button className="auth-theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+                    {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                </button>
+                {authPage}
+            </div>
+        );
     }
 
     // 3. Authenticated: Render Main Examiner Dashboard
     return (
         <div className="app">
-            <Dashboard />
+            <Dashboard theme={theme} onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} />
         </div>
     );
 }

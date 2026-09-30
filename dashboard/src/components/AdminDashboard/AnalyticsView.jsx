@@ -1,7 +1,22 @@
 import React from 'react';
 import { Shield, Users, FileText, AlertTriangle, Cloud, CheckCircle, Database, TrendingUp, Layers } from 'lucide-react';
 
-const VIOLATION_COLORS = [
+const VIOLATION_COLORS = {
+    head_turn_away: '#1a73e8',
+    second_person_detected: '#d93025',
+    no_face_detected: '#9334e6',
+    unauthorized_object: '#e37400',
+    unauthorized_app: '#00acc1',
+    cell_phone: '#c5221f',
+    camera_issue: '#5f6368',
+    camera_occluded_or_dark: '#7627bb',
+    usb_device_detected: '#f9ab00',
+    multiple_displays_detected: '#185abc',
+    second_voice_detected: '#34a853',
+    pre_existing_file: '#64748b'
+};
+
+const LEGACY_VIOLATION_COLORS = [
     '#1a73e8', // Google Blue
     '#ea4335', // Google Red
     '#f9ab00', // Google Amber
@@ -15,7 +30,7 @@ const VIOLATION_COLORS = [
 export default function AnalyticsView({ stats, loading }) {
     if (loading || !stats) {
         return (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#5f6368' }}>
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <div className="auth-spinner" style={{ margin: '0 auto 16px auto' }}></div>
                 <span>Loading Analytics & Metrics...</span>
             </div>
@@ -38,7 +53,7 @@ export default function AnalyticsView({ stats, loading }) {
         const strokeDasharray = `${percent * circumference} ${circumference}`;
         const strokeDashoffset = -cumulativePercent * circumference;
         cumulativePercent += percent;
-        const color = VIOLATION_COLORS[index % VIOLATION_COLORS.length];
+        const color = VIOLATION_COLORS[item.type] || LEGACY_VIOLATION_COLORS[index % LEGACY_VIOLATION_COLORS.length];
 
         return {
             ...item,
@@ -65,7 +80,7 @@ export default function AnalyticsView({ stats, loading }) {
             {/* Top KPI Cards */}
             <div className="admin-kpi-grid">
                 <div className="admin-kpi-card">
-                    <div className="admin-kpi-icon" style={{ background: '#e8f0fe', color: '#1a73e8' }}>
+                    <div className="admin-kpi-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}>
                         <Layers size={22} />
                     </div>
                     <div>
@@ -75,7 +90,7 @@ export default function AnalyticsView({ stats, loading }) {
                 </div>
 
                 <div className="admin-kpi-card">
-                    <div className="admin-kpi-icon" style={{ background: '#e6f4ea', color: '#137333' }}>
+                    <div className="admin-kpi-icon" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}>
                         <Users size={22} />
                     </div>
                     <div>
@@ -85,7 +100,7 @@ export default function AnalyticsView({ stats, loading }) {
                 </div>
 
                 <div className="admin-kpi-card">
-                    <div className="admin-kpi-icon" style={{ background: '#fef7e0', color: '#b06000' }}>
+                    <div className="admin-kpi-icon" style={{ background: 'var(--warning-soft)', color: 'var(--warning)' }}>
                         <AlertTriangle size={22} />
                     </div>
                     <div>
@@ -95,7 +110,7 @@ export default function AnalyticsView({ stats, loading }) {
                 </div>
 
                 <div className="admin-kpi-card">
-                    <div className="admin-kpi-icon" style={{ background: '#fce8e6', color: '#c5221f' }}>
+                    <div className="admin-kpi-icon" style={{ background: 'var(--danger-soft)', color: 'var(--danger)' }}>
                         <Shield size={22} />
                     </div>
                     <div>
@@ -122,15 +137,15 @@ export default function AnalyticsView({ stats, loading }) {
                 <div className="admin-card">
                     <div className="admin-card-header">
                         <h3 className="admin-card-title">
-                            <AlertTriangle size={18} color="#1a73e8" />
+                            <AlertTriangle size={18} color="var(--primary)" />
                             Violation Distribution by Type
                         </h3>
-                        <span style={{ fontSize: '12px', color: '#5f6368' }}>Total: {totalViolations}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Total: {totalViolations}</span>
                     </div>
 
                     {totalViolations === 0 ? (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#5f6368', fontSize: '13px' }}>
-                            <CheckCircle size={32} color="#188038" style={{ marginBottom: '8px' }} />
+                        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                            <CheckCircle size={32} color="var(--success)" style={{ marginBottom: '8px' }} />
                             <div>No violations logged in the system yet.</div>
                         </div>
                     ) : (
@@ -178,12 +193,12 @@ export default function AnalyticsView({ stats, loading }) {
                     )}
                 </div>
 
-                {/* 2. Cloudinary Storage Distribution Meter */}
+                {/* 2. Storage distribution */}
                 <div className="admin-card">
                     <div className="admin-card-header">
                         <h3 className="admin-card-title">
-                            <Database size={18} color="#1a73e8" />
-                            Storage & CDN Breakdown
+                            <Database size={18} color="var(--primary)" />
+                            Storage by Asset Type
                         </h3>
                         <span className="admin-chip chip-paper" style={{ textTransform: 'none' }}>
                             {storage.provider}
@@ -191,42 +206,42 @@ export default function AnalyticsView({ stats, loading }) {
                     </div>
 
                     <div className="storage-meter-container">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#5f6368' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--text-muted)' }}>
                             <span>Total Stored Assets: <strong>{storage.totalAssets || 0}</strong></span>
-                            <span>Sync Status: <strong style={{ color: '#188038' }}>Active CDN</strong></span>
+                            <span>Provider: <strong>{storage.provider || 'Not configured'}</strong></span>
                         </div>
 
                         {/* Multi-segment Progress Bar */}
                         <div className="storage-bar-wrapper">
-                            <div className="storage-segment" style={{ width: `${papersPct}%`, background: '#1a73e8' }} title={`Exam Papers: ${storage.papersCount || 0}`}></div>
-                            <div className="storage-segment" style={{ width: `${verifyPct}%`, background: '#34a853' }} title={`Verification Photos: ${storage.verificationCount || 0}`}></div>
-                            <div className="storage-segment" style={{ width: `${screenPct}%`, background: '#f9ab00' }} title={`Violation Screenshots: ${storage.screenshotsCount || 0}`}></div>
+                            <div className="storage-segment" style={{ width: `${papersPct}%`, background: 'var(--primary-bg)' }} title={`Exam Papers: ${storage.papersCount || 0}`}></div>
+                            <div className="storage-segment" style={{ width: `${verifyPct}%`, background: 'var(--success-bg)' }} title={`Verification Photos: ${storage.verificationCount || 0}`}></div>
+                            <div className="storage-segment" style={{ width: `${screenPct}%`, background: 'var(--warning-bg)' }} title={`Violation Screenshots: ${storage.screenshotsCount || 0}`}></div>
                             <div className="storage-segment" style={{ width: `${subPct}%`, background: '#9334e6' }} title={`Submissions: ${storage.submissionsCount || 0}`}></div>
                         </div>
 
                         {/* Category Stats Grid */}
                         <div className="storage-stats-chips">
                             <div className="storage-chip">
-                                <FileText size={18} color="#1a73e8" />
+                                <FileText size={18} color="var(--primary)" />
                                 <div>
                                     <div style={{ fontSize: '14px', fontWeight: 700 }}>{storage.papersCount || 0}</div>
-                                    <div style={{ fontSize: '11px', color: '#5f6368' }}>Exam Papers</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Exam Papers</div>
                                 </div>
                             </div>
 
                             <div className="storage-chip">
-                                <Users size={18} color="#34a853" />
+                                <Users size={18} color="var(--success)" />
                                 <div>
                                     <div style={{ fontSize: '14px', fontWeight: 700 }}>{storage.verificationCount || 0}</div>
-                                    <div style={{ fontSize: '11px', color: '#5f6368' }}>Verification Photos</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Verification Photos</div>
                                 </div>
                             </div>
 
                             <div className="storage-chip">
-                                <AlertTriangle size={18} color="#f9ab00" />
+                                <AlertTriangle size={18} color="var(--warning)" />
                                 <div>
                                     <div style={{ fontSize: '14px', fontWeight: 700 }}>{storage.screenshotsCount || 0}</div>
-                                    <div style={{ fontSize: '11px', color: '#5f6368' }}>Screenshots</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Screenshots</div>
                                 </div>
                             </div>
 
@@ -234,7 +249,7 @@ export default function AnalyticsView({ stats, loading }) {
                                 <Shield size={18} color="#9334e6" />
                                 <div>
                                     <div style={{ fontSize: '14px', fontWeight: 700 }}>{storage.submissionsCount || 0}</div>
-                                    <div style={{ fontSize: '11px', color: '#5f6368' }}>Submissions</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Submissions</div>
                                 </div>
                             </div>
                         </div>
@@ -246,14 +261,14 @@ export default function AnalyticsView({ stats, loading }) {
             <div className="admin-card">
                 <div className="admin-card-header">
                     <h3 className="admin-card-title">
-                        <TrendingUp size={18} color="#1a73e8" />
+                        <TrendingUp size={18} color="var(--primary)" />
                         14-Day Violation Activity Trend
                     </h3>
-                    <span style={{ fontSize: '12px', color: '#5f6368' }}>Daily incident occurrences</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Daily incident occurrences</span>
                 </div>
 
                 {activityTimeline.length === 0 ? (
-                    <div style={{ padding: '30px', textAlign: 'center', color: '#5f6368', fontSize: '13px' }}>
+                    <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
                         No daily activity recorded in the last 14 days.
                     </div>
                 ) : (

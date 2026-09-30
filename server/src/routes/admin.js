@@ -74,7 +74,7 @@ router.get('/stats', async (req, res) => {
             Exam.countDocuments({ paperPath: { $ne: null, $exists: true } }),
             Session.countDocuments({ cameraVerificationPhoto: { $ne: null, $exists: true } }),
             Violation.countDocuments({ screenshotPath: { $ne: null, $exists: true } }),
-            Submission.countDocuments({ fileUrl: { $ne: null, $exists: true } })
+            Submission.countDocuments({ filePath: { $ne: null, $exists: true } })
         ]);
 
         const totalAssets = papersCount + verificationCount + screenshotsCount + submissionsWithFileCount;
@@ -103,7 +103,7 @@ router.get('/stats', async (req, res) => {
                 verificationCount,
                 screenshotsCount,
                 submissionsCount: submissionsWithFileCount,
-                provider: process.env.CLOUDINARY_CLOUD_NAME ? 'Cloudinary CDN' : 'Local Storage',
+                provider: storageService.constructor.name.startsWith('Cloudinary') ? 'Cloudinary CDN' : 'Local Storage',
                 cloudName: process.env.CLOUDINARY_CLOUD_NAME || 'local'
             },
             violationBreakdown: violationTypeAgg.map(item => ({
@@ -243,29 +243,29 @@ router.get('/assets', async (req, res) => {
 
         // 4. Fetch Submissions
         if (type === 'all' || type === 'submissions') {
-            const query = { fileUrl: { $ne: null, $exists: true } };
+            const query = { filePath: { $ne: null, $exists: true } };
             if (examId) query.examId = new RegExp('^' + examId + '$', 'i');
             if (search) {
                 query.$or = [
                     { studentName: new RegExp(search, 'i') },
                     { rollNumber: new RegExp(search, 'i') },
-                    { originalFilename: new RegExp(search, 'i') }
+                    { filename: new RegExp(search, 'i') }
                 ];
             }
-            const submissions = await Submission.find(query).sort({ submittedAt: -1 }).limit(200);
+            const submissions = await Submission.find(query).sort({ uploadedAt: -1 }).limit(200);
             submissions.forEach(sub => {
                 items.push({
                     id: sub._id.toString(),
                     assetType: 'submission',
                     title: `Candidate Submission: ${sub.studentName || 'Candidate'}`,
-                    filename: sub.originalFilename || 'submission.zip',
-                    url: sub.fileUrl,
+                    filename: sub.filename || 'submission.zip',
+                    url: sub.filePath,
                     createdAt: sub.submittedAt,
                     examId: sub.examId,
                     examTitle: sub.examId,
                     candidateName: sub.studentName,
                     rollNumber: sub.rollNumber,
-                    meta: { size: sub.fileSize, submissionStatus: sub.status }
+                    meta: { size: sub.fileSize, submissionStatus: sub.submissionType }
                 });
             });
         }
@@ -351,7 +351,7 @@ router.delete('/assets/:type/:id', async (req, res) => {
         } else if (normalizedType === 'submission' || normalizedType === 'submissions') {
             const sub = await Submission.findById(id);
             if (!sub) return res.status(404).json({ error: 'Submission not found' });
-            deletedUrl = sub.fileUrl;
+            deletedUrl = sub.filePath;
             targetSummary = `Deleted Submission file for Candidate: ${sub.studentName || 'Candidate'} (${sub.rollNumber || 'N/A'})`;
 
             if (deletedUrl) {
@@ -361,7 +361,7 @@ router.delete('/assets/:type/:id', async (req, res) => {
                     console.warn('[AdminDeleteAsset] Storage delete warning (submission):', delErr.message);
                 }
             }
-            await Submission.updateOne({ _id: id }, { $set: { fileUrl: null } });
+            await Submission.updateOne({ _id: id }, { $set: { filePath: null } });
         } else {
             return res.status(400).json({ error: 'Invalid asset type. Expected: paper, screenshot, verification, submission' });
         }
@@ -449,13 +449,13 @@ router.post('/assets/batch-delete', async (req, res) => {
                     }
                 } else if (normalizedType === 'submission' || normalizedType === 'submissions') {
                     const sub = await Submission.findById(id);
-                    if (sub && sub.fileUrl) {
+                    if (sub && sub.filePath) {
                         try {
-                            await storageService.delete(sub.fileUrl);
+                            await storageService.delete(sub.filePath);
                         } catch (e) {
                             console.warn('[AdminBatchDelete] Storage delete warning:', e.message);
                         }
-                        await Submission.updateOne({ _id: id }, { $set: { fileUrl: null } });
+                        await Submission.updateOne({ _id: id }, { $set: { filePath: null } });
                         deletedCount++;
                         results.push({ id, type, success: true });
                     } else if (sub) {

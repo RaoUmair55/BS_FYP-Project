@@ -1,5 +1,4 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const Session = require('../models/Session');
@@ -8,35 +7,69 @@ const router = express.Router();
 
 const Exam = require('../models/Exam');
 const { requireAuth } = require('../middleware/authMiddleware');
+const { requireOwnedSession } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
+const { broadcastToExam } = require('../sockets/violationSocket');
 
 // GET /sessions/active (Teacher-facing)
 router.get('/active', requireAuth, async (req, res) => {
     try {
+        const { autoExpireFinishedExams } = require('../utils/examLifecycle');
+        await autoExpireFinishedExams(req.app.locals.io);
+
         const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
         const isAdmin = req.teacher?.role === 'admin';
 
-        const sessionFilter = { status: "active" };
-
+        // Find all currently active exams (scoped by teacher RBAC)
+        const activeExamFilter = { status: 'active' };
         if (!isAdmin && currentTeacherId) {
-            const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
-            const myCodes = [];
-            myExams.forEach(e => {
-                if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
-                if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
-                if (e._id) myCodes.push(e._id.toString());
-            });
-
-            if (myCodes.length === 0) {
-                return res.json([]);
-            }
-            sessionFilter.examId = { $in: myCodes };
+            activeExamFilter.$or = [
+                { createdBy: currentTeacherId },
+                { status: 'active' }
+            ];
         }
 
-        const activeSessions = await Session.find(sessionFilter);
+        const activeExams = await Exam.find(activeExamFilter).select('examCode examId _id').lean();
+        const activeExamCodes = [];
+        activeExams.forEach(e => {
+            if (e.examCode) activeExamCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
+            if (e.examId) activeExamCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+        });
+
+        // If no exams are active, return empty candidate roster immediately
+        if (activeExamCodes.length === 0) {
+            return res.json([]);
+        }
+
+        // Include candidates of active exams (active students or recently submitted/terminated within this active exam)
+        const statusCondition = {
+            $or: [
+                { status: "active" },
+                { 
+                    status: { $in: ["terminated", "completed"] }, 
+                    startTime: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } 
+                }
+            ]
+        };
+
+        const sessionFilter = { 
+            ...statusCondition,
+            examId: { $in: activeExamCodes }
+        };
+
+        if (req.query.examId) {
+            const requestedCode = req.query.examId.trim();
+            const matchesActive = activeExamCodes.some(r => r.test(requestedCode));
+            if (!matchesActive) {
+                return res.json([]);
+            }
+            sessionFilter.examId = new RegExp('^' + requestedCode + '$', 'i');
+        }
+
+        const candidateSessions = await Session.find(sessionFilter).sort({ startTime: -1 });
         
-        // Calculate the current risk score for each active session on load
-        const sessionsWithScores = await Promise.all(activeSessions.map(async (session) => {
+        // Calculate the current risk score for each session on load
+        const sessionsWithScores = await Promise.all(candidateSessions.map(async (session) => {
             const scoreData = await calculateRiskScore(session._id);
             return {
                 ...session.toObject(),
@@ -56,15 +89,16 @@ router.post('/', async (req, res) => {
     try {
         const { studentName, rollNumber, examId, studentId, consentGiven, consentTimestamp } = req.body;
         
-        if (!studentName || !studentName.trim()) {
+        if (typeof studentName !== 'string' || studentName.trim().length < 2) {
             return res.status(400).json({ error: 'Student Name is required.' });
         }
-        if (!rollNumber || !rollNumber.trim()) {
+        if (typeof rollNumber !== 'string' || !/^[A-Za-z0-9\-_/. ]{2,35}$/.test(rollNumber.trim())) {
             return res.status(400).json({ error: 'Roll Number is required.' });
         }
-        if (!examId || !examId.trim()) {
+        if (typeof examId !== 'string' || !/^[A-Za-z0-9-]{3,32}$/.test(examId.trim())) {
             return res.status(400).json({ error: 'Exam Code is required.' });
         }
+        if (consentGiven !== true && consentGiven !== 'true') return res.status(400).json({ error: 'Consent is required' });
 
         const inputCode = examId.trim().toUpperCase();
         const trimmedName = studentName.trim();
@@ -75,13 +109,11 @@ router.post('/', async (req, res) => {
         let examEndTime = null;
         let examExtra = 0;
 
-        // Validate against real Exam documents if any exist
-        const examCount = await Exam.countDocuments();
-        if (examCount > 0) {
+        // Candidates can only join an existing exam.
             const exam = await Exam.findOne({
                 $or: [
-                    { examCode: new RegExp('^' + inputCode + '$', 'i') },
-                    { examId: new RegExp('^' + inputCode + '$', 'i') }
+                    { examCode: inputCode },
+                    { examId: inputCode }
                 ]
             });
 
@@ -122,27 +154,6 @@ router.post('/', async (req, res) => {
                 }
                 examEndTime = exam.endTime;
             }
-        }
-
-        if (!examEndTime && (!examCount || (examCount > 0 && !inputCode))) {
-            examEndTime = new Date(Date.now() + examDuration * 60 * 1000);
-        }
-
-        if (mongoose.connection.readyState !== 1) {
-            console.warn('[WARNING] MongoDB unreachable. Creating session in local fallback mode.');
-            const fallbackId = 'sess-fallback-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
-            return res.status(201).json({
-                _id: fallbackId,
-                sessionId: fallbackId,
-                studentId: finalStudentId,
-                studentName: trimmedName,
-                rollNumber: trimmedRoll,
-                examId: inputCode || 'PRACTICE',
-                startTime: new Date(),
-                endTime: examEndTime || new Date(Date.now() + 60 * 60 * 1000)
-            });
-        }
-
         const newSession = new Session({
             studentId: finalStudentId,
             studentName: trimmedName,
@@ -159,52 +170,6 @@ router.post('/', async (req, res) => {
     } catch (err) {
         console.error('Error creating session:', err);
         res.status(400).json({ error: 'Failed to create session', details: err.message });
-    }
-});
-
-// PATCH /sessions/:sessionId/end
-router.patch('/:sessionId/end', async (req, res) => {
-    try {
-        const session = await Session.findByIdAndUpdate(
-            req.params.sessionId,
-            { status: 'completed', endTime: new Date() },
-            { new: true }
-        );
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
-        }
-        res.json(session);
-    } catch (err) {
-        console.error('Error ending session:', err);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
-
-// POST /sessions/:sessionId/consent — Record candidate consent decision (Data Ethics Section 10.4)
-router.post('/:sessionId/consent', async (req, res) => {
-    try {
-        const { consentGiven } = req.body;
-        const session = await Session.findByIdAndUpdate(
-            req.params.sessionId,
-            {
-                consentGiven: consentGiven === true || consentGiven === 'true',
-                consentTimestamp: new Date()
-            },
-            { new: true }
-        );
-
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
-        }
-
-        res.json({
-            message: 'Consent recorded successfully',
-            consentGiven: session.consentGiven,
-            consentTimestamp: session.consentTimestamp
-        });
-    } catch (err) {
-        console.error('Error recording consent:', err);
-        res.status(500).json({ error: 'Failed to record consent', details: err.message });
     }
 });
 
@@ -235,7 +200,7 @@ router.post('/:sessionId/camera-verification', async (req, res) => {
 
         const io = req.app.locals.io;
         if (io) {
-            io.emit('cameraVerificationUpdated', {
+            await broadcastToExam(io, session.examId, 'cameraVerificationUpdated', {
                 sessionId: session._id.toString(),
                 cameraVerificationPhoto: photoUrl,
                 cameraVerificationStatus: 'pending'
@@ -250,7 +215,7 @@ router.post('/:sessionId/camera-verification', async (req, res) => {
 });
 
 // PATCH /sessions/:sessionId/camera-verification — Teacher triage (verified vs flagged)
-router.patch('/:sessionId/camera-verification', requireAuth, async (req, res) => {
+router.patch('/:sessionId/camera-verification', requireAuth, requireOwnedSession, async (req, res) => {
     try {
         const { status, note } = req.body;
         if (!['verified', 'flagged'].includes(status)) {
@@ -299,7 +264,7 @@ router.patch('/:sessionId/camera-verification', requireAuth, async (req, res) =>
         }
 
         if (io) {
-            io.emit('cameraVerificationUpdated', {
+            await broadcastToExam(io, session.examId, 'cameraVerificationUpdated', {
                 sessionId: session._id.toString(),
                 cameraVerificationPhoto: session.cameraVerificationPhoto,
                 cameraVerificationStatus: status,
@@ -345,8 +310,8 @@ router.get('/:sessionId/status', async (req, res) => {
         if (session.examId) {
             exam = await Exam.findOne({
                 $or: [
-                    { examCode: new RegExp('^' + session.examId + '$', 'i') },
-                    { examId: new RegExp('^' + session.examId + '$', 'i') }
+                    { examCode: session.examId },
+                    { examId: session.examId }
                 ]
             });
             if (exam) {
@@ -386,7 +351,7 @@ router.get('/:sessionId/status', async (req, res) => {
 });
 
 // POST /sessions/:sessionId/warn — Send examiner warning message to candidate (Teacher-facing)
-router.post('/:sessionId/warn', requireAuth, async (req, res) => {
+router.post('/:sessionId/warn', requireAuth, requireOwnedSession, async (req, res) => {
     try {
         const { message } = req.body;
         if (!message || !message.trim()) {
@@ -408,7 +373,7 @@ router.post('/:sessionId/warn', requireAuth, async (req, res) => {
 
         const io = req.app.locals.io;
         if (io) {
-            io.emit('candidateWarning', {
+            await broadcastToExam(io, session.examId, 'candidateWarning', {
                 sessionId: session._id.toString(),
                 studentId: session.studentId,
                 examId: session.examId,
@@ -424,7 +389,7 @@ router.post('/:sessionId/warn', requireAuth, async (req, res) => {
 });
 
 // POST /sessions/:sessionId/terminate — Examiner terminates candidate session (Teacher-facing)
-router.post('/:sessionId/terminate', requireAuth, async (req, res) => {
+router.post('/:sessionId/terminate', requireAuth, requireOwnedSession, async (req, res) => {
     try {
         const { reason } = req.body;
         const session = await Session.findById(req.params.sessionId);
@@ -439,7 +404,7 @@ router.post('/:sessionId/terminate', requireAuth, async (req, res) => {
 
         const io = req.app.locals.io;
         if (io) {
-            io.emit('candidateTerminated', {
+            await broadcastToExam(io, session.examId, 'candidateTerminated', {
                 sessionId: session._id.toString(),
                 studentId: session.studentId,
                 examId: session.examId,

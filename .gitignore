@@ -8,3 +8,5 @@ dist/
 build/
 ./server/.env 
 ./client/.env
+*.npy
+candidate-app/ai-module/config/voice_profiles/*.npy

@@ -6,9 +6,10 @@ import {
     Image, Eye, Smartphone, Users, Globe, Maximize2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { assetUrl } from '../services/api';
 import './Components.css';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
     if (!typeStr) return "Unknown";
@@ -31,6 +32,11 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
     }
+    if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
+        const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
+        const appName = details?.object_class ? ` in ${details.object_class}` : '';
+        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing File Opened${appName}`;
+    }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
             return `Unauthorized App (${details.object_class})`;
@@ -44,32 +50,40 @@ function formatType(typeStr, details = {}) {
 }
 
 function getCategoryInfo(typeStr, details = {}) {
-    if (!typeStr) return { label: 'General Alert', icon: '⚠️', color: '#5f6368', badgeBg: '#f1f3f4' };
+    if (!typeStr) return { label: 'General Alert', icon: '⚠️', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
+    if (typeStr === 'pre_existing_file' || details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName) {
+        return {
+            label: `📂 Pre-Existing File`,
+            icon: '📂',
+            color: 'var(--warning)',
+            badgeBg: 'var(--warning-soft)'
+        };
+    }
     if (typeStr.includes('object') || typeStr.includes('phone') || details?.object_class) {
         const item = details?.object_class ? details.object_class.toLowerCase() : 'Mobile / Object';
         return { 
             label: `📱 ${item.charAt(0).toUpperCase() + item.slice(1)}`, 
             icon: '📱', 
-            color: '#b91c1c', 
-            badgeBg: '#fee2e2' 
+            color: 'var(--danger)', 
+            badgeBg: 'var(--danger-soft)' 
         };
     }
     if (typeStr.includes('head') || typeStr.includes('turn') || typeStr.includes('gaze')) {
-        return { label: '👤 Head / Gaze Turn', icon: '👤', color: '#b45309', badgeBg: '#fef3c7' };
+        return { label: '👤 Head / Gaze Turn', icon: '👤', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('second_person') || typeStr.includes('multiple_faces')) {
-        return { label: '👥 Second Person', icon: '👥', color: '#b91c1c', badgeBg: '#fee2e2' };
+        return { label: '👥 Second Person', icon: '👥', color: 'var(--danger)', badgeBg: 'var(--danger-soft)' };
     }
     if (typeStr.includes('no_face')) {
-        return { label: '👁️ Face Missing', icon: '👁️', color: '#c2410c', badgeBg: '#ffedd5' };
+        return { label: '👁️ Face Missing', icon: '👁️', color: 'var(--danger)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('app') || typeStr.includes('window')) {
-        return { label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: '#e0e7ff' };
+        return { label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: 'var(--primary-soft)' };
     }
     if (typeStr.includes('camera') || typeStr.includes('dark')) {
-        return { label: '🌑 Camera Feed Dark', icon: '🌑', color: '#4b5563', badgeBg: '#f3f4f6' };
+        return { label: '🌑 Camera Feed Dark', icon: '🌑', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
     }
-    return { label: '⚠️ Suspicious Activity', icon: '⚠️', color: '#b45309', badgeBg: '#fef3c7' };
+    return { label: '⚠️ Suspicious Activity', icon: '⚠️', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
 }
 
 function timeAgo(dateString) {
@@ -307,7 +321,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
         const itemsToReview = groupOrViolation.items || [groupOrViolation];
         
         try {
-            await Promise.all(itemsToReview.map(item => {
+            const responses = await Promise.all(itemsToReview.map(item => {
                 const id = item._id || item.id;
                 if (!id) return Promise.resolve();
                 return authFetch(`${API_BASE}/violations/${id}/review`, {
@@ -320,6 +334,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                     })
                 });
             }));
+            if (responses.some(res => res && !res.ok)) throw new Error('Review was rejected by the server');
 
             // Remove reviewed items from local state
             const reviewedIds = new Set(itemsToReview.map(i => String(i._id || i.id)));
@@ -372,23 +387,23 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
             return {
                 label: `Critical (L${severity})`,
                 bg: '#fce8e6',
-                color: '#d93025',
-                border: '#f5c2c7'
+                color: 'var(--danger)',
+                border: 'var(--danger-soft)'
             };
         }
         if (severity === 3) {
             return {
                 label: `Moderate (L${severity})`,
                 bg: '#fef7e0',
-                color: '#b45309',
-                border: '#ffeeba'
+                color: 'var(--warning)',
+                border: 'var(--warning-soft)'
             };
         }
         return {
             label: `Low (L${severity})`,
             bg: '#e6f4ea',
-            color: '#137333',
-            border: '#c3e6cb'
+            color: 'var(--success)',
+            border: 'var(--success-soft)'
         };
     };
 
@@ -397,11 +412,11 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
             {/* Header Toolbar */}
             <div style={{
                 padding: '12px 16px',
-                borderBottom: '1px solid #dadce0',
+                borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                background: '#ffffff',
+                background: 'var(--bg-surface)',
                 flexWrap: 'wrap',
                 gap: '12px'
             }}>
@@ -410,24 +425,24 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                         width: 32,
                         height: 32,
                         borderRadius: 8,
-                        background: 'linear-gradient(135deg, #d93025, #ea4335)',
+                        background: 'linear-gradient(135deg, var(--danger-bg), var(--danger-bg))',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: '#fff'
+                        color: 'var(--text-on-color)'
                     }}>
                         <Zap size={18} />
                     </div>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#202124' }}>
+                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>
                                 Priority Triage Queue
                             </h3>
                             <span className="md-badge status-draft" style={{ fontSize: '11px', fontWeight: 700 }}>
                                 {filteredQueue.length} Unreviewed
                             </span>
                         </div>
-                        <span style={{ fontSize: '12px', color: '#5f6368' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                             {selectedExam === 'ALL' 
                                 ? 'Live unreviewed alerts across all active exams' 
                                 : `Scoped to active exam: ${selectedExam}`}
@@ -438,9 +453,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                 {/* Exam Filter Dropdown & Controls */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     {/* Live Exam Dropdown Selector */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8f9fa', padding: '4px 8px', borderRadius: '6px', border: '1px solid #dadce0' }}>
-                        <Globe size={13} style={{ color: '#1a73e8' }} />
-                        <label htmlFor="exam-filter-select" style={{ fontSize: '11.5px', fontWeight: 500, color: '#5f6368' }}>Exam:</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-base)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                        <Globe size={13} style={{ color: 'var(--primary)' }} />
+                        <label htmlFor="exam-filter-select" style={{ fontSize: '11.5px', fontWeight: 500, color: 'var(--text-muted)' }}>Exam:</label>
                         <select
                             id="exam-filter-select"
                             value={selectedExam}
@@ -452,10 +467,10 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                             style={{
                                 fontSize: '12px',
                                 padding: '2px 6px',
-                                border: '1px solid #ced4da',
+                                border: '1px solid var(--border-color)',
                                 borderRadius: '4px',
-                                background: '#fff',
-                                color: '#202124',
+                                background: 'var(--bg-surface)',
+                                color: 'var(--text-main)',
                                 fontWeight: 500,
                                 cursor: 'pointer'
                             }}
@@ -501,7 +516,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                         <button 
                             className={`sub-tab-btn ${severityFilter === 'high' ? 'active' : ''}`}
                             onClick={() => setSeverityFilter('high')}
-                            style={{ color: severityFilter === 'high' ? '#d93025' : undefined }}
+                            style={{ color: severityFilter === 'high' ? 'var(--danger)' : undefined }}
                         >
                             High ({queueData.filter(v => v.severity >= 4).length})
                         </button>
@@ -525,14 +540,14 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
                 {loading && queueData.length === 0 ? (
                     <div className="md-empty-card" style={{ border: 'none', background: 'transparent' }}>
-                        <RefreshCw size={32} className="animate-spin" style={{ color: '#1a73e8' }} />
+                        <RefreshCw size={32} className="animate-spin" style={{ color: 'var(--primary)' }} />
                         <p style={{ marginTop: '10px' }}>Loading priority queue...</p>
                     </div>
                 ) : displayItems.length === 0 ? (
                     <div className="md-empty-card" style={{ border: 'none', background: 'transparent', padding: '40px 20px' }}>
-                        <Check size={42} style={{ color: '#188038', background: '#e6f4ea', borderRadius: '50%', padding: '8px' }} />
-                        <h4 style={{ margin: '12px 0 4px', fontSize: '16px', color: '#202124' }}>All Caught Up!</h4>
-                        <p style={{ margin: 0, color: '#5f6368', fontSize: '13px' }}>
+                        <Check size={42} style={{ color: 'var(--success)', background: 'var(--success-soft)', borderRadius: '50%', padding: '8px' }} />
+                        <h4 style={{ margin: '12px 0 4px', fontSize: '16px', color: 'var(--text-main)' }}>All Caught Up!</h4>
+                        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '13px' }}>
                             {selectedExam !== 'ALL'
                                 ? `No unreviewed violations found for exam "${selectedExam}".`
                                 : severityFilter === 'all'
@@ -565,10 +580,10 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                     key={group._id} 
                                     className="md-card"
                                     style={{
-                                        border: `1px solid ${group.severity >= 4 ? '#f5c2c7' : '#dadce0'}`,
+                                        border: `1px solid ${group.severity >= 4 ? 'var(--danger-soft)' : 'var(--border-color)'}`,
                                         borderLeft: `5px solid ${badge.color}`,
                                         padding: '12px 16px',
-                                        backgroundColor: group.severity >= 4 ? '#fffbfb' : '#ffffff',
+                                        backgroundColor: group.severity >= 4 ? 'var(--danger-soft)' : 'var(--bg-surface)',
                                         transition: 'all 0.15s ease'
                                     }}
                                 >
@@ -593,14 +608,14 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                             <div>
                                                 {/* Student Identity Header */}
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                                    <span style={{ fontSize: '14.5px', fontWeight: 600, color: '#202124' }}>
+                                                    <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)' }}>
                                                         {group.studentName}
                                                     </span>
-                                                    <span style={{ fontSize: '12px', color: '#5f6368', background: '#f1f3f4', padding: '2px 6px', borderRadius: '4px' }}>
+                                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg-muted)', padding: '2px 6px', borderRadius: '4px' }}>
                                                         Roll: {group.rollNumber}
                                                     </span>
                                                     {group.examId && (
-                                                        <span style={{ fontSize: '11px', color: '#1a73e8', background: '#e8f0fe', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                                        <span style={{ fontSize: '11px', color: 'var(--primary)', background: 'var(--primary-soft)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
                                                             {group.examId}
                                                         </span>
                                                     )}
@@ -620,7 +635,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         {category.label}
                                                     </span>
 
-                                                    <span style={{ fontSize: '13.5px', fontWeight: 500, color: '#202124' }}>
+                                                    <span style={{ fontSize: '13.5px', fontWeight: 500, color: 'var(--text-main)' }}>
                                                         {formatType(group.type, group.details)}
                                                     </span>
 
@@ -628,9 +643,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         <span style={{
                                                             fontSize: '11.5px',
                                                             fontWeight: 700,
-                                                            color: '#b45309',
-                                                            backgroundColor: '#fef7e0',
-                                                            border: '1px solid #ffeeba',
+                                                            color: 'var(--warning)',
+                                                            backgroundColor: 'var(--warning-soft)',
+                                                            border: '1px solid var(--warning-soft)',
                                                             padding: '2px 8px',
                                                             borderRadius: '12px'
                                                         }}>
@@ -652,7 +667,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                 </div>
 
                                                 {/* Timestamp & Metadata */}
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: '#5f6368', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         <Clock size={12} />
                                                         {timeAgo(group.timestamp)} ({new Date(group.timestamp).toLocaleTimeString()})
@@ -671,14 +686,14 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                             onClick={() => toggleEvidenceExpand(group._id)}
                                                             className="md-btn md-btn-text md-btn-sm"
                                                             style={{
-                                                                color: '#1a73e8',
+                                                                color: 'var(--primary)',
                                                                 padding: '1px 6px',
                                                                 fontSize: '11.5px',
                                                                 fontWeight: 600,
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
                                                                 gap: '4px',
-                                                                background: isEvidenceOpen ? '#e8f0fe' : '#f8f9fa',
+                                                                background: isEvidenceOpen ? 'var(--primary-soft)' : 'var(--bg-base)',
                                                                 borderRadius: '4px'
                                                             }}
                                                         >
@@ -710,9 +725,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                             <button 
                                                 className="md-btn md-btn-sm"
                                                 style={{ 
-                                                    background: '#e6f4ea', 
-                                                    color: '#137333', 
-                                                    border: '1px solid #ceead6',
+                                                    background: 'var(--success-soft)', 
+                                                    color: 'var(--success)', 
+                                                    border: '1px solid var(--success-soft)',
                                                     padding: '5px 10px',
                                                     fontSize: '12px'
                                                 }}
@@ -726,9 +741,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                             <button 
                                                 className="md-btn md-btn-sm"
                                                 style={{ 
-                                                    background: '#f1f3f4', 
-                                                    color: '#5f6368', 
-                                                    border: '1px solid #dadce0',
+                                                    background: 'var(--bg-muted)', 
+                                                    color: 'var(--text-muted)', 
+                                                    border: '1px solid var(--border-color)',
                                                     padding: '5px 10px',
                                                     fontSize: '12px'
                                                 }}
@@ -771,18 +786,18 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                         <div style={{
                                             marginTop: '10px',
                                             padding: '10px 12px',
-                                            background: '#f8f9fa',
+                                            background: 'var(--bg-base)',
                                             borderRadius: '6px',
-                                            border: '1px solid #e8eaed',
+                                            border: '1px solid var(--border-color)',
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '8px'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#3c4043' }}>
+                                                <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-main)' }}>
                                                     📸 Captured Evidence ({snapshots.length} Snapshots) — Click to Enlarge
                                                 </span>
-                                                <span style={{ fontSize: '11px', color: '#5f6368' }}>
+                                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                                     Category: {category.label}
                                                 </span>
                                             </div>
@@ -798,9 +813,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         <div 
                                                             key={snap.id || sIdx}
                                                             style={{
-                                                                background: '#fff',
+                                                                background: 'var(--bg-surface)',
                                                                 borderRadius: '6px',
-                                                                border: '1px solid #dadce0',
+                                                                border: '1px solid var(--border-color)',
                                                                 overflow: 'hidden',
                                                                 display: 'flex',
                                                                 flexDirection: 'column'
@@ -808,11 +823,11 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         >
                                                             <div 
                                                                 style={{ position: 'relative', cursor: 'pointer', background: '#000', height: '110px' }}
-                                                                onClick={() => setModalImageSrc(fullUrl)}
+                                                                onClick={() => setModalImageSrc(assetUrl(fullUrl))}
                                                                 title="Click to zoom full screenshot"
                                                             >
                                                                 <img 
-                                                                    src={fullUrl} 
+                                                                    src={assetUrl(fullUrl)} 
                                                                     alt={`Evidence ${sIdx + 1}`}
                                                                     style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                                                                 />
@@ -821,7 +836,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                                     bottom: 4,
                                                                     right: 4,
                                                                     background: 'rgba(0,0,0,0.7)',
-                                                                    color: '#fff',
+                                                                    color: 'var(--text-on-color)',
                                                                     padding: '2px 4px',
                                                                     borderRadius: '3px',
                                                                     fontSize: '10px'
@@ -829,10 +844,10 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                                     <Maximize2 size={10} style={{ verticalAlign: 'middle' }} /> Zoom
                                                                 </span>
                                                             </div>
-                                                            <div style={{ padding: '6px 8px', fontSize: '11px', color: '#5f6368', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <div style={{ padding: '6px 8px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                                 <span>#{sIdx + 1} &bull; {new Date(snap.timestamp).toLocaleTimeString()}</span>
                                                                 {snap.details?.confidence && (
-                                                                    <span style={{ fontWeight: 600, color: '#1a73e8' }}>
+                                                                    <span style={{ fontWeight: 600, color: 'var(--primary)' }}>
                                                                         {Math.round(snap.details.confidence * 100)}%
                                                                     </span>
                                                                 )}
@@ -849,15 +864,15 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                         <div style={{
                                             marginTop: '10px',
                                             paddingTop: '10px',
-                                            borderTop: '1px dashed #dadce0',
+                                            borderTop: '1px dashed var(--border-color)',
                                             display: 'flex',
                                             flexDirection: 'column',
                                             gap: '6px',
-                                            background: '#f8f9fa',
+                                            background: 'var(--bg-base)',
                                             padding: '8px 12px',
                                             borderRadius: '6px'
                                         }}>
-                                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#5f6368', textTransform: 'uppercase' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                                                 Individual Instances ({group.items.length})
                                             </span>
                                             {group.items.map((item, idx) => (
@@ -869,15 +884,15 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         justifyContent: 'space-between',
                                                         fontSize: '12px',
                                                         padding: '4px 0',
-                                                        borderBottom: idx < group.items.length - 1 ? '1px solid #e8eaed' : 'none'
+                                                        borderBottom: idx < group.items.length - 1 ? '1px solid var(--border-color)' : 'none'
                                                     }}
                                                 >
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <span style={{ fontWeight: 600, color: '#5f6368' }}>#{idx + 1}</span>
-                                                        <Clock size={12} color="#5f6368" />
+                                                        <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>#{idx + 1}</span>
+                                                        <Clock size={12} color="var(--text-muted)" />
                                                         <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
                                                         {item.details?.confidence && (
-                                                            <span style={{ color: '#5f6368' }}>({(item.details.confidence * 100).toFixed(0)}% conf)</span>
+                                                            <span style={{ color: 'var(--text-muted)' }}>({(item.details.confidence * 100).toFixed(0)}% conf)</span>
                                                         )}
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -886,9 +901,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                                 type="button"
                                                                 onClick={() => {
                                                                     const path = item.screenshotPath || item.evidenceUrl;
-                                                                    setModalImageSrc(path.startsWith('http') ? path : `${API_BASE}${path}`);
+                                                                    setModalImageSrc(assetUrl(path.startsWith('http') ? path : `${API_BASE}${path}`));
                                                                 }}
-                                                                style={{ color: '#1a73e8', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px' }}
+                                                                style={{ color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px' }}
                                                             >
                                                                 <Image size={11} />
                                                                 <span>View Snapshot</span>
@@ -896,14 +911,14 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         )}
                                                         <button
                                                             className="md-btn md-btn-sm"
-                                                            style={{ padding: '2px 6px', fontSize: '11px', background: '#e6f4ea', color: '#137333', border: 'none' }}
+                                                            style={{ padding: '2px 6px', fontSize: '11px', background: 'var(--success-soft)', color: 'var(--success)', border: 'none' }}
                                                             onClick={() => handleQuickReview(item, 'confirmed')}
                                                         >
                                                             Confirm
                                                         </button>
                                                         <button
                                                             className="md-btn md-btn-sm"
-                                                            style={{ padding: '2px 6px', fontSize: '11px', background: '#f1f3f4', color: '#5f6368', border: 'none' }}
+                                                            style={{ padding: '2px 6px', fontSize: '11px', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: 'none' }}
                                                             onClick={() => handleQuickReview(item, 'dismissed')}
                                                         >
                                                             Dismiss
@@ -932,11 +947,11 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                         onClick={(e) => e.stopPropagation()} 
                         style={{ maxWidth: '90vw', maxHeight: '90vh', padding: '12px', background: '#0f172a', borderRadius: '8px', position: 'relative' }}
                     >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', color: '#fff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', color: 'var(--text-on-color)' }}>
                             <span style={{ fontSize: '13px', fontWeight: 500 }}>High-Resolution Evidence Snapshot</span>
                             <button 
                                 onClick={() => setModalImageSrc(null)}
-                                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px' }}
+                                style={{ background: 'none', border: 'none', color: 'var(--text-on-color)', cursor: 'pointer', padding: '4px' }}
                             >
                                 <X size={20} />
                             </button>
@@ -954,20 +969,20 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
             {selectedViolationForNote && (
                 <div className="modal-backdrop">
                     <div className="md-card md-modal-card" style={{ width: '440px' }}>
-                        <div style={{ padding: '16px 20px', borderBottom: '1px solid #dadce0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 500, color: '#202124' }}>
+                        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 500, color: 'var(--text-main)' }}>
                                 Add Reviewer Note
                             </h3>
                             <button 
                                 onClick={() => setSelectedViolationForNote(null)} 
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5f6368' }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
                             >
                                 <X size={18} />
                             </button>
                         </div>
                         <form onSubmit={handleNoteModalSubmit} style={{ padding: '20px' }}>
                             <div style={{ marginBottom: '14px' }}>
-                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#5f6368', marginBottom: '6px' }}>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
                                     Decision
                                 </label>
                                 <div style={{ display: 'flex', gap: '10px' }}>
@@ -993,7 +1008,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                             </div>
 
                             <div style={{ marginBottom: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#5f6368', marginBottom: '6px' }}>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '6px' }}>
                                     Note / Justification
                                 </label>
                                 <textarea

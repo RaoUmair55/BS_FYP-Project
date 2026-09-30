@@ -3,6 +3,7 @@ import threading
 import time
 import json
 import os
+import re
 from datetime import datetime, timezone
 from services.capture import capture_screenshot
 
@@ -21,6 +22,36 @@ class WhitelistEnforcer:
         self.whitelist = set()
         self.unkillable_pids = set()
         self.allowed_apps = set()
+        self.exam_start_time = time.time()
+        self.seen_recent_shortcuts = {}
+
+        # Pre-seed existing shortcuts so existing history isn't treated as new accesses
+        recent_dir = os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Recent")
+        if os.path.isdir(recent_dir):
+            try:
+                for item in os.listdir(recent_dir):
+                    if item.lower().endswith(".lnk"):
+                        lp = os.path.join(recent_dir, item)
+                        try:
+                            self.seen_recent_shortcuts[lp] = os.path.getmtime(lp)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # Document extensions & keywords monitored when external apps (Word, VS Code, etc.) are allowed
+        self.DOC_EXTENSIONS = {
+            ".docx", ".doc", ".pdf", ".txt", ".py", ".cpp", ".c", ".java", 
+            ".cs", ".js", ".html", ".md", ".rtf", ".ppt", ".pptx", ".xls", ".xlsx"
+        }
+        self.SUSPICIOUS_TITLE_WORDS = {
+            "cheat", "notes", "solution", "answers", "summary", "slides", 
+            "ch1", "ch2", "ch3", "ch4", "chapter", "exam_cheat"
+        }
+        self.IGNORE_DIRS = (
+            "system32", "program files", "node_modules", "site-packages", 
+            "resources", "appdata\\local\\temp", "appdata\\local\\microsoft"
+        )
 
         # Hardcoded list of processes that are strictly forbidden in exam mode,
         # unless explicitly whitelisted by the teacher.
@@ -135,7 +166,9 @@ class WhitelistEnforcer:
             "postgres.exe", "pg_ctl.exe", "mysqld.exe", "sqlservr.exe", "mongod.exe", "redis-server.exe",
             "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe", "git-remote-https.exe",
             # Microsoft Office background telemetry
-            "msoia.exe", "msoadfs.exe"
+            "msoia.exe", "msoadfs.exe",
+            # System installer / maintenance daemons
+            "uninstdaemon.exe", "unins000.exe", "uninst.exe", "installer.exe", "uninstall.exe"
         }
         
         # Protect this exact AI module process instance
@@ -264,6 +297,16 @@ class WhitelistEnforcer:
                 app_lower = app.lower()
                 self.EXAM_BLOCKED.discard(app_lower)
                 self.whitelist.add(app_lower)
+            
+            # If Microsoft Office applications are permitted by the teacher,
+            # allow Office's internal background AI/Copilot process (ai.exe) as well.
+            office_apps = {"winword.exe", "word.exe", "excel.exe", "powerpnt.exe", "powerpoint.exe"}
+            if any(oa in self.allowed_apps for oa in office_apps):
+                self.EXAM_BLOCKED.discard("ai.exe")
+                self.whitelist.add("ai.exe")
+                self.allowed_apps.add("ai.exe")
+                print("[WhitelistEnforcer] Permitted Office AI background companion (ai.exe) for Microsoft Office.")
+
             print(f"[WhitelistEnforcer] Dynamically whitelisted {len(self.allowed_apps)} teacher-permitted tools: {list(self.allowed_apps)}")
 
         if self.mode == "exam":
@@ -344,6 +387,7 @@ class WhitelistEnforcer:
                         
                     # 5. Teacher allowed tools check (Takes precedence before EXAM_BLOCKED)
                     if name_lower in self.allowed_apps:
+                        self._inspect_allowed_app(proc, name_lower)
                         continue
 
                     # 6. Exam Mode Hard Block
@@ -362,6 +406,12 @@ class WhitelistEnforcer:
                     pass
                 except Exception as e:
                     print(f"[WhitelistEnforcer] Unexpected error checking process: {e}")
+
+            # Check for any pre-existing files accessed/opened during the exam session
+            try:
+                self._check_recent_opened_files()
+            except Exception:
+                pass
 
             time.sleep(2.5)
 
@@ -521,5 +571,285 @@ class WhitelistEnforcer:
             except Exception as e:
                 pass
                 
-        return unauthorized_apps
+    def _resolve_lnk_target(self, lnk_path):
+        """Extracts absolute target file path from Windows Shell Link (.lnk) binary file."""
+        try:
+            with open(lnk_path, 'rb') as f:
+                content = f.read()
+            # Match drive letter paths like C:\... or D:\...
+            matches = re.findall(rb'[A-Za-z]:\\[a-zA-Z0-9_\-\.\ \(\)\\\/]+', content)
+            for m in matches:
+                try:
+                    decoded = m.decode('latin1', errors='ignore').strip()
+                    if os.path.isfile(decoded):
+                        return decoded
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return None
+
+    def _find_user_file_on_disk(self, filename):
+        """Locates document files in common user directories, trying possible extensions if missing."""
+        if not filename:
+            return None
+        user_home = os.path.expanduser("~")
+        search_dirs = [
+            os.path.join(user_home, "Desktop"),
+            os.path.join(user_home, "Documents"),
+            os.path.join(user_home, "Downloads"),
+            os.path.join(user_home, "OneDrive", "Desktop"),
+            os.path.join(user_home, "OneDrive", "Documents"),
+            os.path.join(user_home, "OneDrive", "Downloads"),
+            r"C:\ExamWorkspace",
+            r"D:\BS_FYP Project",
+            r"C:\\",
+            r"D:\\"
+        ]
+        clean_name = os.path.basename(filename).strip()
+        # Clean common window title artifacts
+        clean_name = re.sub(r'\s*-\s*(Word|Visual Studio Code|Notepad).*$', '', clean_name, flags=re.IGNORECASE).strip()
+        
+        # Build candidate names
+        _, ext = os.path.splitext(clean_name.lower())
+        candidates_to_try = [clean_name]
+        if not ext:
+            for d_ext in self.DOC_EXTENSIONS:
+                candidates_to_try.append(f"{clean_name}{d_ext}")
+        
+        for sdir in search_dirs:
+            if not os.path.isdir(sdir):
+                continue
+            for cand_name in candidates_to_try:
+                cand_path = os.path.join(sdir, cand_name)
+                if os.path.isfile(cand_path):
+                    return cand_path
+            # Check 1 level of subdirectories
+            try:
+                for sub in os.listdir(sdir):
+                    subpath = os.path.join(sdir, sub)
+                    if os.path.isdir(subpath):
+                        for cand_name in candidates_to_try:
+                            c = os.path.join(subpath, cand_name)
+                            if os.path.isfile(c):
+                                return c
+            except Exception:
+                pass
+        return None
+
+    def _check_recent_opened_files(self):
+        """
+        Monitors Windows Recent directory for any files opened during the active exam session.
+        If an opened file was modified/created prior to the exam start time, it triggers a violation.
+        """
+        recent_dir = os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Recent")
+        if not os.path.isdir(recent_dir):
+            return
+
+        try:
+            for item in os.listdir(recent_dir):
+                if not item.lower().endswith(".lnk"):
+                    continue
+                
+                lnk_path = os.path.join(recent_dir, item)
+                try:
+                    st = os.stat(lnk_path)
+                    # Check if this shortcut access timestamp has already been processed
+                    last_seen_mtime = self.seen_recent_shortcuts.get(lnk_path)
+                    if last_seen_mtime is not None and st.st_mtime <= last_seen_mtime:
+                        continue
+
+                    # Check if this shortcut was created/accessed after the exam session started
+                    if st.st_mtime >= (self.exam_start_time - 5.0):
+                        # Immediately record shortcut mtime so it will NEVER trigger again for this access
+                        self.seen_recent_shortcuts[lnk_path] = st.st_mtime
+
+                        # Resolve real file directly from shortcut target
+                        real_file = self._resolve_lnk_target(lnk_path)
+                        if not real_file:
+                            # Fallback: search disk by shortcut base name
+                            base_name = item[:-4]
+                            real_file = self._find_user_file_on_disk(base_name)
+                        
+                        if real_file and os.path.isfile(real_file):
+                            _, ext = os.path.splitext(real_file.lower())
+                            if ext in self.DOC_EXTENSIONS:
+                                file_mtime = os.path.getmtime(real_file)
+                                # If the file was modified/created prior to exam start
+                                if file_mtime < (self.exam_start_time - 15.0):
+                                    fname = os.path.basename(real_file)
+                                    print(f"[WhitelistEnforcer] Detected pre-existing document accessed: {fname} (Path: {real_file})")
+                                    app_target = "winword.exe" if ext in (".docx", ".doc", ".rtf") else "code.exe" if ext in (".py", ".cpp", ".c", ".java", ".js") else "document_viewer"
+                                    self._handle_file_violation(None, app_target, f"Pre-existing notes/file opened: {fname}", file_path=real_file)
+                                    return
+                except (OSError, PermissionError):
+                    continue
+        except Exception as e:
+            pass
+
+    def _inspect_allowed_app(self, proc, name_lower):
+        """
+        Guards permitted external apps (e.g. Word, VS Code, Notepad) from opening
+        pre-existing notes, solutions, or cheat sheets created before exam start.
+        """
+        try:
+            # 1. Check open file handles for pre-existing documents
+            try:
+                open_files = proc.open_files()
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                open_files = []
+
+            for f in open_files:
+                fpath = f.path.lower()
+                if any(ign in fpath for ign in self.IGNORE_DIRS):
+                    continue
+                _, ext = os.path.splitext(fpath)
+                if ext in self.DOC_EXTENSIONS:
+                    try:
+                        mtime = os.path.getmtime(f.path)
+                        # If file was modified/created prior to the exam session start
+                        if mtime < (self.exam_start_time - 15.0):
+                            fname = os.path.basename(f.path)
+                            print(f"[WhitelistEnforcer] Flagged pre-existing file in {name_lower}: {fname}")
+                            self._handle_file_violation(proc, name_lower, f"Pre-existing notes/file opened: {fname}", file_path=f.path)
+                            return
+                    except (OSError, PermissionError):
+                        pass
+
+            # 2. Check active window title for document name and suspicious keywords
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                hwnd = user32.GetForegroundWindow()
+                if hwnd:
+                    wpid = ctypes.c_ulong()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
+                    if wpid.value == proc.pid:
+                        length = user32.GetWindowTextLengthW(hwnd)
+                        if length > 0:
+                            buff = ctypes.create_unicode_buffer(length + 1)
+                            user32.GetWindowTextW(hwnd, buff, length + 1)
+                            title = buff.value.strip()
+                            title_lower = title.lower()
+
+                            # For Microsoft Word: check if open document is not a blank new document
+                            if "winword" in name_lower or "word" in name_lower:
+                                blank_names = {"document1", "document 1", "document2", "document 2", "document3", "document 3", "word"}
+                                doc_title = title.split(" - Word")[0].split(" [")[0].strip()
+                                if doc_title.lower() not in blank_names and len(doc_title) > 0:
+                                    real_file = self._find_user_file_on_disk(doc_title)
+                                    if real_file:
+                                        if os.path.getmtime(real_file) < (self.exam_start_time - 15.0):
+                                            fname = os.path.basename(real_file)
+                                            print(f"[WhitelistEnforcer] Flagged pre-existing Word document: {fname}")
+                                            self._handle_file_violation(proc, name_lower, f"Pre-existing Word file opened: {fname}", file_path=real_file)
+                                            return
+                                    else:
+                                        if any(doc_title.lower().endswith(ext) for ext in [".docx", ".doc", ".rtf"]):
+                                            print(f"[WhitelistEnforcer] Flagged saved Word document by title: {doc_title}")
+                                            self._handle_file_violation(proc, name_lower, f"Pre-existing Word file opened: {doc_title}")
+                                            return
+
+                            # For Visual Studio Code
+                            if "code" in name_lower:
+                                if not any(blank in title_lower for blank in ["untitled-", "welcome", "get started"]):
+                                    # Try to extract filename
+                                    parts = title.split(" - ")
+                                    if len(parts) >= 2:
+                                        code_file = parts[0].strip()
+                                        real_file = self._find_user_file_on_disk(code_file)
+                                        if real_file and os.path.getmtime(real_file) < (self.exam_start_time - 15.0):
+                                            fname = os.path.basename(real_file)
+                                            print(f"[WhitelistEnforcer] Flagged pre-existing code file in VS Code: {fname}")
+                                            self._handle_file_violation(proc, name_lower, f"Pre-existing source file opened: {fname}", file_path=real_file)
+                                            return
+
+                            # Check blacklisted keywords in title
+                            if any(w in title_lower for w in self.SUSPICIOUS_TITLE_WORDS):
+                                print(f"[WhitelistEnforcer] Flagged suspicious window title in {name_lower}: {title}")
+                                self._handle_file_violation(proc, name_lower, f"Suspicious notes window title: {title}")
+                                return
+            except Exception:
+                pass
+        except Exception as e:
+            pass
+
+    def _handle_file_violation(self, proc, name_lower, reason, file_path=None):
+        clean_file_name = os.path.basename(file_path) if file_path else (reason.split(":")[-1].strip() if ":" in reason else "")
+        key = f"{name_lower}_{clean_file_name.lower()}_file_violation"
+        now = time.time()
+
+        # Capture evidence screenshot BEFORE terminating the application
+        screenshot_path = None
+        try:
+            screenshot_path = capture_screenshot(self.session_id, "unauthorized_app")
+        except Exception as e:
+            print(f"[WhitelistEnforcer] Warning: Could not capture screenshot: {e}")
+
+        # ALWAYS turn off / terminate the application immediately if an unauthorized file is opened
+        terminated = False
+        if proc:
+            try:
+                print(f"[WhitelistEnforcer] Terminating {name_lower} (PID: {proc.pid}) because a pre-existing file was opened.")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1.5)
+                    terminated = True
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                    terminated = True
+            except Exception as e:
+                print(f"[WhitelistEnforcer] Error terminating process {name_lower}: {e}")
+
+        # If proc was None (e.g. from Recent shortcuts scan) or still alive, terminate running instances of name_lower
+        if not terminated and name_lower and name_lower not in self.SAFETY_LIST:
+            for p in psutil.process_iter(['name', 'pid']):
+                try:
+                    if p.info['name'] and p.info['name'].lower() == name_lower:
+                        print(f"[WhitelistEnforcer] Terminating {name_lower} (PID: {p.pid}) due to pre-existing document access.")
+                        p.terminate()
+                        try:
+                            p.wait(timeout=1.5)
+                        except psutil.TimeoutExpired:
+                            p.kill()
+                        terminated = True
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+        # Windows taskkill fallback to guarantee the unauthorized document window is turned off
+        if name_lower and name_lower in ("winword.exe", "word.exe", "code.exe"):
+            try:
+                import subprocess
+                subprocess.run(["taskkill", "/F", "/IM", name_lower], capture_output=True)
+            except Exception:
+                pass
+
+        # Debounce alert payload during immediate process teardown (10s window)
+        # If the candidate reopens the file after 10s, a new violation alert will fire
+        if key in self.violation_counts and (now - self.violation_counts[key]) < 10.0:
+            return
+        self.violation_counts[key] = now
+
+        payload = {
+            "sessionId": self.session_id,
+            "type": "unauthorized_app",
+            "severity": 4,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "details": {
+                "object_class": name_lower,
+                "reason": reason,
+                "fileName": clean_file_name,
+                "filePath": file_path or "",
+                "action": "file_closed_require_new"
+            }
+        }
+        if screenshot_path:
+            payload["screenshotPath"] = screenshot_path
+
+        if self.on_violation_callback:
+            try:
+                self.on_violation_callback(payload)
+            except Exception as e:
+                print(f"[WhitelistEnforcer] Error sending file violation callback: {e}")
+
 

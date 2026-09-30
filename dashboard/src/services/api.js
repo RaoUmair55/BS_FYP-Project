@@ -2,6 +2,12 @@ import axios from 'axios';
 import { getInMemoryToken, setInMemoryToken } from '../context/AuthContext';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export const assetUrl = (url) => {
+    if (!url || !url.includes('/uploads/')) return url;
+    const address = new URL(url, baseURL);
+    address.searchParams.set('token', getInMemoryToken() || '');
+    return address.toString();
+};
 
 const api = axios.create({
     baseURL,

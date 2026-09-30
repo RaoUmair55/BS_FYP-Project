@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getActiveSessions, getExams } from '../services/api';
+import { assetUrl } from '../services/api';
 import RiskScoreBadge from './RiskScoreBadge';
 import { 
     Users, Camera, Eye, MessageSquare, UserX, AlertTriangle, 
@@ -195,8 +196,8 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         <div className="md-card candidate-grid-card" style={{ overflowY: 'auto', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Grid size={18} style={{ color: '#1a73e8' }} />
-                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#202124' }}>
+                    <Grid size={18} style={{ color: 'var(--primary)' }} />
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-main)' }}>
                         Live Candidate Webcam Grid
                     </h3>
                 </div>
@@ -219,8 +220,8 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                         marginBottom: '16px',
                         padding: '16px 20px',
                         borderRadius: '10px',
-                        background: '#eff6ff',
-                        border: '1.5px solid #93c5fd',
+                        background: 'var(--primary-soft)',
+                        border: '1.5px solid var(--primary)',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '12px',
@@ -228,15 +229,15 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                     }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ background: '#dbeafe', padding: '10px', borderRadius: '10px', color: '#1d4ed8' }}>
+                                <div style={{ background: 'var(--primary-soft)', padding: '10px', borderRadius: '10px', color: 'var(--primary)' }}>
                                     <Lock size={22} />
                                 </div>
                                 <div>
-                                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span>Waiting Lobby Active &mdash; {ex.title || ex.examCode} ({ex.examCode})</span>
                                         <span style={{ 
-                                            background: lobbyStudents.length > 0 ? '#10b981' : '#f59e0b', 
-                                            color: '#ffffff', 
+                                            background: lobbyStudents.length > 0 ? 'var(--success-bg)' : 'var(--warning-bg)', 
+                                            color: 'var(--text-on-color)', 
                                             fontSize: '11px', 
                                             padding: '2px 8px', 
                                             borderRadius: '12px', 
@@ -245,7 +246,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                             {lobbyStudents.length} Students Joined
                                         </span>
                                     </div>
-                                    <div style={{ fontSize: '12.5px', color: '#3b82f6', marginTop: '2px' }}>
+                                    <div style={{ fontSize: '12.5px', color: 'var(--primary)', marginTop: '2px' }}>
                                         Verify all enrolled students have joined the lobby below. When ready, click release to unlock the question paper and start the exam timer for everyone simultaneously.
                                     </div>
                                 </div>
@@ -254,8 +255,8 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                             <button
                                 className="md-btn"
                                 style={{ 
-                                    background: '#2563eb', 
-                                    color: '#ffffff', 
+                                    background: 'var(--primary-bg)', 
+                                    color: 'var(--text-on-color)', 
                                     fontSize: '13px', 
                                     padding: '10px 20px', 
                                     borderRadius: '8px', 
@@ -277,7 +278,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
                         {/* Joined Students Quick Chips */}
                         <div style={{ 
-                            background: '#ffffff', 
+                            background: 'var(--bg-surface)', 
                             border: '1px solid #bfdbfe', 
                             borderRadius: '6px', 
                             padding: '8px 12px',
@@ -286,7 +287,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                             flexWrap: 'wrap',
                             gap: '8px'
                         }}>
-                            <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#475569' }}>
+                            <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)' }}>
                                 Joined Candidates ({lobbyStudents.length}):
                             </span>
                             {lobbyStudents.length === 0 ? (
@@ -297,9 +298,9 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                 lobbyStudents.map(s => (
                                     <span key={s.sessionId || s._id} style={{
                                         fontSize: '11px',
-                                        background: '#f0fdf4',
-                                        color: '#15803d',
-                                        border: '1px solid #bbf7d0',
+                                        background: 'var(--success-soft)',
+                                        color: 'var(--success)',
+                                        border: '1px solid var(--success-soft)',
                                         padding: '2px 8px',
                                         borderRadius: '12px',
                                         fontWeight: 600,
@@ -307,7 +308,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                         alignItems: 'center',
                                         gap: '4px'
                                     }}>
-                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>
+                                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success-bg)' }}></span>
                                         {s.studentName || 'Candidate'} {s.rollNumber ? `(${s.rollNumber})` : ''}
                                     </span>
                                 ))
@@ -323,8 +324,8 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                     marginBottom: '16px',
                     padding: '12px 16px',
                     borderRadius: '8px',
-                    background: '#fffbeb',
-                    border: '1px solid #fde68a',
+                    background: 'var(--warning-soft)',
+                    border: '1px solid var(--warning-soft)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -332,24 +333,24 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                     boxShadow: '0 2px 4px rgba(245, 158, 11, 0.1)'
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <AlertTriangle size={20} style={{ color: '#d97706', flexShrink: 0 }} />
+                        <AlertTriangle size={20} style={{ color: 'var(--warning)', flexShrink: 0 }} />
                         <div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#92400e' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--warning)' }}>
                                 ⏳ Exam Approaching Time Limit (Under 5 Minutes Remaining)
                             </div>
-                            <div style={{ fontSize: '12px', color: '#b45309' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--warning)' }}>
                                 Active exam: <strong>{expiringExams.join(', ')}</strong>. Unsubmitted sessions will auto-submit when the timer expires.
                             </div>
                         </div>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#92400e' }}>Extend:</span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--warning)' }}>Extend:</span>
                         {expiringExams.map(exCode => (
                             <React.Fragment key={exCode}>
                                 <button
                                     className="md-btn md-btn-sm"
-                                    style={{ background: '#d97706', color: '#ffffff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                                    style={{ background: 'var(--warning-bg)', color: 'var(--text-on-color)', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
                                     disabled={extendingMap[exCode]}
                                     onClick={() => handleExtendTime(exCode, 5)}
                                 >
@@ -357,7 +358,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                 </button>
                                 <button
                                     className="md-btn md-btn-sm"
-                                    style={{ background: '#b45309', color: '#ffffff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                                    style={{ background: 'var(--warning-bg)', color: 'var(--text-on-color)', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
                                     disabled={extendingMap[exCode]}
                                     onClick={() => handleExtendTime(exCode, 10)}
                                 >
@@ -365,7 +366,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                 </button>
                                 <button
                                     className="md-btn md-btn-sm"
-                                    style={{ background: '#78350f', color: '#ffffff', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
+                                    style={{ background: 'var(--warning-bg)', color: 'var(--text-on-color)', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
                                     disabled={extendingMap[exCode]}
                                     onClick={() => handleExtendTime(exCode, 15)}
                                 >
@@ -398,41 +399,69 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                             : null;
                         const isVerifying = verifyingMap[sid] || false;
                         const isExtending = extendingMap[s.examId] || false;
+                        const isTerminated = s.status === 'terminated';
+                        const isCompleted = s.status === 'completed';
 
                         return (
                             <div 
                                 key={sid}
                                 className="md-card candidate-webcam-card"
                                 style={{
-                                    border: currentScore >= 60 ? '2px solid #d93025' : currentScore >= 30 ? '2px solid #f9ab00' : timeInfo.isUrgent ? '2px solid #f59e0b' : '1px solid #dadce0',
+                                    border: isTerminated ? '2px solid var(--danger)' : currentScore >= 60 ? '2px solid var(--danger)' : currentScore >= 30 ? '2px solid var(--warning)' : timeInfo.isUrgent ? '2px solid var(--warning)' : '1px solid var(--border-color)',
                                     borderRadius: '8px',
                                     overflow: 'hidden',
-                                    background: '#ffffff',
+                                    background: 'var(--bg-surface)',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     boxShadow: '0 1px 3px rgba(60,64,67,0.12)'
                                 }}
                             >
                                 {/* Card Header */}
-                                <div style={{ padding: '10px 12px', background: '#f8f9fa', borderBottom: '1px solid #dadce0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ padding: '10px 12px', background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div>
-                                        <div style={{ fontWeight: 600, fontSize: '13px', color: '#202124' }}>
+                                        <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-main)' }}>
                                             {s.studentName || s.studentId || 'Candidate'}
                                         </div>
-                                        <div style={{ fontSize: '11px', color: '#5f6368', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                                             <span>{s.rollNumber ? `${s.rollNumber} • ` : ''}Code: {s.examId}</span>
-                                            {/* Remaining Time Badge */}
-                                            <span style={{
-                                                fontSize: '10px',
-                                                padding: '1px 6px',
-                                                borderRadius: '10px',
-                                                fontWeight: 600,
-                                                background: timeInfo.isLobby ? '#e0f2fe' : timeInfo.isExpired ? '#fee2e2' : timeInfo.isUrgent ? '#fef3c7' : '#ecfdf5',
-                                                color: timeInfo.isLobby ? '#0369a1' : timeInfo.isExpired ? '#b91c1c' : timeInfo.isUrgent ? '#92400e' : '#047857',
-                                                border: `1px solid ${timeInfo.isLobby ? '#bae6fd' : timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`
-                                            }}>
-                                                ⏱️ {timeInfo.text}
-                                            </span>
+                                            {/* Status / Remaining Time Badge */}
+                                            {isTerminated ? (
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    padding: '1px 6px',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 600,
+                                                    background: 'var(--danger-soft)',
+                                                    color: 'var(--danger)',
+                                                    border: '1px solid #fca5a5'
+                                                }} title={s.terminationReason || 'Terminated'}>
+                                                    🛑 Terminated
+                                                </span>
+                                            ) : isCompleted ? (
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    padding: '1px 6px',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 600,
+                                                    background: 'var(--success-soft)',
+                                                    color: 'var(--success)',
+                                                    border: '1px solid #a7f3d0'
+                                                }}>
+                                                    ✅ Submitted
+                                                </span>
+                                            ) : (
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    padding: '1px 6px',
+                                                    borderRadius: '10px',
+                                                    fontWeight: 600,
+                                                    background: timeInfo.isLobby ? 'var(--primary-soft)' : timeInfo.isExpired ? 'var(--danger-soft)' : timeInfo.isUrgent ? 'var(--warning-soft)' : 'var(--success-soft)',
+                                                    color: timeInfo.isLobby ? '#0369a1' : timeInfo.isExpired ? 'var(--danger)' : timeInfo.isUrgent ? 'var(--warning)' : 'var(--success)',
+                                                    border: `1px solid ${timeInfo.isLobby ? '#bae6fd' : timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`
+                                                }}>
+                                                    ⏱️ {timeInfo.text}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
 
@@ -448,40 +477,56 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
                                 {/* Webcam / Verification Area */}
                                 <div style={{ height: '160px', background: '#0f172a', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {/* If NOT verified yet and photo exists, show the self-check photo for verification */}
-                                    {!isVerified && photoUrl ? (
+                                    {isTerminated ? (
+                                        <div style={{ textAlign: 'center', color: '#f87171', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '14px' }}>
+                                            <AlertTriangle size={32} style={{ color: '#ef4444' }} />
+                                            <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#f87171' }}>Session Terminated</div>
+                                            <div style={{ fontSize: '11px', color: '#cbd5e1', maxWidth: '240px', lineHeight: 1.3 }}>
+                                                {s.terminationReason || 'Terminated by rule or examiner'}
+                                            </div>
+                                        </div>
+                                    ) : isCompleted ? (
+                                        <div style={{ textAlign: 'center', color: 'var(--success)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '14px' }}>
+                                            <ShieldCheck size={36} style={{ color: 'var(--success)' }} />
+                                            <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#e2e8f0' }}>Exam Completed</div>
+                                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Responses submitted</div>
+                                        </div>
+                                    ) : !isVerified && photoUrl ? (
+                                        /* If NOT verified yet and photo exists, show the self-check photo for verification */
                                         <img 
-                                            src={photoUrl} 
+                                            src={assetUrl(photoUrl)} 
                                             alt={`Self-check photo ${s.studentId}`} 
                                             style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                                         />
                                     ) : isVerified ? (
                                         /* Once verified, photo disappears cleanly and displays active live monitoring feed */
-                                        <div style={{ textAlign: 'center', color: '#10b981', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                                            <ShieldCheck size={36} style={{ color: '#10b981' }} />
+                                        <div style={{ textAlign: 'center', color: 'var(--success)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                            <ShieldCheck size={36} style={{ color: 'var(--success)' }} />
                                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0' }}>Identity Verified</div>
                                             <div style={{ fontSize: '10px', color: '#94a3b8' }}>Camera Active ● Live</div>
                                         </div>
                                     ) : (
-                                        <div style={{ textAlign: 'center', color: '#64748b' }}>
+                                        <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                                             <Camera size={32} style={{ marginBottom: '4px', opacity: 0.6 }} />
                                             <div style={{ fontSize: '11px' }}>Camera Active</div>
                                         </div>
                                     )}
 
-                                    {/* Verification Badge Overlay */}
-                                    <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '12px', color: '#fff', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        {isVerified ? <ShieldCheck size={11} style={{ color: '#34d399' }} /> : <Clock size={11} style={{ color: '#fbbf24' }} />}
-                                        <span style={{ textTransform: 'capitalize' }}>{isVerified ? 'Identity Confirmed' : 'Self-Check Check Required'}</span>
-                                    </div>
+                                    {/* Verification Badge Overlay (only when active) */}
+                                    {!isTerminated && !isCompleted && (
+                                        <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '12px', color: 'var(--text-on-color)', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {isVerified ? <ShieldCheck size={11} style={{ color: 'var(--success)' }} /> : <Clock size={11} style={{ color: 'var(--warning)' }} />}
+                                            <span style={{ textTransform: 'capitalize' }}>{isVerified ? 'Identity Confirmed' : 'Self-Check Check Required'}</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Action Buttons Footer */}
-                                <div style={{ padding: '8px 12px', background: '#ffffff', borderTop: '1px solid #e8eaed', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                <div style={{ padding: '8px 12px', background: 'var(--bg-surface)', borderTop: '1px solid var(--bg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                                     {!isVerified && photoUrl && (
                                         <button 
                                             className="md-btn md-btn-sm"
-                                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: '#e6f4ea', color: '#137333', border: '1px solid #ceead6' }}
+                                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: 'var(--success-soft)', color: 'var(--success)', border: '1px solid var(--success-soft)' }}
                                             onClick={(e) => handleConfirmIdentity(sid, e)}
                                             disabled={isVerifying}
                                             title="Confirm student identity and clear self-check photo"
@@ -504,7 +549,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                     {onOpenChat && (
                                         <button
                                             className="md-btn md-btn-sm"
-                                            style={{ fontSize: '11px', padding: '4px 8px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}
+                                            style={{ fontSize: '11px', padding: '4px 8px', background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid #bfdbfe' }}
                                             onClick={() => onOpenChat(sid)}
                                             title="Open direct live chat with this student"
                                         >
@@ -515,7 +560,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
                                     <button
                                         className="md-btn md-btn-sm"
-                                        style={{ fontSize: '11px', padding: '4px 6px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
+                                        style={{ fontSize: '11px', padding: '4px 6px', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
                                         onClick={() => handleExtendTime(s.examId, 5)}
                                         disabled={isExtending}
                                         title="Extend this exam's duration by 5 minutes"
@@ -524,7 +569,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                     </button>
                                     <button
                                         className="md-btn md-btn-sm"
-                                        style={{ fontSize: '11px', padding: '4px 6px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
+                                        style={{ fontSize: '11px', padding: '4px 6px', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
                                         onClick={() => handleExtendTime(s.examId, 10)}
                                         disabled={isExtending}
                                         title="Extend this exam's duration by 10 minutes"
@@ -540,4 +585,3 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         </div>
     );
 }
-

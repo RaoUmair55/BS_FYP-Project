@@ -8,7 +8,9 @@ const Session = require('../models/Session');
 const Submission = require('../models/Submission');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
+const { requireOwnedExam } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
+const { broadcastToExam } = require('../sockets/violationSocket');
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -48,9 +50,12 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
         const { title, status, durationMinutes, rules } = req.body;
         let examCode = req.body.examCode ? req.body.examCode.trim().toUpperCase() : null;
 
-        if (!title || !title.trim()) {
+        if (typeof title !== 'string' || !title.trim()) {
             return res.status(400).json({ error: 'Exam title is required.' });
         }
+        if (status && !['draft', 'active', 'completed'].includes(status)) return res.status(400).json({ error: 'Invalid exam status' });
+        if (durationMinutes !== undefined && (!Number.isInteger(Number(durationMinutes)) || Number(durationMinutes) < 1 || Number(durationMinutes) > 720)) return res.status(400).json({ error: 'Invalid exam duration' });
+        if (req.body.examCode && (typeof req.body.examCode !== 'string' || !/^[A-Za-z0-9-]{3,32}$/.test(req.body.examCode))) return res.status(400).json({ error: 'Invalid exam code' });
 
         if (!examCode) {
             examCode = generateRandomExamCode();
@@ -67,9 +72,11 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
             try {
                 parsedRules = typeof rules === 'string' ? JSON.parse(rules) : rules;
             } catch (e) {
-                parsedRules = rules;
+                return res.status(400).json({ error: 'Invalid rules JSON' });
             }
         }
+        if (!parsedRules || typeof parsedRules !== 'object' || Array.isArray(parsedRules)) return res.status(400).json({ error: 'Invalid rules' });
+        if (parsedRules.autoTerminateRiskScore !== undefined && (!Number.isFinite(Number(parsedRules.autoTerminateRiskScore)) || Number(parsedRules.autoTerminateRiskScore) < 0 || Number(parsedRules.autoTerminateRiskScore) > 100)) return res.status(400).json({ error: 'Invalid risk threshold' });
 
         let parsedAllowedApps = [];
         if (req.body.allowedApplications) {
@@ -78,7 +85,7 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
                     ? JSON.parse(req.body.allowedApplications) 
                     : req.body.allowedApplications;
             } catch (e) {
-                parsedAllowedApps = [];
+                return res.status(400).json({ error: 'Invalid allowedApplications JSON' });
             }
         }
 
@@ -101,6 +108,7 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
             createdBy: teacherId,
             createdByName: teacherName,
             status: status || 'draft',
+            examType: req.body.examType === 'physical_lab' ? 'physical_lab' : 'online',
             durationMinutes: durationMinutes ? Number(durationMinutes) : 60,
             rules: {
                 detectCellPhone: parsedRules.detectCellPhone !== undefined ? Boolean(parsedRules.detectCellPhone) : true,
@@ -166,6 +174,9 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
 // GET /exams — List exams sorted newest first (Teacher-facing)
 router.get('/', requireAuth, async (req, res) => {
     try {
+        const { autoExpireFinishedExams } = require('../utils/examLifecycle');
+        await autoExpireFinishedExams(req.app.locals.io);
+
         const filter = {};
         if (req.query.status) {
             filter.status = req.query.status.toLowerCase();
@@ -174,22 +185,21 @@ router.get('/', requireAuth, async (req, res) => {
         const currentTeacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
         const isAdmin = req.teacher?.role === 'admin';
 
-        // Default: regular examiners only see exams they created. Admins can view all if scope=all.
-        if (req.query.scope === 'all' && isAdmin) {
-            // Admin view across all teachers
-        } else if (currentTeacherId) {
+        // Regular examiners only see exams they created. Admins view all department exams.
+        if (!isAdmin && currentTeacherId) {
             filter.createdBy = currentTeacherId;
         }
 
         const exams = await Exam.find(filter).sort({ createdAt: -1 });
         
-        // Enrich exams with active student count and fallback title/code
+        // Enrich exams with active and total student counts and fallback title/code
         const enrichedExams = await Promise.all(exams.map(async (exam) => {
             const code = exam.examCode || exam.examId || 'EXAM';
-            const activeStudents = await Session.countDocuments({ 
-                examId: new RegExp('^' + code + '$', 'i'), 
-                status: 'active' 
-            });
+            const examRegex = new RegExp('^' + code + '$', 'i');
+            const [activeStudents, totalStudents] = await Promise.all([
+                Session.countDocuments({ examId: examRegex, status: 'active' }),
+                Session.countDocuments({ examId: examRegex })
+            ]);
             const isMine = currentTeacherId && exam.createdBy ? String(exam.createdBy) === currentTeacherId : false;
 
             return {
@@ -198,6 +208,7 @@ router.get('/', requireAuth, async (req, res) => {
                 title: exam.title || `Exam Session (${code})`,
                 status: exam.status || 'draft',
                 activeStudents,
+                totalStudents,
                 isMine
             };
         }));
@@ -235,7 +246,13 @@ router.get('/code/:code', async (req, res) => {
         }
 
         res.json({
-            ...exam.toObject(),
+            title: exam.title,
+            examCode: exam.examCode,
+            examType: exam.examType,
+            status: exam.status,
+            allowedApplications: exam.allowedApplications,
+            rules: exam.rules,
+            paperReleased: exam.paperReleased,
             serverTime: new Date()
         });
     } catch (err) {
@@ -244,7 +261,7 @@ router.get('/code/:code', async (req, res) => {
 });
 
 // GET /exams/:examId/summary — Aggregated analytics & session list for completed/any exam (Teacher-facing)
-router.get('/:examId/summary', requireAuth, async (req, res) => {
+router.get('/:examId/summary', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         const examIdentifier = req.params.examId;
         let exam = null;
@@ -336,7 +353,7 @@ router.get('/:examId/summary', requireAuth, async (req, res) => {
 });
 
 // GET /exams/:examId — Get single exam details (Teacher-facing)
-router.get('/:examId', requireAuth, async (req, res) => {
+router.get('/:examId', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         const exam = await Exam.findById(req.params.examId);
         if (!exam) {
@@ -349,7 +366,7 @@ router.get('/:examId', requireAuth, async (req, res) => {
 });
 
 // PATCH /exams/:examId/status — Update status (Teacher-facing)
-router.patch('/:examId/status', requireAuth, async (req, res) => {
+router.patch('/:examId/status', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         const { status } = req.body;
         if (!['draft', 'active', 'completed'].includes(status)) {
@@ -393,7 +410,7 @@ router.patch('/:examId/status', requireAuth, async (req, res) => {
 });
 
 // POST /exams/:examId/extend-time — Extend global duration for all students in exam (Teacher-facing)
-router.post('/:examId/extend-time', requireAuth, async (req, res) => {
+router.post('/:examId/extend-time', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         const { addMinutes } = req.body;
         const minutes = Number(addMinutes);
@@ -451,7 +468,7 @@ router.post('/:examId/extend-time', requireAuth, async (req, res) => {
         // Broadcast to all dashboard clients and candidate apps
         const io = req.app.locals.io;
         if (io) {
-            io.emit('timeExtended', {
+            await broadcastToExam(io, code, 'timeExtended', {
                 examId: code,
                 addMinutes: minutes,
                 extraMinutes: exam.extraMinutes,
@@ -490,7 +507,7 @@ router.post('/:examId/extend-time', requireAuth, async (req, res) => {
 });
 
 // POST /exams/:examId/release-paper — Release question paper to all candidates simultaneously (Teacher-facing)
-router.post('/:examId/release-paper', requireAuth, async (req, res) => {
+router.post('/:examId/release-paper', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         let exam = null;
         if (req.params.examId.match(/^[0-9a-fA-F]{24}$/)) {
@@ -543,7 +560,7 @@ router.post('/:examId/release-paper', requireAuth, async (req, res) => {
         // Broadcast to all connected candidate apps and dashboard clients
         const io = req.app.locals.io;
         if (io) {
-            io.emit('paperReleased', {
+            await broadcastToExam(io, code, 'paperReleased', {
                 examId: code,
                 startedAt: exam.startedAt,
                 endTime: exam.endTime,
@@ -582,7 +599,7 @@ router.post('/:examId/release-paper', requireAuth, async (req, res) => {
 });
 
 // POST /exams/:examId/paper — Attach / update question paper (Teacher-facing)
-router.post('/:examId/paper', requireAuth, handleUpload, async (req, res) => {
+router.post('/:examId/paper', requireAuth, requireOwnedExam, handleUpload, async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No paper file uploaded.' });
@@ -593,10 +610,7 @@ router.post('/:examId/paper', requireAuth, handleUpload, async (req, res) => {
             return res.status(404).json({ error: 'Exam not found' });
         }
 
-        // Delete previous paper if exists
-        if (exam.paperPath) {
-            await storageService.delete(exam.paperPath);
-        }
+        const previousPaper = exam.paperPath;
 
         const uniqueFilename = `${(exam.examCode || req.params.examId).replace(/[^a-zA-Z0-9-]/g, '')}-${Date.now()}${path.extname(req.file.originalname)}`;
         const saved = await storageService.save(req.file.buffer, uniqueFilename, 'papers');
@@ -604,6 +618,7 @@ router.post('/:examId/paper', requireAuth, handleUpload, async (req, res) => {
         exam.paperPath = saved.path;
         exam.paperFilename = req.file.originalname;
         await exam.save();
+        if (previousPaper) await storageService.delete(previousPaper);
 
         // Record Teacher Action in Audit Log
         const { logTeacherAction } = require('../utils/auditLogger');
@@ -622,7 +637,7 @@ router.post('/:examId/paper', requireAuth, handleUpload, async (req, res) => {
 });
 
 // DELETE /exams/:examId — Delete an exam (Teacher-facing)
-router.delete('/:examId', requireAuth, async (req, res) => {
+router.delete('/:examId', requireAuth, requireOwnedExam, async (req, res) => {
     try {
         const exam = await Exam.findByIdAndDelete(req.params.examId);
         if (!exam) {

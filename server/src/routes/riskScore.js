@@ -1,10 +1,11 @@
 const express = require('express');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
+const { requireOwnedSession } = require('../middleware/examAccess');
 const router = express.Router();
 
 // GET /risk-score/:sessionId (Teacher-facing, protected)
-router.get('/:sessionId', requireAuth, async (req, res) => {
+router.get('/:sessionId', requireAuth, requireOwnedSession, async (req, res) => {
     try {
         const sessionId = req.params.sessionId;
         const result = await calculateRiskScore(sessionId);

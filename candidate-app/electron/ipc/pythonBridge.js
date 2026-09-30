@@ -13,6 +13,16 @@ const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
 let retryIntervalTimer = null;
 let wasOffline = false;
 let statusChangeCallback = null;
+let isExamActive = false;
+
+function setExamActive(active) {
+  isExamActive = Boolean(active);
+  console.log(`[PythonBridge] Active exam state updated to: ${isExamActive}`);
+}
+
+function getExamActive() {
+  return isExamActive;
+}
 
 async function checkPythonHealth() {
   try {
@@ -39,7 +49,9 @@ async function sendViolationDirect(violationPayload) {
   let requestHeaders = {};
 
   const screenshot = violationPayload.screenshotPath;
-  if (screenshot && typeof screenshot === 'string' && fs.existsSync(screenshot)) {
+  const screenshotRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'screenshots');
+  const resolvedScreenshot = typeof screenshot === 'string' ? path.resolve(screenshot) : '';
+  if (resolvedScreenshot.startsWith(screenshotRoot + path.sep) && fs.existsSync(resolvedScreenshot)) {
     const form = new FormData();
     form.append('sessionId', violationPayload.sessionId);
     form.append('type', violationPayload.type);
@@ -48,18 +60,26 @@ async function sendViolationDirect(violationPayload) {
     if (violationPayload.details) {
       form.append('details', typeof violationPayload.details === 'string' ? violationPayload.details : JSON.stringify(violationPayload.details));
     }
-    form.append('screenshot', fs.createReadStream(screenshot));
+    form.append('screenshot', fs.createReadStream(resolvedScreenshot));
 
     requestData = form;
     requestHeaders = form.getHeaders();
   }
 
-  const response = await axios.post(`${SERVER_URL}/violation`, requestData, {
-    timeout: 8000,
-    headers: requestHeaders
-  });
-
-  return response.status >= 200 && response.status < 300;
+  try {
+    const response = await axios.post(`${SERVER_URL}/violation`, requestData, {
+      timeout: 8000,
+      headers: requestHeaders
+    });
+    return response.status >= 200 && response.status < 300;
+  } catch (err) {
+    if (err.response && (err.response.status === 404 || err.response.status === 400)) {
+      // Invalid/stale session on backend - treat as consumed so it doesn't poison the retry loop
+      console.warn(`[PythonBridge] Server rejected invalid/stale session violation (${err.response.status}): discarding from queue.`);
+      return true;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -70,6 +90,11 @@ async function sendViolationDirect(violationPayload) {
  * @returns {Promise<boolean>}
  */
 async function forwardViolationToServer(violationPayload) {
+  if (!isExamActive) {
+    console.log(`[PythonBridge] Pre-exam violation ignored: ${violationPayload?.type} (Exam not started yet)`);
+    return false;
+  }
+
   try {
     console.log(`[PythonBridge] Forwarding violation to backend:`, violationPayload);
     const success = await sendViolationDirect(violationPayload);
@@ -86,6 +111,7 @@ async function forwardViolationToServer(violationPayload) {
     const rowId = violationBuffer.enqueue(violationPayload, violationPayload.screenshotPath);
     console.log(`[PythonBridge] Violation safely stored in offline buffer (Row ID: ${rowId}).`);
     notifyStatusChange();
+    return true;
   } catch (dbErr) {
     console.error(`[PythonBridge] Failed to enqueue violation to disk buffer:`, dbErr);
   }
@@ -97,6 +123,9 @@ async function forwardViolationToServer(violationPayload) {
  * Executes a single drainage pass over the offline buffer, oldest first.
  */
 async function processOfflineBuffer() {
+  if (!isExamActive) {
+    return;
+  }
   try {
     const pending = violationBuffer.getPending();
     const currentCount = pending.length;
@@ -124,6 +153,12 @@ async function processOfflineBuffer() {
         payload = JSON.parse(item.payload_json);
       } catch (parseErr) {
         console.error(`[ViolationBuffer] Corrupted JSON in violation #${item.id}, discarding:`, parseErr);
+        violationBuffer.markSent(item.id);
+        continue;
+      }
+
+      if (!payload.sessionId || payload.sessionId === 'unknown-session') {
+        console.log(`[ViolationBuffer] Discarding unassociated pre-session violation #${item.id}`);
         violationBuffer.markSent(item.id);
         continue;
       }
@@ -213,5 +248,7 @@ module.exports = {
   processOfflineBuffer,
   startBufferRetryLoop,
   stopBufferRetryLoop,
-  killApp
+  killApp,
+  setExamActive,
+  getExamActive
 };

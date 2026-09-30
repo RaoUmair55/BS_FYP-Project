@@ -8,7 +8,7 @@ import {
 import RiskScoreBadge from './RiskScoreBadge';
 import EvidenceViewer from './EvidenceViewer';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
     if (!typeStr) return "Unknown";
@@ -30,6 +30,11 @@ function formatType(typeStr, details = {}) {
     }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
+    }
+    if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
+        const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
+        const appName = details?.object_class ? ` in ${details.object_class}` : '';
+        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing File Opened${appName}`;
     }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
@@ -127,7 +132,7 @@ const ExamSummary = ({ examId, onBack }) => {
                 <button className="sub-tab-btn" onClick={onBack} style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <ArrowLeft size={16} /> Back
                 </button>
-                <div style={{ background: '#FCE8E6', color: '#D93025', padding: '16px', borderRadius: '8px' }}>
+                <div style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: '16px', borderRadius: '8px' }}>
                     {error || 'Summary data unavailable'}
                 </div>
             </div>
@@ -234,41 +239,41 @@ const ExamSummary = ({ examId, onBack }) => {
                 {/* Card 1: Risk Score Distribution */}
                 <div className="md-card" style={{ padding: '20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                        <PieChart size={18} style={{ color: '#1a73e8' }} />
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#202124' }}>
+                        <PieChart size={18} style={{ color: 'var(--primary)' }} />
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>
                             Candidate Risk Distribution
                         </h3>
                     </div>
 
                     {/* Segmented Progress Bar */}
-                    <div style={{ height: '14px', borderRadius: '7px', background: '#e8eaed', overflow: 'hidden', display: 'flex', marginBottom: '16px' }}>
-                        {highPct > 0 && <div style={{ width: `${highPct}%`, background: '#d93025' }} title={`High Risk: ${riskDist.high}`} />}
-                        {modPct > 0 && <div style={{ width: `${modPct}%`, background: '#f9ab00' }} title={`Moderate Risk: ${riskDist.moderate}`} />}
-                        {lowPct > 0 && <div style={{ width: `${lowPct}%`, background: '#188038' }} title={`Low Risk: ${riskDist.low}`} />}
+                    <div style={{ height: '14px', borderRadius: '7px', background: 'var(--bg-muted)', overflow: 'hidden', display: 'flex', marginBottom: '16px' }}>
+                        {highPct > 0 && <div style={{ width: `${highPct}%`, background: 'var(--danger-bg)' }} title={`High Risk: ${riskDist.high}`} />}
+                        {modPct > 0 && <div style={{ width: `${modPct}%`, background: 'var(--warning-bg)' }} title={`Moderate Risk: ${riskDist.moderate}`} />}
+                        {lowPct > 0 && <div style={{ width: `${lowPct}%`, background: 'var(--success-bg)' }} title={`Low Risk: ${riskDist.low}`} />}
                     </div>
 
                     {/* Stat Breakdown Pills */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#202124' }}>
-                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#d93025', display: 'inline-block' }}></span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}>
+                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--danger-bg)', display: 'inline-block' }}></span>
                                 High Risk (&gt;=60)
                             </span>
-                            <span style={{ fontWeight: 600, color: '#d93025' }}>{riskDist.high} ({highPct}%)</span>
+                            <span style={{ fontWeight: 600, color: 'var(--danger)' }}>{riskDist.high} ({highPct}%)</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#202124' }}>
-                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f9ab00', display: 'inline-block' }}></span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}>
+                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--warning-bg)', display: 'inline-block' }}></span>
                                 Moderate Risk (30-59)
                             </span>
-                            <span style={{ fontWeight: 600, color: '#b06000' }}>{riskDist.moderate} ({modPct}%)</span>
+                            <span style={{ fontWeight: 600, color: 'var(--warning)' }}>{riskDist.moderate} ({modPct}%)</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#202124' }}>
-                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#188038', display: 'inline-block' }}></span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}>
+                                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--success-bg)', display: 'inline-block' }}></span>
                                 Low Risk (&lt;30)
                             </span>
-                            <span style={{ fontWeight: 600, color: '#188038' }}>{riskDist.low} ({lowPct}%)</span>
+                            <span style={{ fontWeight: 600, color: 'var(--success)' }}>{riskDist.low} ({lowPct}%)</span>
                         </div>
                     </div>
                 </div>
@@ -276,14 +281,14 @@ const ExamSummary = ({ examId, onBack }) => {
                 {/* Card 2: Violation Type Breakdown Bar Chart */}
                 <div className="md-card" style={{ padding: '20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                        <BarChart2 size={18} style={{ color: '#1a73e8' }} />
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#202124' }}>
+                        <BarChart2 size={18} style={{ color: 'var(--primary)' }} />
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>
                             Top Violation Categories
                         </h3>
                     </div>
 
                     {violationEntries.length === 0 ? (
-                        <div style={{ padding: '24px 0', textAlign: 'center', color: '#5f6368', fontSize: '13px' }}>
+                        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
                             No violations recorded across candidates.
                         </div>
                     ) : (
@@ -293,11 +298,11 @@ const ExamSummary = ({ examId, onBack }) => {
                                 return (
                                     <div key={typeKey}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px' }}>
-                                            <span style={{ fontWeight: 500, color: '#3c4043' }}>{formatType(typeKey)}</span>
-                                            <span style={{ fontWeight: 600, color: '#1a73e8' }}>{count} alerts</span>
+                                            <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{formatType(typeKey)}</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{count} alerts</span>
                                         </div>
-                                        <div style={{ height: '8px', borderRadius: '4px', background: '#f1f3f4', overflow: 'hidden' }}>
-                                            <div style={{ width: `${pct}%`, height: '100%', background: '#1a73e8', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+                                        <div style={{ height: '8px', borderRadius: '4px', background: 'var(--bg-muted)', overflow: 'hidden' }}>
+                                            <div style={{ width: `${pct}%`, height: '100%', background: 'var(--primary-bg)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
                                         </div>
                                     </div>
                                 );
@@ -360,10 +365,18 @@ const ExamSummary = ({ examId, onBack }) => {
                                         </td>
                                         <td>
                                             {s.submitted ? (
-                                                <span className="submission-badge submitted">
+                                                <button 
+                                                    type="button"
+                                                    className="submission-badge submitted"
+                                                    onClick={() => setSelectedStudentSessionId(s.sessionId)}
+                                                    style={{ cursor: 'pointer', border: 'none', font: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                                                    title="Click to view candidate submission script & files"
+                                                >
                                                     <CheckCircle size={13} />
-                                                    Submitted ({s.submissionType || 'File'})
-                                                </span>
+                                                    <span>
+                                                        {s.submissionType === 'both' ? '📝 Typed + 📁 File' : s.submissionType === 'text' ? '📝 Typed Script' : '📁 Attached File'}
+                                                    </span>
+                                                </button>
                                             ) : (
                                                 <span className="submission-badge unsubmitted">
                                                     <XCircle size={13} />

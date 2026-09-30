@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import './AdminDashboard.css';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }) {
     const { authFetch, teacher } = useAuth();
@@ -269,8 +269,8 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                     position: 'fixed',
                     bottom: '24px',
                     right: '24px',
-                    background: toast.type === 'error' ? '#d93025' : '#188038',
-                    color: '#ffffff',
+                    background: toast.type === 'error' ? 'var(--danger-bg)' : 'var(--success-bg)',
+                    color: 'var(--text-on-color)',
                     padding: '12px 20px',
                     borderRadius: '8px',
                     boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
@@ -282,7 +282,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                     gap: '10px'
                 }}>
                     <span>{toast.message}</span>
-                    <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0 }}>
+                    <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', color: 'var(--text-on-color)', cursor: 'pointer', padding: 0 }}>
                         <X size={16} />
                     </button>
                 </div>
@@ -295,8 +295,8 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                         <Shield size={22} />
                     </div>
                     <div>
-                        <h1 className="admin-heading">Admin & Asset Management Console</h1>
-                        <p className="admin-subheading">Manage Cloudinary storage, question papers, candidate verification media, and examiner audit trails</p>
+                        <h1 className="admin-heading">Admin Console</h1>
+                        <p className="admin-subheading">System overview, evidence storage, audit records, and examiner access</p>
                     </div>
                 </div>
 
@@ -307,28 +307,28 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                         onClick={() => setActiveSubtab('analytics')}
                     >
                         <BarChart3 size={16} />
-                        Analytics & Metrics
+                        Overview
                     </button>
                     <button 
                         className={`admin-subtab-btn ${activeSubtab === 'assets' ? 'active' : ''}`}
                         onClick={() => setActiveSubtab('assets')}
                     >
                         <FolderKanban size={16} />
-                        Storage & Assets ({stats?.storage?.totalAssets || assets.length})
+                        Evidence & Storage ({stats?.storage?.totalAssets || assets.length})
                     </button>
                     <button 
                         className={`admin-subtab-btn ${activeSubtab === 'audit' ? 'active' : ''}`}
                         onClick={() => setActiveSubtab('audit')}
                     >
                         <ScrollText size={16} />
-                        Examiner Audit Trail
+                        Audit Log
                     </button>
                     <button 
                         className={`admin-subtab-btn ${activeSubtab === 'users' ? 'active' : ''}`}
                         onClick={() => setActiveSubtab('users')}
                     >
                         <Users size={16} />
-                        User & Role Management ({users.length})
+                        Users & Access ({users.length})
                     </button>
                 </div>
             </div>
@@ -375,12 +375,12 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                     <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
                         <div className="lightbox-header">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <FileText size={20} color="#1a73e8" />
+                                <FileText size={20} color="var(--primary)" />
                                 <div>
-                                    <div style={{ fontWeight: 600, fontSize: '15px', color: '#202124' }}>
+                                    <div style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-main)' }}>
                                         {previewItem.title}
                                     </div>
-                                    <div style={{ fontSize: '12px', color: '#5f6368' }}>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                                         {previewItem.filename} &bull; Exam: {previewItem.examId || 'N/A'}
                                     </div>
                                 </div>
@@ -394,7 +394,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                             {previewItem.assetType === 'verification' || previewItem.assetType === 'screenshot' || (previewItem.url && previewItem.url.match(/\.(jpg|jpeg|png|webp)/i)) ? (
                                 <img src={previewItem.url} alt={previewItem.title} className="lightbox-img" />
                             ) : (
-                                <div style={{ color: '#fff', textAlign: 'center', padding: '40px' }}>
+                                <div style={{ color: 'var(--text-on-color)', textAlign: 'center', padding: '40px' }}>
                                     <FileText size={64} color="#94a3b8" style={{ margin: '0 auto 16px auto' }} />
                                     <div style={{ fontSize: '16px', fontWeight: 600 }}>PDF / Document File</div>
                                     <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>Click download below to open directly from Cloudinary CDN.</div>
@@ -403,7 +403,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                         </div>
 
                         <div className="lightbox-footer">
-                            <div style={{ fontSize: '12px', color: '#5f6368' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                                 {previewItem.candidateName && <span>Candidate: <strong>{previewItem.candidateName}</strong> | </span>}
                                 <span>Uploaded: {new Date(previewItem.createdAt).toLocaleString()}</span>
                             </div>
@@ -436,7 +436,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                 <div className="lightbox-overlay" onClick={() => !actionLoading && setSingleDeleteItem(null)}>
                     <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-dialog-header">
-                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fce8e6', color: '#d93025', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--danger-soft)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <AlertTriangle size={20} />
                             </div>
                             <h3 className="modal-dialog-title">Delete Stored File?</h3>
@@ -471,7 +471,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                 <div className="lightbox-overlay" onClick={() => !actionLoading && setBatchDeleteItems(null)}>
                     <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-dialog-header">
-                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fce8e6', color: '#d93025', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--danger-soft)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <AlertTriangle size={20} />
                             </div>
                             <h3 className="modal-dialog-title">Batch Delete Files?</h3>
@@ -506,7 +506,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                 <div className="lightbox-overlay" onClick={() => !purgeLoading && setShowPurgeModal(false)}>
                     <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-dialog-header">
-                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fce8e6', color: '#d93025', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--danger-soft)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FolderX size={20} />
                             </div>
                             <h3 className="modal-dialog-title">Purge All Media for Exam</h3>
@@ -514,7 +514,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                         <div className="modal-dialog-body">
                             Enter the Exam Code or ID to purge all stored question papers, candidate camera verification photos, and violation screenshots from Cloudinary.
                             <div style={{ marginTop: '16px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#202124', marginBottom: '6px' }}>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
                                     Exam Code / Exam ID:
                                 </label>
                                 <input 

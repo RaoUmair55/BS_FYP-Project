@@ -9,12 +9,14 @@ import EvidenceViewer from '../components/EvidenceViewer';
 import CandidateGrid from '../components/CandidateGrid';
 import AdminDashboard from '../components/AdminDashboard/AdminDashboard';
 import LiveExamChat from '../components/LiveExamChat';
-import { Shield, Layers, Radio, ArrowLeft, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban, MessageSquare, Menu, Zap } from 'lucide-react';
+import ExamTimeExpiryAlert from '../components/ExamTimeExpiryAlert';
+import api from '../services/api';
+import { Shield, Layers, Radio, CheckCircle, AlertCircle, X, Volume2, VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban, MessageSquare, Menu, Zap, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AuthModal from '../components/AuthModal';
 import './Dashboard.css';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 let globalAudioCtx = null;
 
@@ -70,23 +72,79 @@ function playAlertChime() {
     }
 }
 
-export default function Dashboard() {
+export default function Dashboard({ theme = 'light', onToggleTheme = () => {} }) {
     const { connected, violations, riskScores, socket } = useSocket();
     const { teacher, showAuthModal, setShowAuthModal, logout, demoLogin, authFetch } = useAuth();
     const [selectedSessionId, setSelectedSessionId] = useState(null);
-    const [activeTab, setActiveTab] = useState('exams'); // 'exams' or 'monitoring'
+    const [activeTab, setActiveTab] = useState('monitoring');
     const [rightPanelView, setRightPanelView] = useState('priority'); // 'priority', 'feed', 'grid', 'evidence', 'chat'
     const [selectedExamFilter, setSelectedExamFilter] = useState(null);
     const [selectedSummaryExamId, setSelectedSummaryExamId] = useState(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [chatSessionId, setChatSessionId] = useState(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [activeExams, setActiveExams] = useState([]);
+    const [activeExamsLoaded, setActiveExamsLoaded] = useState(false);
+    const [highAlertCount, setHighAlertCount] = useState(0);
 
     const lastSeenViolationIdRef = React.useRef(null);
     const isInitialMountRef = React.useRef(true);
 
     // End exam confirmation state from live monitoring view
     const [showEndExamConfirm, setShowEndExamConfirm] = useState(false);
+
+    useEffect(() => {
+        let mounted = true;
+        const refreshLiveOverview = async () => {
+            try {
+                const [examsResult, alertsResult] = await Promise.allSettled([
+                    api.get('/exams?status=active'),
+                    api.get('/violations/priority-queue')
+                ]);
+                if (!mounted) return;
+                if (examsResult.status === 'fulfilled') {
+                    setActiveExams(Array.isArray(examsResult.value.data) ? examsResult.value.data : []);
+                    setActiveExamsLoaded(true);
+                }
+                if (alertsResult.status === 'fulfilled') setHighAlertCount(Array.isArray(alertsResult.value.data)
+                    ? alertsResult.value.data.filter(v => Number(v.severity) >= 4 && !v.reviewed && v.decision !== 'dismissed').length
+                    : 0);
+            } catch (err) {
+                if (mounted) console.warn('Could not refresh live monitoring summary:', err);
+            } finally {
+            }
+        };
+        refreshLiveOverview();
+        const interval = setInterval(refreshLiveOverview, 15000);
+        return () => { mounted = false; clearInterval(interval); };
+    }, []);
+
+    useEffect(() => {
+        if (!socket) return;
+        const refresh = () => {
+            api.get('/violations/priority-queue')
+                .then(res => setHighAlertCount(Array.isArray(res.data)
+                    ? res.data.filter(v => Number(v.severity) >= 4 && !v.reviewed && v.decision !== 'dismissed').length
+                    : 0))
+                .catch(() => {});
+            
+            // Refresh active exams list if an exam completed
+            api.get('/exams?status=active')
+                .then(res => {
+                    setActiveExams(Array.isArray(res.data) ? res.data : []);
+                })
+                .catch(() => {});
+        };
+
+        socket.on('violation', refresh);
+        socket.on('violationReviewed', refresh);
+        socket.on('examStatusChanged', refresh);
+        return () => {
+            socket.off('violation', refresh);
+            socket.off('violationReviewed', refresh);
+            socket.off('examStatusChanged', refresh);
+        };
+    }, [socket]);
 
     // Pre-unlock audio context on first user interaction
     useEffect(() => {
@@ -136,14 +194,20 @@ export default function Dashboard() {
 
     const handleSelectExamForMonitoring = (exam) => {
         setSelectedExamFilter(exam.examCode);
+        setSelectedSessionId(null);
         setSelectedSummaryExamId(null);
         setActiveTab('monitoring');
         setMobileMenuOpen(false);
     };
 
+    const handleExamFilterChange = (examId) => {
+        setSelectedExamFilter(examId);
+        setSelectedSessionId(null);
+    };
+
     const handleSelectExamSummary = (examId) => {
         setSelectedSummaryExamId(examId);
-        setActiveTab('exams');
+        setActiveTab('history');
         setMobileMenuOpen(false);
     };
 
@@ -154,18 +218,19 @@ export default function Dashboard() {
             const res = await authFetch(`${API_BASE}/exams/code/${selectedExamFilter}`);
             if (res.ok) {
                 const exam = await res.json();
-                await authFetch(`${API_BASE}/exams/${exam._id}/status`, {
+                const updateRes = await authFetch(`${API_BASE}/exams/${exam._id}/status`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'completed' })
                 });
+                if (!updateRes.ok) throw new Error('Exam status update failed');
+                setSelectedExamFilter(null);
+                setActiveTab('exams');
             }
         } catch (err) {
             console.error('Failed to end exam:', err);
         } finally {
             setShowEndExamConfirm(false);
-            setSelectedExamFilter(null);
-            setActiveTab('exams');
         }
     };
 
@@ -187,16 +252,6 @@ export default function Dashboard() {
                 <div className="header-controls desktop-only-controls">
                     <nav className="nav-tabs" aria-label="Main Navigation">
                         <button 
-                            className={`nav-tab-btn ${activeTab === 'exams' ? 'active' : ''}`}
-                            onClick={() => {
-                                setSelectedSummaryExamId(null);
-                                setActiveTab('exams');
-                            }}
-                        >
-                            <Layers size={16} />
-                            <span>Exams & Analytics</span>
-                        </button>
-                        <button 
                             className={`nav-tab-btn ${activeTab === 'monitoring' ? 'active' : ''}`}
                             onClick={() => {
                                 setSelectedSummaryExamId(null);
@@ -205,6 +260,24 @@ export default function Dashboard() {
                         >
                             <Radio size={16} />
                             <span>Live Monitoring</span>
+                            {highAlertCount > 0 && <span className="nav-alert-count" aria-label={`${highAlertCount} unreviewed high severity alerts`}>{highAlertCount > 99 ? '99+' : highAlertCount}</span>}
+                        </button>
+                        <button 
+                            className={`nav-tab-btn ${activeTab === 'exams' ? 'active' : ''}`}
+                            onClick={() => {
+                                setSelectedSummaryExamId(null);
+                                setActiveTab('exams');
+                            }}
+                        >
+                            <Layers size={16} />
+                            <span>Exams</span>
+                        </button>
+                        <button
+                            className={`nav-tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+                            onClick={() => { setSelectedSummaryExamId(null); setActiveTab('history'); }}
+                        >
+                            <CheckCircle size={16} />
+                            <span>History</span>
                         </button>
                         {teacher?.role === 'admin' && (
                             <button 
@@ -221,6 +294,9 @@ export default function Dashboard() {
                     </nav>
 
                     <div className="header-actions-group">
+                        <button className="theme-toggle-btn" onClick={onToggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-pressed={theme === 'dark'}>
+                            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                        </button>
                         <button 
                             className={`header-sound-btn ${soundEnabled ? 'active' : ''}`}
                             onClick={() => setSoundEnabled(!soundEnabled)}
@@ -257,7 +333,7 @@ export default function Dashboard() {
                             </div>
                         ) : (
                             <div className="auth-header-group">
-                                {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                                {import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' && (
                                     <>
                                         <button
                                             type="button"
@@ -323,17 +399,6 @@ export default function Dashboard() {
                         <div className="mobile-nav-section">
                             <div className="mobile-nav-label">Navigation</div>
                             <button 
-                                className={`mobile-nav-item ${activeTab === 'exams' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setSelectedSummaryExamId(null);
-                                    setActiveTab('exams');
-                                    setMobileMenuOpen(false);
-                                }}
-                            >
-                                <Layers size={18} />
-                                <span>Exams & Analytics</span>
-                            </button>
-                            <button 
                                 className={`mobile-nav-item ${activeTab === 'monitoring' ? 'active' : ''}`}
                                 onClick={() => {
                                     setSelectedSummaryExamId(null);
@@ -343,6 +408,21 @@ export default function Dashboard() {
                             >
                                 <Radio size={18} />
                                 <span>Live Monitoring</span>
+                                {highAlertCount > 0 && <span className="nav-alert-count">{highAlertCount > 99 ? '99+' : highAlertCount}</span>}
+                            </button>
+                            <button 
+                                className={`mobile-nav-item ${activeTab === 'exams' ? 'active' : ''}`}
+                                onClick={() => {
+                                    setSelectedSummaryExamId(null);
+                                    setActiveTab('exams');
+                                    setMobileMenuOpen(false);
+                                }}
+                            >
+                                <Layers size={18} />
+                                <span>Exams</span>
+                            </button>
+                            <button className={`mobile-nav-item ${activeTab === 'history' ? 'active' : ''}`} onClick={() => { setSelectedSummaryExamId(null); setActiveTab('history'); setMobileMenuOpen(false); }}>
+                                <CheckCircle size={18} /><span>History</span>
                             </button>
                             {teacher?.role === 'admin' && (
                                 <button 
@@ -385,6 +465,10 @@ export default function Dashboard() {
                                         <LogOut size={16} />
                                         <span>Sign Out</span>
                                     </button>
+                                    <button className="mobile-theme-toggle" onClick={onToggleTheme} aria-pressed={theme === 'dark'}>
+                                        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                                        <span>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</span>
+                                    </button>
                                 </div>
                             ) : (
                                 <div className="mobile-auth-actions">
@@ -399,7 +483,7 @@ export default function Dashboard() {
                                         <Lock size={16} />
                                         <span>Sign In / Create Account</span>
                                     </button>
-                                    {(import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' || (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_LOGIN !== 'false')) && (
+                                    {import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' && (
                                         <div className="mobile-demo-row">
                                             <button
                                                 type="button"
@@ -432,6 +516,14 @@ export default function Dashboard() {
                 </div>
             )}
 
+            {/* Global Proactive 5-Minute Exam Expiry Notification & Time Extension Banner */}
+            <ExamTimeExpiryAlert
+                authFetch={authFetch}
+                socket={socket}
+                soundEnabled={soundEnabled}
+                playAlertChime={playAlertChime}
+            />
+
             {/* Main Content Areas */}
             {activeTab === 'admin' ? (
                 <main className="dashboard-main-single">
@@ -440,7 +532,7 @@ export default function Dashboard() {
                         onNavigateMonitoring={() => setActiveTab('monitoring')}
                     />
                 </main>
-            ) : activeTab === 'exams' ? (
+            ) : activeTab === 'exams' || activeTab === 'history' ? (
                 <main className="dashboard-main-single">
                     {selectedSummaryExamId ? (
                         <ExamSummary 
@@ -451,8 +543,22 @@ export default function Dashboard() {
                         <ExamManager 
                             onSelectExamForMonitoring={handleSelectExamForMonitoring}
                             onSelectExamSummary={handleSelectExamSummary}
+                            historyOnly={activeTab === 'history'}
                         />
                     )}
+                </main>
+            ) : !activeExamsLoaded ? (
+                <main className="dashboard-main-single"><div className="md-loading">Connecting to active exams…</div></main>
+            ) : activeExams.length === 0 ? (
+                <main className="dashboard-main-single live-empty-main">
+                    <section className="live-empty-state" aria-labelledby="live-empty-title">
+                        <div className="live-empty-orbit" aria-hidden="true"><span /><Radio size={28} /></div>
+                        <span className="live-empty-kicker">LIVE OPERATIONS</span>
+                        <h2 id="live-empty-title">Your monitoring desk is clear</h2>
+                        <p>No exams are active right now. Create or activate an exam to bring candidates, alerts, and evidence into this view.</p>
+                        <button className="md-btn md-btn-primary" onClick={() => setActiveTab('exams')}><Layers size={17} /> Go to Exams</button>
+                        <div className="live-empty-footer"><span className="status-dot connected" /> Ready when your next exam begins</div>
+                    </section>
                 </main>
             ) : (
                 <main className="dashboard-main-layout">
@@ -460,14 +566,7 @@ export default function Dashboard() {
                     <div className="dashboard-left">
                         {selectedExamFilter && (
                             <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                                <button 
-                                    className="sub-tab-btn" 
-                                    onClick={() => setSelectedExamFilter(null)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                                >
-                                    <ArrowLeft size={14} />
-                                    <span>Clear Filter ({selectedExamFilter})</span>
-                                </button>
+                                <span className="md-badge status-completed">Monitoring exam: {selectedExamFilter}</span>
                                 <button 
                                     className="md-btn md-btn-outlined md-btn-sm btn-end-exam"
                                     onClick={() => setShowEndExamConfirm(true)}
@@ -507,7 +606,7 @@ export default function Dashboard() {
                                     onClick={() => setRightPanelView('priority')}
                                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                                 >
-                                    <Zap size={13} style={{ color: rightPanelView === 'priority' ? '#d93025' : '#5f6368' }} />
+                                    <Zap size={13} style={{ color: rightPanelView === 'priority' ? 'var(--danger)' : 'var(--text-muted)' }} />
                                     <span>Priority Queue</span>
                                 </button>
                                 <button 
@@ -542,7 +641,7 @@ export default function Dashboard() {
                             <PriorityQueue 
                                 socket={socket}
                                 examFilter={selectedExamFilter}
-                                onSelectExamFilter={setSelectedExamFilter}
+                                onSelectExamFilter={handleExamFilterChange}
                                 onSelectStudentForReview={(sid) => {
                                     setSelectedSessionId(sid);
                                     setRightPanelView('evidence');
@@ -551,6 +650,7 @@ export default function Dashboard() {
                         ) : rightPanelView === 'feed' ? (
                             <AlertFeed 
                                 violations={violations} 
+                                examFilter={selectedExamFilter}
                                 onSelectViolation={(v) => {
                                     if (v?.sessionId) {
                                         setSelectedSessionId(v.sessionId);
