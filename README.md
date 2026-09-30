@@ -61,8 +61,19 @@ IntegrityFlow is composed of three main components:
 - **Module 8: In-Exam Live Chat & Proctor Broadcasts**
   - Exam-scoped bidirectional communication allowing candidates to ask question paper clarifications and examiners to broadcast announcements or reply directly with zero cross-exam chat leakage.
 
-- **Module 9: Disk-Backed Offline Buffering (SQLite FIFO Queue)**
+- **Module 9: Disk-Backed Offline Buffering (SQLite / Atomic FIFO Queue)**
   - Crash-proof offline buffer preserving all violation payloads and screenshots during network outages, replaying events with original microsecond timestamps once connectivity resumes.
+
+- **Module 10: Segmented Candidate Submission & Top-Tabbed Review Suite**
+  - **3-Way Tabbed Candidate Drawer**: Cleanly segments candidate review into **📄 Final Submission**, **🛡️ Evidence Timeline**, and **📸 Camera & Identity** views.
+  - **Typed Script & Document Viewer**: Displays candidate typed answer scripts with live word/character counts, instant clipboard copy (`Copy Answer`), and file download/preview cards for uploaded solution artifacts (.pdf, .docx, .zip).
+  - **Pre-Exam Photo Verification**: Dedicated identity card displaying the pre-exam webcam snapshot, verified student credentials, and session metadata.
+
+- **Module 11: Real-Time Exam Lifecycle, Auto-Expiry & Safeguards**
+  - **Automated Duration Expiry Transition**: Exams automatically conclude and transition into historical archives when the designated duration expires without requiring manual teacher intervention.
+  - **Dynamic Priority & Alert Counters**: Real-time calculated unreviewed violation count badges that dynamically synchronize with WebSocket updates.
+  - **Pre-Exam AI Monitoring Suppression**: Whitelist enforcement and AI computer vision monitoring are strictly withheld during login and self-check, activating only after the student officially starts the exam.
+  - **Pre-Existing Document Upload Guard**: Validates file creation and modification timestamps (`mtime`) on student uploads, blocking submissions of pre-existing solutions created prior to the exam start time.
 
 ---
 

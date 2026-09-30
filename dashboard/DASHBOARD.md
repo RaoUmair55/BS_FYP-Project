@@ -21,6 +21,8 @@
 | **6. Multi-Student Scalability & Performance** | MongoDB compound indexes (`{ sessionId: 1, timestamp: -1 }`, `{ reviewed: 1 }`, `{ sessionId: 1, reviewed: 1 }`, `{ examId: 1, status: 1 }`), `GET /violations/priority-queue`, cross-student Severity-First Priority Queue view, client-side 2-minute repeated alert grouping. | **COMPLETE** ✅ |
 | **7. Multi-Tenant Examiner Data Isolation** | Strict scoping on `GET /exams`, `GET /sessions/active`, `GET /violations`, and Priority Queue to exams created by the authenticated examiner (`createdBy`), with full super-access preserved for `admin` role. | **COMPLETE** ✅ |
 | **8. Dual-Environment Exam Modes (Online Remote vs. Physical Lab)** | `ExamManager` supports 🌐 Remote Online (Full Webcam AI Vision/Voice) and 🏫 Physical Lab (No Cam/Mic Needed, Process Whitelist, USB Flash Guard & Clipboard Block) with card badges and automatic student self-check bypassing. | **COMPLETE** ✅ |
+| **9. Segmented Top-Tabbed Candidate Review Suite** | 3-way top tabs (**📄 Final Submission**, **🛡️ Evidence Timeline**, **📸 Camera & Identity**), displaying typed response scripts with live word/char counts, copy answer button, and external solution file downloads/previews. | **COMPLETE** ✅ |
+| **10. Live Dynamic Priority Badges & Auto-Lifecycle Transitions** | Real-time computed unreviewed violation badges replacing static placeholders, seamless auto-transition of expired exams into History, and accurate candidate count aggregation. | **COMPLETE** ✅ |
 
 ---
 
@@ -139,9 +141,13 @@ The dashboard provides a complete exam management, real-time proctoring, human-i
    - **Filter Controls**: "All", "Needs Review", and "Reviewed" quick-filter tabs.
    - **2-Minute Repeated Alert Collapsing**: Consecutive infractions of the same type within 2 minutes collapse into a single summary entry (e.g. `3× Head Turned Away`) with an expandable chevron to inspect individual timestamps and evidence snapshots.
 
-7. **Evidence Timeline & Inline Review (`EvidenceViewer.jsx`)**:
+7. **Evidence Timeline, Submission Viewer & Inline Review (`EvidenceViewer.jsx`)**:
    - Control bar header displays **"Viewing: [Student Full Name] ([Roll Number])"** with active status, exam code, and subtle session ID.
-   - Chronological timeline rendering violation evidence, severity tags, screenshot images, and **live review status badges** with reviewer notes. Works seamlessly for active and historical completed sessions.
+   - **3-Way Top Navigation Tabs**:
+     - **📄 Final Submission Tab**: Renders the student's typed response script with live word and character counts, one-click **"Copy Answer"** button, and attached solution file cards with direct **"Preview"** and **"Download Solution File"** action buttons.
+     - **🛡️ Evidence Timeline Tab**: Chronological and category-grouped (📱 Mobile/Object, 👤 Head Turn, 👥 2nd Person) timeline rendering captured screenshots, severity indicators, and human-in-the-loop **Confirm / Dismiss** buttons.
+     - **📸 Camera & Identity Tab**: Displays the candidate's pre-exam identity snapshot captured during the self-check stage alongside verification metadata and click-to-enlarge high-res modal view.
+   - **Clipboard & File Date Violation Triage**: Displays real-time alerts and screenshots when the AI engine detects attempts to open pre-existing files or interact with unauthorized external software.
 
 ---
 

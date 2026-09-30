@@ -23,17 +23,19 @@ This module implements the full end-to-end exam experience, AI monitoring pipeli
    - **🌐 Remote Online Mode**: Runs 6 checks (Camera, Microphone, Voice Reference 4s calibration, Background Process Whitelist, USB storage, and Multi-display).
    - **🏫 Physical Lab Mode**: Automatically bypasses camera and microphone hardware checks (ideal for lab PCs without webcams), requiring only Process Whitelist, USB, and Display checks.
    - Captures and uploads initial reference selfie and voice embedding (online mode only).
-   - "Begin Exam" switches Python daemon into strict `exam` mode and opens workspace.
+   - "Begin Exam" switches Python daemon into strict `exam` mode, triggers `isExamActive = true`, and opens the exam workspace.
 6. **Whitelist, Pre-Existing File Guard, USB, Voice & AI Monitoring**: 
+   - **Pre-Exam False-Alert Suppression**: During Login and Self-Check, AI monitoring and process whitelisting are intentionally silenced (`mode == 'dev'` / `isExamActive == false`) so students typing their names/credentials or opening background apps do not trigger spurious violation alerts. Full proctoring activates only upon entering the active exam room.
    - `WhitelistEnforcer` scans processes every 2.5s and incorporates a **Pre-Existing File Timestamp Guard**: when teacher-allowed external tools (Word, VS Code, Notepad) are permitted, it inspects open file handles and flags any files modified before exam start (`mtime < exam_start_time`).
    - `AIMonitor` tracks lateral head yaw, upward head pitch (looking up / above screen view with neck-tilt continuity tracking), missing faces, multi-person events, and unauthorized physical objects (bypassed in Physical Lab mode).
    - `VoiceMonitor` runs a two-stage acoustic pipeline (VAD gate + speaker verification) to flag unauthorized third-party speech (bypassed in Physical Lab mode).
    - `USBMonitor` detects removable mass storage media insertion, and Electron's `screen` monitor detects multi-display connections.
-7. **Two-Panel Exam Workspace & Clipboard Lockdown (Module 7B & Module 7)**:
+7. **Two-Panel Exam Workspace, Clipboard Lockdown & Upload Integrity Guard (Module 7B & Module 7)**:
    - **Header Bar**: Displays `Student: [Full Name] ([Roll Number])`, `Exam: [Exam Code]`, Status badge (`● Monitoring Active` or `● Lab Integrity Active`), running HH:MM:SS timer.
    - **OS Clipboard & Copy-Paste Lockdown**: Flushes OS clipboard upon exam start and intercepts `copy`, `cut`, `paste`, context menu (right-click), and keyboard shortcuts (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Shift+Insert`), auto-clearing clipboard on attempt or window focus.
    - **Left Panel**: In-app paper viewer (rendering PDF/DOCX inside Electron without external viewers).
    - **Right Panel**: Answer area with tabs for (a) plain typed text with auto-saving to local storage, and (b) file attachment upload (.pdf, .docx, .py, .cpp, .zip).
+   - **Pre-Existing Document Upload Prevention**: Validates selected file modification times against the exam session start time (`file.lastModified < examStartTime`), warning candidates and disarming uploads of pre-existing solution documents.
    - **Submission Flow**: Prominent "Submit Exam" button with confirmation modal, retryable network failure handling, and MongoDB persistence.
 8. **Violation Detection & Screenshot Capture**: Captures screenshots (<200KB) with microsecond timestamps and forwards to central server (`unauthorized_app`, `unauthorized_object`, `cell_phone`, `head_turn_away`, `second_person_detected`, `second_voice_detected`, `no_face_detected`, `usb_device_detected`, `multiple_displays_detected`).
 9. **Disk-Backed Offline Violation Buffer**: Electron uses an atomic JSON file in its userData directory; non-Electron runs may use SQLite. Failed writes are reported rather than acknowledged. A retry loop resends queued events with their original timestamps.

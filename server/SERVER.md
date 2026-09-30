@@ -25,6 +25,10 @@ The IntegrityFlow backend is a robust Node.js/Express and MongoDB service provid
   - `Session`: `{ examId: 1, status: 1 }` (optimizes active exam queries and historical analytics aggregates).
 - **Cross-Candidate Priority Queue (`GET /violations/priority-queue`)**: Aggregates and returns unreviewed violations across all active candidate sessions sorted strictly by `severity: -1, timestamp: -1`, enriched with `studentName`, `rollNumber`, and `examId`.
 
+### Automated Exam Lifecycle & Duration Expiry (Part E)
+- **Automatic Background Exam Transition**: Automatically checks active exam durations against `activatedAt` + `duration`. Once duration expires, the exam is atomically marked `completed`, and associated active candidate sessions are automatically transitioned to `completed`.
+- **Historical Candidate & Submission Aggregation**: `GET /exams` computes accurate `totalStudents` and verified submission counts dynamically, ensuring historical roster statistics are permanently preserved and accessible in the Examiner Dashboard.
+
 ---
 
 ## Architecture Note
