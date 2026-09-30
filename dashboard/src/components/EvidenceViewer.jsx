@@ -30,6 +30,10 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'second_person_detected') {
         return "Second Person Detected";
     }
+    if (typeStr === 'second_voice_detected') {
+        const sim = details?.similarity_score !== undefined ? ` (${Math.round(details.similarity_score * 100)}% match)` : '';
+        return `🎙️ Second Voice Detected${sim}`;
+    }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
     }
@@ -59,6 +63,15 @@ function getCategoryInfo(typeStr, details = {}) {
             icon: '📂', 
             color: 'var(--warning)', 
             badgeBg: 'var(--warning-soft)' 
+        };
+    }
+    if (typeStr.includes('voice') || typeStr.includes('speech') || typeStr.includes('audio')) {
+        return { 
+            key: 'voice', 
+            label: '🎙️ Voice / Speech', 
+            icon: '🎙️', 
+            color: '#0d9488', 
+            badgeBg: 'rgba(13, 148, 136, 0.15)' 
         };
     }
     if (typeStr.includes('object') || typeStr.includes('phone') || details?.object_class) {
@@ -805,6 +818,12 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                 onClick={() => setCategoryFilter('all')}
                             >
                                 All ({activeViolations.length})
+                            </button>
+                            <button
+                                className={`sub-tab-btn ${categoryFilter === 'voice' ? 'active' : ''}`}
+                                onClick={() => setCategoryFilter('voice')}
+                            >
+                                🎙️ Voice
                             </button>
                             <button
                                 className={`sub-tab-btn ${categoryFilter === 'objects' ? 'active' : ''}`}
