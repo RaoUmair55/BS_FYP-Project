@@ -335,7 +335,13 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
 
             {/* Active Sub-view Rendering */}
             {activeSubtab === 'analytics' && (
-                <AnalyticsView stats={stats} loading={loadingStats} />
+                <AnalyticsView 
+                    stats={stats} 
+                    loading={loadingStats} 
+                    assets={assets}
+                    onPreview={(item) => setPreviewItem(item)}
+                    onSwitchToAssets={() => setActiveSubtab('assets')}
+                />
             )}
 
             {activeSubtab === 'assets' && (

@@ -249,6 +249,24 @@
   gap: 10px;
 }
 
+.storage-chip.clickable {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  position: relative;
+}
+
+.storage-chip.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  border-color: var(--primary);
+  background: var(--bg-surface);
+}
+
+.storage-chip.clickable:active {
+  transform: translateY(0);
+}
+
 /* Activity Trend Bars */
 .trend-bars-container {
   display: flex;
