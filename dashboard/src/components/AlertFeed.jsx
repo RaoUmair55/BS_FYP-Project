@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
     AlertCircle, AlertTriangle, Info, CheckCircle, XCircle, Clock, 
     ExternalLink, MessageSquare, Check, X, ShieldAlert, Sparkles, 
-    Filter, Video, Users, Smartphone, Eye, Globe, Layers, ChevronDown, ChevronUp 
+    Filter, Video, Users, Smartphone, Eye, Globe, Layers, ChevronDown, ChevronUp, Volume2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { assetUrl } from '../services/api';
@@ -28,6 +28,10 @@ function formatType(typeStr, details = {}) {
     }
     if (typeStr === 'second_person_detected') {
         return "Second Person Detected";
+    }
+    if (typeStr === 'second_voice_detected') {
+        const sim = details?.similarity_score !== undefined ? ` (${Math.round(details.similarity_score * 100)}% match)` : '';
+        return `🎙️ Second Voice Detected${sim}`;
     }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
@@ -229,7 +233,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                                 {group.count}× in 2m
                                             </span>
                                         )}
-                                        <span className="md-badge" style={{ fontSize: '11px', background: 'var(--bg-muted)', color: 'var(--text-main)' }}>
+                                        <span className="md-badge alert-severity-badge" style={{ fontSize: '11px', background: 'var(--bg-muted)', color: 'var(--text-main)' }}>
                                             Sev {group.severity}
                                         </span>
                                     </div>
@@ -272,6 +276,39 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                     }}>
                                         <span>⚠️</span>
                                         <strong>{group.details.reason}</strong>
+                                    </div>
+                                )}
+
+                                {(group.audioPath || group.details?.audioPath) && (
+                                    <div 
+                                        style={{ 
+                                            marginTop: '6px', 
+                                            marginBottom: '8px', 
+                                            padding: '8px 10px', 
+                                            borderRadius: '6px', 
+                                            background: 'rgba(13, 148, 136, 0.08)', 
+                                            border: '1px solid rgba(13, 148, 136, 0.3)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', fontWeight: 600, color: '#0d9488' }}>
+                                                <Volume2 size={13} />
+                                                <span>Recorded Voice Audio Clip</span>
+                                            </div>
+                                            {group.details?.similarity_score !== undefined && (
+                                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                                                    Match: {Math.round(group.details.similarity_score * 100)}%
+                                                </span>
+                                            )}
+                                        </div>
+                                        <audio 
+                                            controls 
+                                            src={assetUrl(group.audioPath || group.details.audioPath)} 
+                                            style={{ width: '100%', height: '32px', outline: 'none' }}
+                                        />
                                     </div>
                                 )}
 
@@ -421,6 +458,18 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                                     )}
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {(item.audioPath || item.details?.audioPath) && (
+                                                        <a 
+                                                            href={assetUrl(item.audioPath || item.details.audioPath)}
+                                                            target="_blank" 
+                                                            rel="noreferrer"
+                                                            style={{ color: '#0d9488', textDecoration: 'none', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '3px' }}
+                                                            title="Listen to audio clip"
+                                                        >
+                                                            <Volume2 size={12} />
+                                                            <span>Audio</span>
+                                                        </a>
+                                                    )}
                                                     {item.screenshotPath && (
                                                         <a 
                                                             href={assetUrl(item.screenshotPath.startsWith('http') ? item.screenshotPath : `${API_BASE}${item.screenshotPath}`)}

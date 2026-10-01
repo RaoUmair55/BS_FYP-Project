@@ -6,14 +6,14 @@
   <title>IntegrityFlow — Privacy & Monitoring Consent</title>
   <style>
     :root {
-      --primary: #1a73e8;
-      --primary-hover: #1557d0;
-      --primary-subtle: #e8f0fe;
+      --primary: #087d78;
+      --primary-hover: #056962;
+      --primary-subtle: #e7f5f1;
       --surface: #ffffff;
-      --bg: #f8fafc;
-      --text-main: #0f172a;
+      --bg: #f4f7f9;
+      --text-main: #23383f;
       --text-muted: #475569;
-      --border: #e2e8f0;
+      --border: #e2e9ed;
       --green: #10b981;
       --green-subtle: #ecfdf5;
       --red: #ef4444;
@@ -54,7 +54,7 @@
     .shield-icon-badge {
       width: 48px;
       height: 48px;
-      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      background: linear-gradient(135deg, #087d78, #087d78);
       color: white;
       border-radius: 12px;
       display: inline-flex;
@@ -81,12 +81,12 @@
 
     .info-intro {
       background-color: var(--primary-subtle);
-      border: 1px solid #bfdbfe;
+      border: 1px solid #b6dcd3;
       border-radius: 8px;
       padding: 12px 16px;
       font-size: 13px;
       line-height: 1.5;
-      color: #1e40af;
+      color: #056962;
       margin-bottom: 20px;
     }
 
@@ -106,7 +106,7 @@
     }
 
     .section-title.monitored {
-      color: #1e40af;
+      color: #056962;
     }
 
     .section-title.protected {
@@ -157,7 +157,7 @@
     .consent-checkbox-container {
       margin: 24px 0 18px 0;
       padding: 14px 16px;
-      background: #f1f5f9;
+      background: #edf2f4;
       border-radius: 8px;
       border: 1px solid var(--border);
       display: flex;
@@ -169,7 +169,7 @@
     }
 
     .consent-checkbox-container:hover {
-      background: #e2e8f0;
+      background: #e2e9ed;
     }
 
     .consent-checkbox-container input[type="checkbox"] {
@@ -217,14 +217,14 @@
     }
 
     .btn-continue:disabled {
-      background-color: #94a3b8;
+      background-color: #526b76;
       cursor: not-allowed;
       opacity: 0.7;
     }
 
     .btn-decline {
       background: transparent;
-      color: #64748b;
+      color: #526b76;
       border: none;
       font-size: 13px;
       font-weight: 500;
@@ -285,7 +285,7 @@
     .modal-btn-cancel {
       flex: 1;
       padding: 10px;
-      background: #f1f5f9;
+      background: #edf2f4;
       color: var(--text-main);
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -318,11 +318,12 @@
       text-align: center;
     }
   </style>
+  <link rel="stylesheet" href="styles/main.css">
 </head>
-<body>
+<body class="candidate-consent">
   <div class="consent-card">
     <div class="header-section">
-      <img src="assets/icon.png" alt="IntegrityFlow" style="width: 52px; height: 52px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);">
+      <img src="assets/logo.svg" alt="IntegrityFlow" style="width: 52px; height: 52px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);">
       <h1>Before You Begin</h1>
       <p class="subtitle">IntegrityFlow Monitoring & Privacy Notice (Section 10.4)</p>
     </div>

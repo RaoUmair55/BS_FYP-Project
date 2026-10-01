@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, screen, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
 const { checkPythonHealth, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive } = require('./ipc/pythonBridge');
 const violationBuffer = require('./ipc/violationBuffer');
@@ -19,7 +19,7 @@ process.on('uncaughtException', function (err) {
 });
 // ----------------------------------------------------------------
 let mainWindow;
-let pythonProcess;
+let pythonProcess = null;
 let displayAddedListener = null;
 let displayRemovedListener = null;
 let activeSessionInfo = {
@@ -35,6 +35,50 @@ let activeSessionInfo = {
   rules: {},
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
 };
+
+function killProcessOnPort(port = 8000) {
+  if (process.platform === 'win32') {
+    try {
+      const output = execSync('netstat -ano -p tcp', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+      const lines = output.trim().split('\n');
+      const pidsToKill = new Set();
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 5 && parts[1].endsWith(`:${port}`) && parts[3] === 'LISTENING') {
+          const pid = parseInt(parts[4], 10);
+          if (pid && pid !== process.pid) {
+            pidsToKill.add(pid);
+          }
+        }
+      }
+      for (const pid of pidsToKill) {
+        console.log(`[Electron] Freeing occupied port ${port}: terminating PID ${pid}...`);
+        try {
+          execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
+        } catch (e) {}
+      }
+    } catch (e) {
+      // Ignore errors when netstat has no match
+    }
+  }
+}
+
+function cleanUpPythonProcess() {
+  if (pythonProcess) {
+    console.log('[Electron] Cleaning up existing Python process...');
+    pythonProcess.killedIntentional = true;
+    const pid = pythonProcess.pid;
+    if (process.platform === 'win32' && pid) {
+      try {
+        execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
+      } catch (e) {}
+    } else {
+      try { pythonProcess.kill('SIGTERM'); } catch (e) {}
+    }
+    pythonProcess = null;
+  }
+  killProcessOnPort(8000);
+}
 
 async function createWindow() {
   const iconPath = process.platform === 'win32'
@@ -66,11 +110,15 @@ async function createWindow() {
   await mainWindow.loadFile(targetUrl);
 }
 
-async function waitForPythonReady() {
+async function waitForPythonReady(proc) {
   console.log('[Electron] Waiting for Python backend to be ready...');
   const maxAttempts = 90; // Up to 54 seconds for heavy ML models/DLLs on cold start
   
   for (let i = 0; i < maxAttempts; i++) {
+    if (proc && proc.hasExited) {
+      console.error(`[Electron] Aborting health check: Python process exited prematurely with code ${proc.exitCode}.`);
+      return false;
+    }
     const isReady = await checkPythonHealth();
     if (isReady) {
       console.log(`[Electron] Python backend is ready on attempt ${i + 1}!`);
@@ -116,6 +164,8 @@ function getPythonExecutable() {
 }
 
 function spawnPythonProcess(mode, isSelfCheck = false) {
+  cleanUpPythonProcess();
+
   const pythonScript = path.join(__dirname, '..', 'ai-module', 'main.py');
   const pythonExe = getPythonExecutable();
   console.log(`[Electron] Spawning Python process in ${mode} mode (isSelfCheck=${isSelfCheck}): ${pythonExe} ${pythonScript}`);
@@ -127,6 +177,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     ...process.env, 
     PYTHONUNBUFFERED: '1',
     PYTHONIOENCODING: 'utf-8',
+    PYTHON_IPC_PORT: '8000',
     EXAM_SESSION_ID: activeSessionInfo.sessionId, 
     EXAM_TYPE: activeSessionInfo.examType || 'online',
     APP_MODE: mode,
@@ -140,6 +191,8 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     proc = spawn(pythonExe, [pythonScript], { 
       env: pythonEnv
     });
+    proc.hasExited = false;
+    proc.exitCode = null;
   } catch (err) {
     lastPythonStderr = err.message;
     console.error(`[Electron] Failed to spawn ${pythonExe}:`, err);
@@ -166,6 +219,8 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   });
 
   proc.on('exit', (code, signal) => {
+    proc.hasExited = true;
+    proc.exitCode = code;
     console.log(`[Electron] Python process exited with code ${code} and signal ${signal}`);
     if (code !== 0 && mainWindow && !proc.killedIntentional) {
       mainWindow.webContents.send('python-crashed', { code, signal, error: lastPythonStderr });
@@ -195,6 +250,7 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     try {
       console.log('[Electron] app.whenReady entered');
+      cleanUpPythonProcess();
       try {
         await startReceiver((violationPayload) => {
           if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
@@ -251,10 +307,7 @@ app.on('before-quit', () => {
   console.log('[Electron] Cleaning up processes before quit...');
   setExamActive(false);
   stopBufferRetryLoop();
-  if (pythonProcess) {
-    pythonProcess.killedIntentional = true;
-    pythonProcess.kill('SIGTERM'); // kill python child process cleanly
-  }
+  cleanUpPythonProcess();
   if (displayAddedListener) {
     screen.removeListener('display-added', displayAddedListener);
     displayAddedListener = null;
@@ -264,6 +317,18 @@ app.on('before-quit', () => {
     displayRemovedListener = null;
   }
   stopReceiver();
+});
+
+process.on('exit', () => {
+  cleanUpPythonProcess();
+});
+process.on('SIGINT', () => {
+  cleanUpPythonProcess();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  cleanUpPythonProcess();
+  process.exit(0);
 });
 
 // Returns current count of pending offline buffered violations
@@ -378,13 +443,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   }
   
   // Clean up any previously running Python child process before spawning a new one
-  if (pythonProcess) {
-    console.log('[Electron] Cleaning up existing Python process before spawning fresh one...');
-    pythonProcess.killedIntentional = true;
-    try { pythonProcess.kill('SIGTERM'); } catch (e) {}
-    pythonProcess = null;
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
+  cleanUpPythonProcess();
 
   // 1. Show splash/loading screen immediately while Python spawns and health-checks
   if (mainWindow) {
@@ -395,7 +454,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
   pythonProcess = spawnPythonProcess(targetMode, true);
   
-  const isPythonReady = await waitForPythonReady();
+  const isPythonReady = await waitForPythonReady(pythonProcess);
   if (!isPythonReady) {
     isLoggingIn = false;
     const errorDetail = lastPythonStderr 
@@ -459,10 +518,7 @@ ipcMain.handle('proceed-to-self-check', async (event, identityData) => {
 // Handle Decline from Consent Screen
 ipcMain.handle('decline-consent', async () => {
   console.log('[Electron] Candidate declined monitoring consent. Gracefully quitting...');
-  if (pythonProcess) {
-    pythonProcess.killedIntentional = true;
-    pythonProcess.kill('SIGTERM');
-  }
+  cleanUpPythonProcess();
   stopReceiver();
   app.quit();
   return { success: true };
@@ -471,10 +527,7 @@ ipcMain.handle('decline-consent', async () => {
 // Start Exam Mode
 ipcMain.handle('start-exam-mode', async () => {
   console.log('[Electron] Transitioning to Exam Mode...');
-  if (pythonProcess) {
-    pythonProcess.killedIntentional = true;
-    pythonProcess.kill('SIGTERM');
-  }
+  cleanUpPythonProcess();
   
   // Clean up any existing screen listeners before registering fresh ones
   if (displayAddedListener) {
@@ -516,7 +569,7 @@ ipcMain.handle('start-exam-mode', async () => {
   // Small delay to ensure port is freed
   const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
   pythonProcess = spawnPythonProcess(targetMode, false);
-  const isReady = await waitForPythonReady();
+  const isReady = await waitForPythonReady(pythonProcess);
   
   if (isReady) {
     // Re-send allowed applications to newly spawned exam-mode daemon

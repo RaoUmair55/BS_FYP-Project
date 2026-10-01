@@ -107,4 +107,48 @@ router.get('/:sessionId', requireAuth, requireOwnedSession, async (req, res) => 
     }
 });
 
+// GET /submissions/:id/file - Stream or download file preserving original student filename
+router.get('/:id/file', requireAuth, async (req, res) => {
+    try {
+        const submission = await Submission.findById(req.params.id);
+        if (!submission || !submission.filePath) {
+            return res.status(404).json({ error: 'Submission file not found' });
+        }
+
+        const session = await Session.findById(submission.sessionId);
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+
+        const { ownsExam } = require('../middleware/examAccess');
+        if (!await ownsExam(req, session.examId)) {
+            return res.status(403).json({ error: 'Unauthorized access to submission' });
+        }
+
+        const isDownload = req.query.download === '1' || req.query.download === 'true';
+        const originalFilename = submission.filename || path.basename(submission.filePath);
+
+        if (submission.filePath.startsWith('/uploads/') || !submission.filePath.startsWith('http')) {
+            const relPath = submission.filePath.startsWith('/uploads/') 
+                ? submission.filePath.replace('/uploads/', '') 
+                : submission.filePath;
+            const absolutePath = path.join(__dirname, '../../uploads', relPath);
+            const fs = require('fs');
+            if (!fs.existsSync(absolutePath)) {
+                return res.status(404).json({ error: 'File not found on disk' });
+            }
+
+            if (isDownload) {
+                return res.download(absolutePath, originalFilename);
+            } else {
+                res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalFilename)}"`);
+                return res.sendFile(absolutePath);
+            }
+        } else {
+            return res.redirect(submission.filePath);
+        }
+    } catch (err) {
+        console.error('Error serving submission file:', err);
+        res.status(500).json({ error: 'Failed to retrieve submission file' });
+    }
+});
+
 module.exports = router;

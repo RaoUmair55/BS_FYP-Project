@@ -111,7 +111,8 @@ if __name__ == "__main__":
             print("[AI Module] Self-check mode active. Skipping AIMonitor and VoiceMonitor continuous streams until exam starts.")
     
     try:
-        uvicorn.run(server.app, host="127.0.0.1", port=8000)
+        port = int(os.getenv("PYTHON_IPC_PORT", "8000"))
+        uvicorn.run(server.app, host="127.0.0.1", port=port)
     finally:
         enforcer.stop()
         usb_monitor.stop()

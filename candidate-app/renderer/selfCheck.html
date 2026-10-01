@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <title>IntegrityFlow — System Self-Check</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1f2937; margin: 0; padding: 2rem; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .container { background: white; padding: 2rem 2.5rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); width: 100%; max-width: 600px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f7f9; color: #1f2937; margin: 0; padding: 2rem; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { background: white; padding: 2rem 2.5rem; border-radius: 12px; border: 1px solid #e2e9ed; box-shadow: 0 4px 16px rgba(0,0,0,0.06); width: 100%; max-width: 600px; }
     .brand-header { display: flex; flex-direction: column; align-items: center; margin-bottom: 1.5rem; text-align: center; }
     .brand-header img { width: 48px; height: 48px; border-radius: 12px; margin-bottom: 8px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25); }
-    h1 { margin-top: 0; margin-bottom: 4px; font-size: 1.5rem; text-align: center; color: #0f172a; }
+    h1 { margin-top: 0; margin-bottom: 4px; font-size: 1.5rem; text-align: center; color: #23383f; }
     .check-item { margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #e5e7eb; }
     .check-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; font-weight: bold; }
     .status-icon { font-size: 1.25rem; }
@@ -22,20 +22,21 @@
     .mic-meter { height: 100%; background: #10b981; width: 0%; transition: width 0.1s; }
     .app-list { list-style-type: none; padding: 0; margin: 0; color: #ef4444; }
     .app-list li { margin-bottom: 0.25rem; }
-    button { background: #1a73e8; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; width: 100%; font-weight: bold; transition: background-color 0.2s; }
+    button { background: #087d78; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 1rem; cursor: pointer; width: 100%; font-weight: bold; transition: background-color 0.2s; }
     button:disabled { background: #9ca3af; cursor: not-allowed; }
-    button:hover:not(:disabled) { background: #1557d0; }
-    .secondary-button { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; margin-top: 0.5rem; }
-    .secondary-button:hover:not(:disabled) { background: #e2e8f0; }
+    button:hover:not(:disabled) { background: #056962; }
+    .secondary-button { background: #edf2f4; color: #334155; border: 1px solid #d6e1e6; margin-top: 0.5rem; }
+    .secondary-button:hover:not(:disabled) { background: #e2e9ed; }
   </style>
+  <link rel="stylesheet" href="styles/main.css">
 </head>
-<body>
+<body class="candidate-selfCheck">
   <div class="container">
     <div class="brand-header">
-      <img src="assets/icon.png" alt="IntegrityFlow">
+      <img src="assets/logo.svg" alt="IntegrityFlow">
       <h1>System Self-Check</h1>
-      <p style="color: #64748b; font-size: 14px; margin: 0;">Verify your hardware and environment before starting the exam.</p>
-      <div id="candidateInfoBadge" style="margin-top: 10px; font-size: 13px; font-weight: 500; color: #1a73e8; background: #e8f0fe; padding: 6px 14px; border-radius: 20px; display: inline-block; border: 1px solid #c2e7ff;">Candidate: Loading...</div>
+      <p style="color: #526b76; font-size: 14px; margin: 0;">Verify your hardware and environment before starting the exam.</p>
+      <div id="candidateInfoBadge" style="margin-top: 10px; font-size: 13px; font-weight: 500; color: #087d78; background: #e7f5f1; padding: 6px 14px; border-radius: 20px; display: inline-block; border: 1px solid #b6dcd3;">Candidate: Loading...</div>
     </div>
 
     <div class="check-item" id="check-camera">
@@ -44,7 +45,7 @@
         <span class="status-icon status-pending">⏳</span>
       </div>
       <div class="check-content">
-        <div class="camera-wrapper" style="position: relative; width: 100%; max-width: 440px; height: 290px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #0f172a; box-shadow: 0 4px 14px rgba(0,0,0,0.18);">
+        <div class="camera-wrapper" style="position: relative; width: 100%; max-width: 440px; height: 290px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #23383f; box-shadow: 0 4px 14px rgba(0,0,0,0.18);">
           <video id="camera-preview" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
           
           <!-- Alignment Frame Overlay -->
@@ -81,7 +82,7 @@
 
         <p class="error-text" style="color: #ef4444; display: none;"></p>
         <button id="btn-check-camera" class="secondary-button">1. Turn On Camera Preview</button>
-        <button id="btn-capture-calibration" class="secondary-button" style="display: none; background: #2563eb; color: #ffffff; font-weight: 600; border: none; margin-top: 8px;">📸 2. Capture Reference Photo & Calibrate</button>
+        <button id="btn-capture-calibration" class="secondary-button" style="display: none; background: #087d78; color: #ffffff; font-weight: 600; border: none; margin-top: 8px;">📸 2. Capture Reference Photo & Calibrate</button>
       </div>
     </div>
 
@@ -109,15 +110,15 @@
         <p style="font-size: 0.875rem; color: #4b5563; margin-top: 0;">
           Read the following verification phrase aloud clearly for 3-4 seconds to calibrate your voice embedding:
         </p>
-        <div style="background: #f8fafc; border: 1.5px dashed #94a3b8; border-radius: 8px; padding: 10px 14px; font-size: 0.90rem; font-weight: 500; color: #0f172a; text-align: center; font-style: italic;">
+        <div style="background: #f4f7f9; border: 1.5px dashed #526b76; border-radius: 8px; padding: 10px 14px; font-size: 0.90rem; font-weight: 500; color: #23383f; text-align: center; font-style: italic;">
           "IntegrityFlow confirms my identity and verifies my voice for this examination session."
         </div>
-        <div id="voice-recording-status" style="display: none; font-size: 0.85rem; font-weight: 600; color: #1a73e8; margin-top: 6px; text-align: center;">
+        <div id="voice-recording-status" style="display: none; font-size: 0.85rem; font-weight: 600; color: #087d78; margin-top: 6px; text-align: center;">
           🎙️ Recording voice sample... <span id="voice-countdown">4s</span>
         </div>
         <p class="error-text" style="color: #ef4444; display: none;"></p>
         <button id="btn-record-voice" class="secondary-button" style="margin-top: 6px;">🎙️ Record Voice Sample (4s)</button>
-        <button id="btn-record-again-voice" class="secondary-button" style="display: none; margin-top: 6px; background: #f8fafc; border: 1px solid #cbd5e1;">↺ Record Again</button>
+        <button id="btn-record-again-voice" class="secondary-button" style="display: none; margin-top: 6px; background: #f4f7f9; border: 1px solid #d6e1e6;">↺ Record Again</button>
       </div>
     </div>
 
@@ -128,7 +129,7 @@
       </div>
       <div class="check-content">
         <p style="font-size: 0.875rem; color: #6b7280;">Checking for unauthorized background apps...</p>
-        <div id="allowed-apps-notice" style="display: none; font-size: 0.8rem; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 6px 10px; margin-bottom: 8px;"></div>
+        <div id="allowed-apps-notice" style="display: none; font-size: 0.8rem; color: #056962; background: #e7f5f1; border: 1px solid #b6dcd3; border-radius: 4px; padding: 6px 10px; margin-bottom: 8px;"></div>
         <ul class="app-list" id="unauthorized-list"></ul>
         <p class="error-text" style="color: #ef4444; display: none;"></p>
         <button id="btn-check-apps" class="secondary-button">Run App Check</button>

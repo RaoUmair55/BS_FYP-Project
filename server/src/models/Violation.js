@@ -31,6 +31,7 @@ const violationSchema = new mongoose.Schema({
         filePath: { type: String }
     },
     screenshotPath: { type: String },
+    audioPath: { type: String },
     reviewed: { type: Boolean, default: false },
     reviewNote: { type: String, default: "" },
     decision: { type: String, enum: ["pending", "confirmed", "dismissed"], default: "pending" },

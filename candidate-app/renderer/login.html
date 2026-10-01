@@ -27,11 +27,11 @@
     h1 {
       margin: 0 0 8px 0;
       font-size: 24px;
-      color: #1e293b;
+      color: #23383f;
     }
     p.subtitle {
       margin: 0 0 24px 0;
-      color: #64748b;
+      color: #526b76;
       font-size: 14px;
     }
     .form-group {
@@ -48,7 +48,7 @@
     .form-group input {
       width: 100%;
       padding: 10px;
-      border: 1px solid #cbd5e1;
+      border: 1px solid #d6e1e6;
       border-radius: 6px;
       font-size: 14px;
       box-sizing: border-box;
@@ -56,12 +56,12 @@
       transition: border-color 0.2s;
     }
     .form-group input:focus {
-      border-color: #3b82f6;
+      border-color: #087d78;
     }
     button {
       width: 100%;
       padding: 12px;
-      background-color: #1a73e8;
+      background-color: #087d78;
       color: white;
       border: none;
       border-radius: 6px;
@@ -72,10 +72,10 @@
       margin-top: 10px;
     }
     button:hover:not(:disabled) {
-      background-color: #1557d0;
+      background-color: #056962;
     }
     button:disabled {
-      background-color: #94a3b8;
+      background-color: #526b76;
       cursor: not-allowed;
     }
     .error {
@@ -85,17 +85,18 @@
       text-align: center;
     }
   </style>
+  <link rel="stylesheet" href="styles/main.css">
 </head>
-<body>
+<body class="candidate-login">
   <div class="container">
-    <img src="assets/icon.png" alt="IntegrityFlow" style="width: 54px; height: 54px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);">
+    <img src="assets/logo.svg" alt="IntegrityFlow" style="width: 54px; height: 54px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);">
     <h1>IntegrityFlow</h1>
     <p class="subtitle">Secure Exam Environment</p>
     
     <div class="form-group">
       <label for="examId">Exam Code</label>
       <input type="text" id="examId" placeholder="e.g. EXAM-101" autofocus />
-      <div style="font-size: 11.5px; color: #64748b; margin-top: 4px; text-align: left;">Enter the unique code provided by your instructor.</div>
+      <div style="font-size: 11.5px; color: #526b76; margin-top: 4px; text-align: left;">Enter the unique code provided by your instructor.</div>
     </div>
     
     <button id="loginBtn">Enter Exam ➔</button>

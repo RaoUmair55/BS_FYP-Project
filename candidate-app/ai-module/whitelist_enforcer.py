@@ -22,6 +22,19 @@ class WhitelistEnforcer:
         self.whitelist = set()
         self.unkillable_pids = set()
         self.allowed_apps = set()
+        self.protected_pids = set()
+        try:
+            current_proc = psutil.Process()
+            self.protected_pids.add(current_proc.pid)
+            parent = current_proc.parent()
+            if parent:
+                self.protected_pids.add(parent.pid)
+                grandparent = parent.parent()
+                if grandparent:
+                    self.protected_pids.add(grandparent.pid)
+        except Exception:
+            self.protected_pids.add(os.getpid())
+
         self.exam_start_time = time.time()
         self.seen_recent_shortcuts = {}
 
@@ -504,11 +517,11 @@ class WhitelistEnforcer:
             try:
                 name = proc.info.get('name')
                 pid = proc.info.get('pid')
-                if not name: 
+                if not name or not pid: 
                     continue
                     
                 name_lower = name.lower()
-                if pid == self.protected_pid or pid in self.protected_pids: 
+                if pid in self.protected_pids: 
                     continue
                 if name_lower in self.SAFETY_LIST: 
                     continue
@@ -541,7 +554,7 @@ class WhitelistEnforcer:
                 # In Exam mode, browsers and developer shells are strictly blocked
                 if self.mode == "exam" and name_lower in self.EXAM_BLOCKED:
                     pass # Unauthorized! Fall through to record
-                elif name_lower in mode_whitelist:
+                elif name_lower in mode_whitelist or name_lower in self.whitelist:
                     continue
 
                 if name_lower in seen_names:
@@ -558,7 +571,16 @@ class WhitelistEnforcer:
                         "powershell.exe": "Windows PowerShell",
                         "pwsh.exe": "PowerShell Core",
                         "wt.exe": "Windows Terminal",
-                        "code.exe": "Visual Studio Code"
+                        "code.exe": "Visual Studio Code",
+                        "chatgpt.exe": "ChatGPT Desktop App",
+                        "discord.exe": "Discord",
+                        "slack.exe": "Slack",
+                        "telegram.exe": "Telegram",
+                        "whatsapp.exe": "WhatsApp",
+                        "chrome.exe": "Google Chrome",
+                        "msedge.exe": "Microsoft Edge",
+                        "firefox.exe": "Mozilla Firefox",
+                        "brave.exe": "Brave Browser"
                     }
                     display_name = friendly_names.get(name_lower, name)
                     if display_name != name:
@@ -569,7 +591,9 @@ class WhitelistEnforcer:
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
             except Exception as e:
-                pass
+                print(f"[WhitelistEnforcer] Error inspecting process in check_running_apps: {e}")
+                
+        return unauthorized_apps
                 
     def _resolve_lnk_target(self, lnk_path):
         """Extracts absolute target file path from Windows Shell Link (.lnk) binary file."""

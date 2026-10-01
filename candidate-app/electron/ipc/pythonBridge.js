@@ -49,9 +49,18 @@ async function sendViolationDirect(violationPayload) {
   let requestHeaders = {};
 
   const screenshot = violationPayload.screenshotPath;
+  const audio = violationPayload.audioPath || violationPayload.details?.audioPath;
+
   const screenshotRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'screenshots');
+  const audioRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'audio_evidence');
+
   const resolvedScreenshot = typeof screenshot === 'string' ? path.resolve(screenshot) : '';
-  if (resolvedScreenshot.startsWith(screenshotRoot + path.sep) && fs.existsSync(resolvedScreenshot)) {
+  const resolvedAudio = typeof audio === 'string' ? path.resolve(audio) : '';
+
+  const hasValidScreenshot = resolvedScreenshot && fs.existsSync(resolvedScreenshot);
+  const hasValidAudio = resolvedAudio && fs.existsSync(resolvedAudio);
+
+  if (hasValidScreenshot || hasValidAudio) {
     const form = new FormData();
     form.append('sessionId', violationPayload.sessionId);
     form.append('type', violationPayload.type);
@@ -60,7 +69,18 @@ async function sendViolationDirect(violationPayload) {
     if (violationPayload.details) {
       form.append('details', typeof violationPayload.details === 'string' ? violationPayload.details : JSON.stringify(violationPayload.details));
     }
-    form.append('screenshot', fs.createReadStream(resolvedScreenshot));
+    if (hasValidScreenshot) {
+      form.append('screenshot', fs.createReadStream(resolvedScreenshot), {
+        filename: path.basename(resolvedScreenshot),
+        contentType: 'image/jpeg'
+      });
+    }
+    if (hasValidAudio) {
+      form.append('audio', fs.createReadStream(resolvedAudio), {
+        filename: path.basename(resolvedAudio),
+        contentType: 'audio/wav'
+      });
+    }
 
     requestData = form;
     requestHeaders = form.getHeaders();

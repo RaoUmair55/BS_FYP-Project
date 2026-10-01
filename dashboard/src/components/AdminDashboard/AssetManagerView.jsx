@@ -78,15 +78,33 @@ export default function AssetManagerView({
         setTimeout(() => setCopiedId(null), 2000);
     };
 
-    const handleDownload = (item) => {
+    const handleDownload = async (item) => {
         if (!item.url) return;
-        const link = document.createElement('a');
-        link.href = assetUrl(item.url);
-        link.target = '_blank';
-        link.download = item.filename || 'download';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+            const targetUrl = assetUrl(item.url);
+            const token = localStorage.getItem('token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            const response = await fetch(targetUrl, { headers });
+            if (!response.ok) throw new Error('Download failed');
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = item.filename || 'download';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+        } catch (err) {
+            console.error('Error downloading asset:', err);
+            const link = document.createElement('a');
+            link.href = assetUrl(item.url);
+            link.target = '_blank';
+            link.download = item.filename || 'download';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     };
 
     const getAssetChip = (type) => {

@@ -13,16 +13,21 @@ const storageService = require('../services/storage');
 const { broadcastToExam } = require('../sockets/violationSocket');
 const multer = require('multer');
 
-// Configure multer for screenshot uploads using memory storage
+// Configure multer for screenshot and audio evidence uploads using memory storage
 const upload = multer({ 
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }
+    limits: { fileSize: 15 * 1024 * 1024 }
 });
+
+const uploadFields = upload.fields([
+    { name: 'screenshot', maxCount: 1 },
+    { name: 'audio', maxCount: 1 }
+]);
 
 const router = express.Router();
 
 // POST /violation — Machine-to-machine (Candidate App -> Server, intentionally open)
-router.post('/violation', upload.single('screenshot'), async (req, res) => {
+router.post('/violation', uploadFields, async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.body.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
         const session = await Session.findById(req.body.sessionId);
@@ -43,13 +48,29 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
         }
         
         let screenshotPath = null;
-        if (req.file) {
+        let audioPath = null;
+
+        // Process screenshot file if provided
+        const screenshotFile = (req.files && req.files['screenshot'] && req.files['screenshot'][0]) || req.file;
+        if (screenshotFile && screenshotFile.fieldname === 'screenshot') {
             try {
-                const uniqueFilename = `screenshot-${Date.now()}-${req.file.originalname || 'snapshot.jpg'}`;
-                const saved = await storageService.save(req.file.buffer, uniqueFilename, 'screenshots');
+                const uniqueFilename = `screenshot-${Date.now()}-${screenshotFile.originalname || 'snapshot.jpg'}`;
+                const saved = await storageService.save(screenshotFile.buffer, uniqueFilename, 'screenshots');
                 screenshotPath = saved.url;
             } catch (uploadErr) {
                 console.error('[Violations Route] Failed to upload screenshot to storage service:', uploadErr);
+            }
+        }
+
+        // Process audio evidence file if provided
+        const audioFile = req.files && req.files['audio'] && req.files['audio'][0];
+        if (audioFile) {
+            try {
+                const uniqueAudioFilename = `voice-${Date.now()}-${audioFile.originalname || 'voice_clip.wav'}`;
+                const savedAudio = await storageService.save(audioFile.buffer, uniqueAudioFilename, 'audio_clips');
+                audioPath = savedAudio.url;
+            } catch (audioErr) {
+                console.error('[Violations Route] Failed to upload audio clip to storage service:', audioErr);
             }
         }
         
@@ -62,6 +83,7 @@ router.post('/violation', upload.single('screenshot'), async (req, res) => {
             timestamp: req.body.timestamp || new Date(),
             details: details,
             screenshotPath: screenshotPath,
+            audioPath: audioPath,
             reviewed: false,
             decision: "pending"
         });

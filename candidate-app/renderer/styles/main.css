@@ -1,8 +1,126 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* Shared candidate presentation; exam and security behaviour stays in the existing scripts. */
+:root {
+  --primary: #087d78; --primary-hover: #056962; --primary-dark: #056962;
+  --primary-subtle: #e7f5f1; --bg: #f4f7f9; --surface: #fff;
+  --text-main: #23383f; --text-muted: #526b76; --border: #d6e1e6;
+  --font: 'Segoe UI', Arial, sans-serif;
 }
-body {
-  font-family: sans-serif;
+* { box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text-main); -webkit-font-smoothing: antialiased; }
+::selection { background: #bcf2e6; color: #132b37; }
+input, textarea { caret-color: var(--primary); }
+input::placeholder, textarea::placeholder { color: #526b76 !important; opacity: 1; }
+button, input, textarea { font-family: inherit; }
+button { border-radius: 7px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, input[type=checkbox]:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 3px; box-shadow: none;
 }
+button:disabled { cursor: not-allowed; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #edf2f4; }
+::-webkit-scrollbar-thumb { background: #9aafb7; border: 2px solid #edf2f4; border-radius: 7px; }
+body:not(.candidate-examScreen):not(.candidate-splash) { height: auto; min-height: 100vh; padding: 32px 24px; }
+.container, .identity-card, .consent-card { border: 1px solid var(--border); border-radius: 11px; box-shadow: none; }
+.candidate-login .container { width: min(100%, 400px); padding: 32px; }
+.identity-card { max-width: 440px; padding: 32px; animation: none; }
+h1, .brand-title, .lobby-title { color: #132b37; letter-spacing: -0.02em; }
+h1 { font-size: 24px; line-height: 1.25; }
+.subtitle, p.subtitle { font-size: 14px; line-height: 1.55; color: var(--text-muted); }
+.form-group label { font-size: 14px; font-weight: 600; color: var(--text-main); }
+.form-group input { min-height: 44px; border-color: var(--border); border-radius: 7px; font-size: 15px; }
+.form-hint, .candidate-login .form-group > div { font-size: 13px !important; color: var(--text-muted) !important; line-height: 1.45; }
+img[src="assets/logo.svg"] { box-shadow: none !important; }
+.exam-badge { border-color: #b6dcd3; border-radius: 7px; font-size: 13px; margin-bottom: 8px; }
+.btn-submit { background: var(--primary); box-shadow: none; font-weight: 600; }
+.btn-submit:hover:not(:disabled) { background: var(--primary-hover); box-shadow: none; transform: none; }
+.consent-card { max-width: 700px; padding: 32px; }
+.info-intro { font-size: 14px; color: #056962; border-color: #b6dcd3; }
+.section-title { font-size: 14px; text-transform: none; letter-spacing: 0; margin-top: 24px; }
+.feature-grid { gap: 0; }
+.feature-item, .feature-item.highlight { background: transparent; border: 0; border-bottom: 1px solid #e2e9ed; border-radius: 0; padding: 14px 0; }
+.feature-text h4 { font-size: 14px; margin-bottom: 4px; }
+.feature-text p { font-size: 14px; line-height: 1.55; }
+.consent-label { font-size: 14px; line-height: 1.5; }
+.btn-decline { min-height: 40px; font-size: 14px; }
+.candidate-selfCheck { justify-content: center; }
+.candidate-selfCheck .container { max-width: 760px; padding: 28px; }
+.check-item { margin-bottom: 24px; padding-bottom: 24px; border-color: #e2e9ed; }
+.check-header { font-size: 15px; gap: 16px; line-height: 1.45; color: #132b37; }
+.check-content p { line-height: 1.5; }
+.check-content .secondary-button { font-size: 14px; font-weight: 600; min-height: 42px; }
+.camera-wrapper { box-shadow: none !important; border: 1px solid #304955; }
+#candidateInfoBadge { border-radius: 7px !important; }
+.status-pass, .app-list li[style*="color: rgb(16"], .app-list li[style*="#10b981"] { color: #056962 !important; }
+.candidate-splash { background: #132b37; }
+.candidate-splash .brand-title { color: #fff; }
+.candidate-splash .brand-subtitle { color: #bcf2e6; }
+.candidate-splash .status-text { color: #b2c7ce; }
+.logo-glow { display: none; }
+.logo-img { box-shadow: none; }
+.progress-bar-track { background: #304955; }
+.progress-bar-indeterminate { background: #bcf2e6; }
+.candidate-examScreen .top-bar { background: #132b37; color: #fff; min-height: 72px; height: auto; padding: 12px 20px; gap: 16px; box-shadow: none; border-bottom-color: #304955; flex-wrap: wrap; }
+.top-bar-left, .top-bar-right { gap: 10px; flex-wrap: wrap; }
+.top-bar .logo { color: #fff; font-size: 18px; letter-spacing: 0; }
+.top-bar .logo img { width: 32px !important; height: 32px !important; }
+.top-bar .badge, #durationBadge { background: #21404d !important; color: #e5f0f2 !important; font-size: 13px; }
+.top-bar .monitoring-badge:not(.offline) { background: #214954; color: #bcf2e6; border-color: #405c68; }
+.timer-badge { font-family: 'Segoe UI', Arial, sans-serif; font-variant-numeric: tabular-nums; font-size: 16px; background: #fff; color: #132b37; }
+#testViolationBtn { background: #21404d; color: #e5f0f2; border-color: #405c68; }
+#testViolationBtn:hover { background: #304955; }
+.split-container { height: auto; min-height: 0; }
+.left-panel, .right-panel { min-width: 0; min-height: 0; }
+.left-panel { border-right-color: #d6e1e6; }
+.paper-header, .tabs-header { min-height: 52px; background: #edf2f4; border-color: #d6e1e6; }
+.paper-header { gap: 10px; }
+.tabs-header { overflow-x: auto; }
+.tab-btn { white-space: nowrap; font-weight: 600; }
+.tab-btn.active { color: var(--primary); }
+.waiting-lobby { padding: 32px; }
+.lobby-icon-container { background: #e7f5f1; border: 1px solid #b6dcd3; animation: none; }
+.lobby-status-pill { color: #056962; border-radius: 7px; box-shadow: none; line-height: 1.5; }
+.editor-wrapper { min-height: 0; }
+textarea#answerText { color: var(--text-main); font-size: 16px; border-color: #d6e1e6; border-radius: 7px; }
+.editor-meta { font-size: 13px; gap: 12px; flex-wrap: wrap; }
+.answer-footer { gap: 12px; flex-wrap: wrap; }
+.answer-footer .alert-banner { flex: 1 1 100%; margin-bottom: 0; gap: 12px; }
+.file-upload-box { border-width: 1px; border-radius: 8px; }
+.file-upload-subtext { color: var(--text-muted); line-height: 1.5; }
+.file-name { overflow-wrap: anywhere; }
+.modal-overlay { padding: 24px; backdrop-filter: none; }
+.modal-card, .modal-content { width: 100%; max-width: 440px; max-height: calc(100vh - 48px); overflow-y: auto; box-shadow: 0 12px 32px rgba(19,43,55,.18); border-radius: 11px; }
+.btn-danger, .chat-drawer-footer button { background: var(--primary); }
+.btn-danger:hover:not(:disabled), .chat-drawer-footer button:hover:not(:disabled) { background: var(--primary-hover); }
+.floating-chat-btn { background: #087d78; border-radius: 7px; box-shadow: none; }
+.floating-chat-btn:hover { background: #056962; box-shadow: none; transform: none; }
+.student-chat-drawer { max-width: calc(100vw - 48px); max-height: calc(100vh - 160px); border-radius: 11px; box-shadow: 0 12px 32px rgba(19,43,55,.18); }
+.chat-msg.mine .chat-bubble { background: var(--primary); }
+.chat-msg-meta { color: var(--text-muted); font-size: 12px; }
+#btn-snap-reverification { background: var(--primary) !important; }
+#photoSubmittedToast, #timeExtensionToast, #examinerWarningToast, #preExistingFileBlockedModal > div { border-width: 1px !important; }
+@media (max-width: 1100px) {
+  .top-bar-left { flex: 1 1 100%; }
+  .top-bar-center { flex: 1; }
+}
+@media (max-width: 700px) {
+  body:not(.candidate-examScreen):not(.candidate-splash) { padding: 20px 16px; }
+  .container, .identity-card, .consent-card, .candidate-selfCheck .container { padding: 24px; }
+  .candidate-examScreen { overflow: auto; height: auto; min-height: 100vh; }
+  .candidate-examScreen .top-bar { padding: 16px; }
+  .split-container { flex-direction: column; overflow: visible; }
+  .left-panel, .right-panel { width: 100%; height: auto; min-height: 420px; }
+  .left-panel { border-right: 0; border-bottom: 1px solid var(--border); }
+  .paper-viewer { min-height: 320px; }
+  textarea#answerText { min-height: 280px; }
+  .answer-footer { padding-bottom: 80px; }
+  .floating-chat-btn { left: 16px; bottom: 16px; }
+  .student-chat-drawer { left: 16px; max-width: calc(100vw - 32px); bottom: 68px; }
+  .modal-actions { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .progress-bar-indeterminate { left: 0; right: 40%; }
+}
+
+
+.exam-badge, #candidateInfoBadge { color: #056962 !important; }

@@ -299,6 +299,31 @@ class VoiceMonitor:
         except Exception as stream_err:
             print(f"[VoiceMonitor Error] Microphone stream failed: {stream_err}")
 
+    def _save_audio_clip(self, audio_bytes: bytes) -> Optional[str]:
+        """Saves suspicious audio speech segment as a WAV file for evidence review."""
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            clips_dir = os.path.join(base_dir, "audio_evidence")
+            os.makedirs(clips_dir, exist_ok=True)
+            
+            sid = self.session_id or "default"
+            safe_sid = "".join(c for c in str(sid) if c.isalnum() or c in ("-", "_"))
+            timestamp = int(time.time() * 1000)
+            filename = f"voice_evidence_{safe_sid}_{timestamp}.wav"
+            filepath = os.path.join(clips_dir, filename)
+            
+            with wave.open(filepath, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2) # 16-bit PCM
+                wf.setframerate(self.sample_rate)
+                wf.writeframes(audio_bytes)
+                
+            print(f"[VoiceMonitor] Audio evidence clip saved to: {filepath}")
+            return filepath
+        except Exception as e:
+            print(f"[VoiceMonitor Warning] Could not save audio clip: {e}")
+            return None
+
     def _verify_speaker_segment(self, audio_bytes: bytes, duration: float):
         """
         STAGE 2: Speaker Verification (Runs ONLY when gated in by Stage 1).
@@ -336,6 +361,9 @@ class VoiceMonitor:
                 print(f"[VoiceMonitor Warning] Voice mismatch detected! Consecutive mismatch count: {self.mismatch_count}/{mismatch_thresh}")
                 
                 if self.mismatch_count >= mismatch_thresh:
+                    # Save suspicious audio clip for evidence playback
+                    audio_clip_path = self._save_audio_clip(audio_bytes)
+                    
                     # Fire second_voice_detected violation
                     self._emit_violation(
                         violation_type="second_voice_detected",
@@ -344,8 +372,10 @@ class VoiceMonitor:
                             "similarity_score": round(similarity, 2),
                             "duration_seconds": round(duration, 1),
                             "reason": "Unrecognized voice detected speaking for a sustained duration",
-                            "consecutive_segments": self.mismatch_count
-                        }
+                            "consecutive_segments": self.mismatch_count,
+                            "audioPath": audio_clip_path
+                        },
+                        audio_path=audio_clip_path
                     )
                     # Reset counter after firing
                     self.mismatch_count = 0
@@ -359,7 +389,7 @@ class VoiceMonitor:
         except Exception as e:
             print(f"[VoiceMonitor Error] Speaker verification failed: {e}")
 
-    def _emit_violation(self, violation_type: str, severity: int, details: dict):
+    def _emit_violation(self, violation_type: str, severity: int, details: dict, audio_path: Optional[str] = None):
         """Constructs standard schema violation payload and emits to callback."""
         screenshot_path = None
         try:
@@ -374,7 +404,8 @@ class VoiceMonitor:
             "severity": severity,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "details": details,
-            "screenshotPath": screenshot_path
+            "screenshotPath": screenshot_path,
+            "audioPath": audio_path
         }
 
         if self.on_violation:

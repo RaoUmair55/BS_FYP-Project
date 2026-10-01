@@ -47,8 +47,10 @@ app.use('/uploads', async (req, res, next) => {
             const filename = path.basename(req.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const exam = await Exam.findOne({ paperPath: new RegExp(filename + '$') });
             examCode = exam?.examCode;
-        } else if (folder === 'screenshots') {
-            const violation = await Violation.findOne({ screenshotPath: storedUrl });
+        } else if (folder === 'screenshots' || folder === 'audio_clips') {
+            const violation = await Violation.findOne({ 
+                $or: [{ screenshotPath: storedUrl }, { audioPath: storedUrl }] 
+            });
             const session = violation && await Session.findById(violation.sessionId);
             examCode = session?.examId;
         } else if (folder === 'verification') {

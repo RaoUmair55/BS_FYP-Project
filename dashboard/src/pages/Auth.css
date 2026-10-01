@@ -332,3 +332,82 @@
   color: var(--text-muted);
   font-size: 14px;
 }
+
+/* Login and signup inherit the examiner workspace palette without changing forms. */
+.auth-theme-shell:has(#login-email, #signup-email) {
+  --bg-base: #f4f7f9;
+  --bg-surface: #ffffff;
+  --bg-muted: #edf2f4;
+  --text-main: #23383f;
+  --text-muted: #526b76;
+  --primary: #087d78;
+  --primary-bg: #087d78;
+  --primary-hover: #056962;
+  --primary-soft: #e3f3ef;
+  --google-blue: #087d78;
+  --border-color: #d6e1e6;
+  --font-sans: 'Segoe UI', Arial, sans-serif;
+  font-family: var(--font-sans);
+}
+:root[data-theme="dark"] .auth-theme-shell:has(#login-email, #signup-email) {
+  --bg-base: #101f28;
+  --bg-surface: #182e39;
+  --bg-muted: #213d48;
+  --text-main: #e5f0f2;
+  --text-muted: #b2c7ce;
+  --primary: #8bd9c9;
+  --primary-soft: #214954;
+  --google-blue: #8bd9c9;
+  --border-color: #405c68;
+}
+.auth-wrapper:has(#login-email, #signup-email) .auth-card {
+  max-width: 460px;
+  padding: 32px;
+  border-radius: 11px;
+  box-shadow: none;
+  animation: none;
+}
+.auth-wrapper:has(#login-email, #signup-email) .auth-brand {
+  margin: -32px -32px 28px;
+  padding: 28px 32px;
+  background: #132b37;
+  border-radius: 10px 10px 0 0;
+  align-items: flex-start;
+  text-align: left;
+}
+.auth-wrapper:has(#login-email, #signup-email) .auth-brand-logo {
+  width: 40px;
+  height: 40px;
+  background: url('/logo.svg') center / contain no-repeat;
+  color: #bcf2e6;
+  border: 0;
+  border-radius: 9px;
+  box-shadow: none;
+  margin-bottom: 16px;
+}
+.auth-wrapper:has(#login-email, #signup-email) .auth-brand-title { color: #f2f7f8; font-size: 26px; font-weight: 650; letter-spacing: -.6px; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-brand-subtitle { color: #b2c7ce; line-height: 1.5; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-input { height: 48px; font-size: 15px; border-radius: 7px; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-input::placeholder { color: var(--text-muted); opacity: 1; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.auth-wrapper:has(#login-email, #signup-email) .auth-input.has-error:focus { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.auth-wrapper:has(#login-email, #signup-email) .auth-label { font-weight: 600; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-submit-btn { height: 48px; background: #087d78; color: #fff; font-size: 15px; font-weight: 600; border-radius: 7px; box-shadow: none; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-submit-btn:hover:not(:disabled) { background: #056962; box-shadow: none; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-demo-btn { font-family: inherit; min-height: 44px; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-footer-nav { border-top: 1px solid var(--border-color); padding-top: 24px; flex-wrap: wrap; line-height: 1.5; }
+.auth-wrapper:has(#login-email, #signup-email) .auth-error-banner { align-items: flex-start; line-height: 1.5; }
+.auth-theme-shell:has(#login-email, #signup-email) :is(button, input):focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.auth-theme-shell:has(#login-email, #signup-email) .auth-theme-toggle { border-radius: 8px; box-shadow: none; }
+@media screen and (max-width: 540px) {
+  .auth-wrapper:has(#login-email, #signup-email) { padding: 72px 16px 28px; }
+  .auth-wrapper:has(#login-email, #signup-email) .auth-card { padding: 24px; }
+  .auth-wrapper:has(#login-email, #signup-email) .auth-brand { margin: -24px -24px 24px; padding: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-wrapper:has(#login-email, #signup-email) *, .auth-theme-shell:has(#login-email, #signup-email) .auth-theme-toggle { transition: none !important; }
+}
+
+/* Shared brand mark for all examiner authentication screens. */
+.auth-brand-logo { background: url('/logo.svg') center / contain no-repeat; box-shadow: none; }
+.auth-brand-logo > svg { display: none; }

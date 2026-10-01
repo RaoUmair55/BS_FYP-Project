@@ -5,7 +5,7 @@ import {
     Check, X, Clock, CheckCircle, XCircle, Eye, Camera, AlertTriangle, 
     ShieldCheck, FileText, Download, Paperclip, AlertOctagon, MessageSquare, 
     Send, UserX, AlertCircle, Image, Maximize2, ChevronDown, ChevronUp,
-    Layers, Filter, Sparkles, Smartphone, Users, Copy, CheckCheck, ExternalLink, FileCode
+    Layers, Filter, Sparkles, Smartphone, Users, Copy, CheckCheck, ExternalLink, FileCode, Volume2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
@@ -112,12 +112,107 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const [copiedSubId, setCopiedSubId] = useState(null);
     const [cameraActionLoading, setCameraActionLoading] = useState(false);
     const [showDismissedLogs, setShowDismissedLogs] = useState(false);
+    const [downloadingSubId, setDownloadingSubId] = useState(null);
+    const [previewModal, setPreviewModal] = useState(null);
+    const [copiedModalContent, setCopiedModalContent] = useState(false);
 
     const handleCopyAnswer = (text, id) => {
         if (!text) return;
         navigator.clipboard.writeText(text);
         setCopiedSubId(id);
         setTimeout(() => setCopiedSubId(null), 2500);
+    };
+
+    const handleDownloadFile = async (sub) => {
+        if (!sub || !sub.filePath) return;
+        const subId = sub._id || sub.sessionId;
+        setDownloadingSubId(subId);
+        try {
+            const targetUrl = assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`);
+            const token = localStorage.getItem('token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            const response = await fetch(targetUrl, { headers });
+            if (!response.ok) throw new Error('Download failed');
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = sub.filename || `candidate_solution_${sub.sessionId || 'file'}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+        } catch (err) {
+            console.error('Error downloading file:', err);
+            window.open(assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`), '_blank');
+        } finally {
+            setDownloadingSubId(null);
+        }
+    };
+
+    const handlePreviewFile = async (sub) => {
+        if (!sub || !sub.filePath) return;
+        const filename = sub.filename || 'file';
+        const ext = filename.split('.').pop().toLowerCase();
+        const targetUrl = assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`);
+
+        const codeExtensions = ['py', 'c', 'cpp', 'java', 'cs', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'json', 'sql', 'txt', 'md', 'php', 'rb', 'go', 'rs', 'sh', 'xml', 'yaml', 'yml', 'env', 'ini', 'log'];
+        const imageExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp'];
+        
+        if (codeExtensions.includes(ext)) {
+            setPreviewModal({
+                open: true,
+                loading: true,
+                type: 'code',
+                filename: filename,
+                ext: ext,
+                size: sub.fileSize,
+                sub: sub
+            });
+            try {
+                const token = localStorage.getItem('token');
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                const res = await fetch(targetUrl, { headers });
+                if (!res.ok) throw new Error('Failed to load file preview');
+                const text = await res.text();
+                setPreviewModal(prev => prev ? { ...prev, loading: false, content: text } : null);
+            } catch (e) {
+                setPreviewModal(prev => prev ? { ...prev, loading: false, error: 'Could not load text preview.' } : null);
+            }
+        } else if (ext === 'pdf') {
+            setPreviewModal({
+                open: true,
+                loading: false,
+                type: 'pdf',
+                filename: filename,
+                ext: ext,
+                url: targetUrl,
+                size: sub.fileSize,
+                sub: sub
+            });
+        } else if (imageExtensions.includes(ext)) {
+            setPreviewModal({
+                open: true,
+                loading: false,
+                type: 'image',
+                filename: filename,
+                ext: ext,
+                url: targetUrl,
+                size: sub.fileSize,
+                sub: sub
+            });
+        } else {
+            setPreviewModal({
+                open: true,
+                loading: false,
+                type: 'document',
+                filename: filename,
+                ext: ext,
+                url: targetUrl,
+                size: sub.fileSize,
+                sub: sub
+            });
+        }
     };
 
     // Filtering & Categorized Accordion States
@@ -736,27 +831,25 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
 
                                                 {sub.filePath && (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <a 
-                                                            href={assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`)}
-                                                            target="_blank"
-                                                            rel="noreferrer"
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handlePreviewFile(sub)}
                                                             className="md-btn md-btn-sm md-btn-outlined"
-                                                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
                                                         >
                                                             <ExternalLink size={13} />
                                                             <span>Preview</span>
-                                                        </a>
-                                                        <a 
-                                                            href={assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`)}
-                                                            download={sub.filename || 'candidate_solution'}
-                                                            target="_blank"
-                                                            rel="noreferrer"
+                                                        </button>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handleDownloadFile(sub)}
+                                                            disabled={downloadingSubId === (sub._id || sub.sessionId)}
                                                             className="md-btn md-btn-sm md-btn-primary"
-                                                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
                                                         >
                                                             <Download size={13} />
-                                                            <span>Download Solution File</span>
-                                                        </a>
+                                                            <span>{downloadingSubId === (sub._id || sub.sessionId) ? 'Downloading...' : 'Download Solution File'}</span>
+                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
@@ -989,6 +1082,40 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                             </div>
                                                         )}
 
+                                                        {/* Audio Evidence Clip Player */}
+                                                        {(v.audioPath || v.details?.audioPath) && (
+                                                            <div 
+                                                                style={{ 
+                                                                    marginTop: '8px', 
+                                                                    marginBottom: '8px', 
+                                                                    padding: '10px 12px', 
+                                                                    borderRadius: '8px', 
+                                                                    background: 'rgba(13, 148, 136, 0.08)', 
+                                                                    border: '1px solid rgba(13, 148, 136, 0.3)',
+                                                                    display: 'flex',
+                                                                    flexDirection: 'column',
+                                                                    gap: '6px'
+                                                                }}
+                                                            >
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#0d9488' }}>
+                                                                        <Volume2 size={15} />
+                                                                        <span>Recorded Voice Audio Clip</span>
+                                                                    </div>
+                                                                    {v.details?.similarity_score !== undefined && (
+                                                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                                            Match: {Math.round(v.details.similarity_score * 100)}%
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <audio 
+                                                                    controls 
+                                                                    src={assetUrl(v.audioPath || v.details.audioPath)} 
+                                                                    style={{ width: '100%', height: '36px', outline: 'none' }}
+                                                                />
+                                                            </div>
+                                                        )}
+
                                                         {imageSrc && (
                                                             <div 
                                                                 style={{ 
@@ -1090,6 +1217,39 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                             {new Date(v.timestamp).toLocaleTimeString()}
                                         </span>
                                     </div>
+
+                                    {(v.audioPath || v.details?.audioPath) && (
+                                        <div 
+                                            style={{ 
+                                                marginTop: '8px', 
+                                                marginBottom: '8px', 
+                                                padding: '10px 12px', 
+                                                borderRadius: '8px', 
+                                                background: 'rgba(13, 148, 136, 0.08)', 
+                                                border: '1px solid rgba(13, 148, 136, 0.3)',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#0d9488' }}>
+                                                    <Volume2 size={15} />
+                                                    <span>Recorded Voice Audio Clip</span>
+                                                </div>
+                                                {v.details?.similarity_score !== undefined && (
+                                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                        Match: {Math.round(v.details.similarity_score * 100)}%
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <audio 
+                                                controls 
+                                                src={assetUrl(v.audioPath || v.details.audioPath)} 
+                                                style={{ width: '100%', height: '36px', outline: 'none' }}
+                                            />
+                                        </div>
+                                    )}
 
                                     {imageSrc && (
                                         <div 
@@ -1416,6 +1576,157 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Submission File Preview Modal */}
+            {previewModal && previewModal.open && (
+                <div className="md-modal-overlay" style={{ zIndex: 1100 }}>
+                    <div className="md-modal-card" style={{ maxWidth: previewModal.type === 'code' ? '860px' : previewModal.type === 'pdf' ? '920px' : '620px', width: '92vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                        <div className="md-modal-header" style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                <div style={{
+                                    background: 'var(--primary-soft)',
+                                    color: 'var(--primary)',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    {previewModal.type === 'code' ? <FileCode size={18} /> : <FileText size={18} />}
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                    <h3 style={{ margin: 0, fontSize: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {previewModal.filename}
+                                    </h3>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                        {previewModal.size ? `${(previewModal.size / 1024).toFixed(1)} KB • ` : ''}
+                                        {previewModal.type === 'code' ? 'Source Code / Text Document' : previewModal.type === 'pdf' ? 'PDF Document' : 'Submitted Exam Solution'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {previewModal.type === 'code' && previewModal.content && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(previewModal.content);
+                                            setCopiedModalContent(true);
+                                            setTimeout(() => setCopiedModalContent(false), 2000);
+                                        }}
+                                        className="md-btn md-btn-sm md-btn-outlined"
+                                        style={{ fontSize: '11.5px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                        {copiedModalContent ? (
+                                            <>
+                                                <CheckCheck size={13} style={{ color: 'var(--success)' }} />
+                                                <span style={{ color: 'var(--success)' }}>Copied!</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Copy size={13} />
+                                                <span>Copy Code</span>
+                                            </>
+                                        )}
+                                    </button>
+                                )}
+                                <button 
+                                    type="button"
+                                    onClick={() => handleDownloadFile(previewModal.sub)}
+                                    disabled={downloadingSubId === (previewModal.sub?._id || previewModal.sub?.sessionId)}
+                                    className="md-btn md-btn-sm md-btn-primary"
+                                    style={{ fontSize: '11.5px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                    <Download size={13} />
+                                    <span>Download</span>
+                                </button>
+                                <button className="md-icon-btn" onClick={() => setPreviewModal(null)}>
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 0', minHeight: '260px' }}>
+                            {previewModal.loading ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: '12px' }}>
+                                    <div className="md-spinner" style={{ width: '28px', height: '28px' }}></div>
+                                    <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading solution preview...</span>
+                                </div>
+                            ) : previewModal.error ? (
+                                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--danger)' }}>
+                                    <AlertCircle size={28} style={{ margin: '0 auto 8px', display: 'block' }} />
+                                    <p>{previewModal.error}</p>
+                                </div>
+                            ) : previewModal.type === 'code' ? (
+                                <div style={{
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '6px',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{
+                                        padding: '6px 12px',
+                                        background: 'var(--bg-muted)',
+                                        borderBottom: '1px solid var(--border-color)',
+                                        fontSize: '11.5px',
+                                        color: 'var(--text-muted)',
+                                        display: 'flex',
+                                        justifyContent: 'space-between'
+                                    }}>
+                                        <span>Format: .{previewModal.ext}</span>
+                                        <span>{previewModal.content.split('\n').length} lines • {previewModal.content.length} chars</span>
+                                    </div>
+                                    <pre style={{
+                                        margin: 0,
+                                        padding: '16px',
+                                        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                                        fontSize: '13px',
+                                        lineHeight: 1.6,
+                                        overflowX: 'auto',
+                                        maxHeight: '520px',
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                        color: 'var(--text-main)'
+                                    }}>
+                                        <code>{previewModal.content}</code>
+                                    </pre>
+                                </div>
+                            ) : previewModal.type === 'pdf' ? (
+                                <iframe 
+                                    src={previewModal.url}
+                                    title={previewModal.filename}
+                                    style={{ width: '100%', height: '560px', border: '1px solid var(--border-color)', borderRadius: '6px' }}
+                                />
+                            ) : previewModal.type === 'image' ? (
+                                <div style={{ textAlign: 'center' }}>
+                                    <img 
+                                        src={previewModal.url} 
+                                        alt={previewModal.filename} 
+                                        style={{ maxWidth: '100%', maxHeight: '520px', objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--border-color)' }} 
+                                    />
+                                </div>
+                            ) : (
+                                <div style={{ padding: '24px', textAlign: 'center', background: 'var(--bg-muted)', borderRadius: '8px', border: '1px dashed var(--border-color)' }}>
+                                    <FileText size={42} style={{ color: 'var(--primary)', margin: '0 auto 12px', display: 'block' }} />
+                                    <h4 style={{ margin: '0 0 6px 0', fontSize: '15px' }}>{previewModal.filename}</h4>
+                                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '0 0 16px 0' }}>
+                                        This is a binary document file (<strong>.{previewModal.ext}</strong>). Direct browser in-tab rendering is not supported for binary Office or archive formats. Click below to download and open it in your desktop application.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDownloadFile(previewModal.sub)}
+                                        disabled={downloadingSubId === (previewModal.sub?._id || previewModal.sub?.sessionId)}
+                                        className="md-btn md-btn-primary"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', margin: '0 auto' }}
+                                    >
+                                        <Download size={15} />
+                                        <span>Download {previewModal.filename}</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

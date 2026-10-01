@@ -578,7 +578,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                             return (
                                 <div 
                                     key={group._id} 
-                                    className="md-card"
+                                    className={`md-card priority-alert priority-severity-${group.severity}`}
                                     style={{
                                         border: `1px solid ${group.severity >= 4 ? 'var(--danger-soft)' : 'var(--border-color)'}`,
                                         borderLeft: `5px solid ${badge.color}`,
@@ -590,7 +590,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                                         {/* Left Info: Student + Category + Violation Title */}
                                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                                            <div style={{
+                                            <div className="priority-alert-icon" style={{
                                                 width: 38,
                                                 height: 38,
                                                 borderRadius: '50%',
@@ -608,7 +608,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                             <div>
                                                 {/* Student Identity Header */}
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                                    <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)' }}>
+                                                    <span className="priority-candidate-name" style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)' }}>
                                                         {group.studentName}
                                                     </span>
                                                     <span style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--bg-muted)', padding: '2px 6px', borderRadius: '4px' }}>
@@ -653,7 +653,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                         </span>
                                                     )}
 
-                                                    <span style={{
+                                                    <span className="priority-severity-badge" style={{
                                                         fontSize: '11px',
                                                         fontWeight: 600,
                                                         padding: '2px 8px',
