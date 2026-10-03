@@ -44,6 +44,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
     const [detectCellPhone, setDetectCellPhone] = useState(true);
     const [detectMultiplePersons, setDetectMultiplePersons] = useState(true);
     const [enforceAppWhitelist, setEnforceAppWhitelist] = useState(true);
+    const [permittedFiles, setPermittedFiles] = useState('');
     const [detectLookingAway, setDetectLookingAway] = useState(true);
     const [autoTerminateRiskScore, setAutoTerminateRiskScore] = useState(80);
 
@@ -154,6 +155,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                 detectCellPhone: examType === 'physical_lab' ? false : detectCellPhone,
                 detectMultiplePersons: examType === 'physical_lab' ? false : detectMultiplePersons,
                 enforceAppWhitelist,
+                permittedFiles: permittedFiles.split(/\r?\n/).map(file => file.trim()).filter(Boolean),
                 detectLookingAway: examType === 'physical_lab' ? false : detectLookingAway,
                 autoTerminateRiskScore: Number(autoTerminateRiskScore)
             }));
@@ -181,6 +183,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             setExamType('online');
             setPaperFile(null);
             setAllowedApps([]);
+            setPermittedFiles('');
             setCustomAppName('');
             setCustomAppExe('');
             setShowModal(false);
@@ -425,6 +428,12 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         </div>
                                     )}
 
+                                    {exam.rules?.permittedFiles?.length > 0 && (
+                                        <details style={{ fontSize: '12px', color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>
+                                            <summary>{exam.rules.permittedFiles.length} approved existing files</summary>
+                                            <ul>{exam.rules.permittedFiles.map(file => <li key={file}>{file}</li>)}</ul>
+                                        </details>
+                                    )}
                                     {exam.allowedApplications && exam.allowedApplications.length > 0 ? (
                                         <div className="meta-item" style={{ fontSize: '11px', color: 'var(--primary)', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
                                             <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Allowed Tools:</span>
@@ -766,6 +775,11 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                     Select tools required for this exam (e.g. C++ programming, essays, math). Students running these selected applications will not be blocked.
                                 </p>
 
+                                <label htmlFor="permitted-files" className="md-help-text">Approved existing files (optional; one exact candidate-PC path per line)</label>
+                                <textarea id="permitted-files" className="md-input" rows={2}
+                                    value={permittedFiles} onChange={event => setPermittedFiles(event.target.value)}
+                                    placeholder={'C:\\ExamMaterials\\template.docx'} style={{ marginBottom: '8px', width: '100%' }} />
+                                <p className="md-help-text" style={{ margin: '0 0 12px' }}>Other existing documents remain restricted. Approving a file does not permit its application; select that tool below.</p>
                                 {/* Preset Tiles */}
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                                     {SOFTWARE_PRESETS.map((preset) => {

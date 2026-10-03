@@ -27,6 +27,7 @@ const examSchema = new mongoose.Schema({
         detectCellPhone: { type: Boolean, default: true },
         detectMultiplePersons: { type: Boolean, default: true },
         enforceAppWhitelist: { type: Boolean, default: true },
+        permittedFiles: { type: [String], default: [] },
         detectLookingAway: { type: Boolean, default: true },
         autoTerminateRiskScore: { type: Number, default: 80 }
     },

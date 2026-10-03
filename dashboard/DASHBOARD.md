@@ -293,3 +293,7 @@ The examiner dashboard features a responsive layout ensuring full functionality 
 ### 4. Load Testing Comparison (Indexes & Throughput)
 - Run `python scripts/load_test.py --students 40 --duration 60 --with-reads` before and after index creation.
 - Check [SERVER.md](file:///d:/BS_FYP%20Project/IntegrityFlow/server/SERVER.md) for full benchmark results showing a **30.4% reduction in P99 write latency** (771ms $\to$ 536ms) and **74.8% reduction in peak read latency** (1230ms $\to$ 310ms).
+
+## Approved existing reference files
+
+When creating an exam, the permitted-software section accepts one exact absolute Windows path per line for teacher-approved existing references/templates on candidate PCs. Empty means existing-file restrictions stay in effect. These are stored as `rules.permittedFiles` and can be inspected in the exam card's expandable file list. No wildcard/directory exemptions are accepted, and the tool itself must also be permitted. New answers must still be created/saved during the exam before upload.

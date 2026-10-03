@@ -39,7 +39,7 @@ class CameraOcclusionDetector:
         sample = gray_frame[::2, ::2] if (gray_frame.shape[0] > 120 and gray_frame.shape[1] > 160) else gray_frame
         mean_val = float(np.mean(sample))
         std_val = float(np.std(sample))
-        now = time.time()
+        now = time.monotonic()
 
         is_currently_occluded = False
         current_reason = ""
@@ -49,13 +49,14 @@ class CameraOcclusionDetector:
             is_currently_occluded = True
             current_reason = f"Camera feed pitch dark or lens obstructed (Mean: {round(mean_val, 1)}/255)"
         # Condition B: Frame has near-zero spatial variance (solid tape, white paper, or finger pressing on lens)
-        elif std_val < self.min_variance_threshold and mean_val < 180.0:
+        elif std_val < self.min_variance_threshold:
             is_currently_occluded = True
-            current_reason = f"Camera lens occluded with solid barrier/tape (Variance: {round(std_val, 2)})"
+            current_reason = f"Camera feed has very little detail; check obstruction or exposure (Std: {round(std_val, 2)})"
 
         self.last_metrics = {
             "mean_brightness": round(mean_val, 1),
             "variance": round(std_val, 2),
+            "standard_deviation": round(std_val, 2),
             "dark_threshold": self.dark_threshold
         }
 

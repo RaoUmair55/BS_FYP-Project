@@ -612,17 +612,21 @@ function showPreExistingFileModal(data) {
   const now = Date.now();
   const fileName = data?.fileName || 'Existing Document';
   const appName = data?.appName || 'File Upload';
+  const uploadAttempt = !data?.alreadyReported && appName === 'File Upload';
+  const reviewOnly = data?.action === 'file_access_review_required';
 
-  // 1. Immediately disarm and clear any attached file from the upload widget so it cannot be submitted
-  selectedFile = null;
-  const fileInput = document.getElementById('fileInput');
-  const fileCard = document.getElementById('fileCard');
-  const dropzone = document.getElementById('dropzone');
-  const summaryFile = document.getElementById('summaryFile');
-  if (fileInput) fileInput.value = '';
-  if (fileCard) fileCard.style.display = 'none';
-  if (dropzone) dropzone.style.display = 'block';
-  if (summaryFile) summaryFile.textContent = 'None';
+  // An external file observation must not discard an unrelated answer attachment.
+  if (uploadAttempt) {
+    selectedFile = null;
+    const fileInput = document.getElementById('fileInput');
+    const fileCard = document.getElementById('fileCard');
+    const dropzone = document.getElementById('dropzone');
+    const summaryFile = document.getElementById('summaryFile');
+    if (fileInput) fileInput.value = '';
+    if (fileCard) fileCard.style.display = 'none';
+    if (dropzone) dropzone.style.display = 'block';
+    if (summaryFile) summaryFile.textContent = 'None';
+  }
 
   // Debounce duplicate modal triggers within 4 seconds for the same event
   if (now - lastPreExistingModalTime < 4000 && lastBlockedFileName === fileName) {
@@ -632,7 +636,7 @@ function showPreExistingFileModal(data) {
   lastBlockedFileName = fileName;
 
   // Report violation to backend with screenshot so teacher dashboard immediately receives alert + screenshot evidence
-  if (window.api && typeof window.api.sendTestViolation === 'function' && sessionInfo && sessionInfo.sessionId) {
+  if (!data?.alreadyReported && window.api && typeof window.api.sendTestViolation === 'function' && sessionInfo && sessionInfo.sessionId) {
     try {
       window.api.sendTestViolation({
         sessionId: sessionInfo.sessionId,
@@ -671,7 +675,7 @@ function showPreExistingFileModal(data) {
           🚫
         </div>
         <div>
-          <h2 style="margin: 0; font-size: 19px; font-weight: 700; color: #92400e;">Pre-Existing Document Closed</h2>
+          <h2 style="margin: 0; font-size: 19px; font-weight: 700; color: #92400e;">${reviewOnly ? 'Existing File Access Needs Review' : uploadAttempt ? 'Existing File Upload Blocked' : 'Pre-Existing Document Closed'}</h2>
           <div style="font-size: 12px; color: #b45309; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Exam Integrity Enforcement</div>
         </div>
       </div>
@@ -681,23 +685,23 @@ function showPreExistingFileModal(data) {
           Detected File: <span style="font-family: monospace; background: #fde68a; padding: 2px 7px; border-radius: 4px; color: #451a03; font-size: 13px;">${escapeHtml(fileName)}</span>
         </div>
         <div style="font-size: 12.5px; color: #92400e; line-height: 1.5;">
-          This file was created or modified prior to this exam session. Opening pre-existing files, notes, or previous assignments is strictly prohibited. <strong>The application has been automatically closed.</strong>
+          ${reviewOnly ? 'An existing file access was observed, but its owning process could not be verified. The observation was sent to your examiner; no application was closed by this check.' : uploadAttempt ? 'This file was modified before the exam and cannot be submitted as a new answer. The upload was blocked.' : 'An unauthorized existing file was detected in this application. The verified application process was closed.'}
         </div>
       </div>
 
       <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 22px;">
         <div style="font-size: 13.5px; color: #166534; font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 5px;">
-          <span>📝</span> Required Action &mdash; Create a Blank File:
+          <span>📝</span> ${reviewOnly ? 'Check with Your Examiner' : 'Required Action &mdash; Create a Blank File:'}
         </div>
         <div style="font-size: 13px; color: #15803d; line-height: 1.5;">
-          You may re-open ${escapeHtml(appName)}, but you must choose <strong>"Blank document"</strong> to start a completely new file. Only work produced live during this exam is permitted.
+          ${reviewOnly ? 'Ask your examiner whether this file is permitted. Your current answer attachment has been kept.' : 'Use a new answer file created during this exam, or a reference file explicitly approved by your examiner. An application process may contain more than one open document.'}
         </div>
       </div>
 
       <div style="display: flex; justify-content: flex-end;">
         <button id="btnAcknowledgeFileClosed" 
                 style="background: #f59e0b; color: #ffffff; border: none; padding: 11px 24px; border-radius: 6px; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background 0.15s ease; box-shadow: 0 4px 6px -1px rgba(245, 158, 11, 0.3);">
-          I Understand &mdash; I Will Create a New File
+          ${reviewOnly ? 'I Understand' : 'I Understand &mdash; I Will Create a New File'}
         </button>
       </div>
     </div>

@@ -42,7 +42,9 @@ class USBMonitor:
         import subprocess
         import json
 
-        ps_script = "$ErrorActionPreference = 'Stop'; $disks = Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' -and $_.Size -gt 0 }; if ($disks) { $disks | Select-Object DeviceID, Model, Size, Caption | ConvertTo-Json -Compress } else { '[]' }"
+        # UASP disks can report a SCSI interface; Storage CIM BusType 7 identifies USB.
+        # Query CIM directly to avoid slow Get-Disk module loading; preserve legacy fallback.
+        ps_script = "$ErrorActionPreference = 'Stop'; $usbNumbers = @(); try { $usbNumbers = @(Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_Disk -OperationTimeoutSec 2 -ErrorAction Stop | Where-Object { $_.BusType -eq 7 } | Select-Object -ExpandProperty Number) } catch {}; $disks = Get-CimInstance Win32_DiskDrive | Where-Object { ($_.InterfaceType -eq 'USB' -or $usbNumbers -contains $_.Index) -and $_.Size -gt 0 }; if ($disks) { $disks | Select-Object DeviceID, Model, Size, Caption | ConvertTo-Json -Compress } else { '[]' }"
         try:
             res = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],

@@ -31,8 +31,14 @@ async function main() {
     }
     let offline = true;
     let delivered = 0;
+    let holdDelivery = false;
+    let releaseHeld;
     backend = http.createServer((req, res) => {
       req.resume();
+      if (holdDelivery) {
+        releaseHeld = () => { delivered++; res.writeHead(201); res.end('{}'); };
+        return;
+      }
       setTimeout(() => {
         if (!offline) delivered++;
         res.writeHead(offline ? 503 : 201);
@@ -69,6 +75,7 @@ async function main() {
         env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1',
           PYTHON_IPC_PORT: '0', ELECTRON_RECEIVER_PORT: String(receiverPort), AI_INSTANCE_ID: instanceId,
           EXAM_TYPE: examType, IS_SELF_CHECK: 'true', APP_MODE: 'dev',
+          AI_SPOOL_DIR: path.join(temp, 'python-alerts'),
           EXAM_SESSION_ID: 'unknown-session', EXAM_RULES: '{"enforceAppWhitelist":false}' }
       });
       let output = '';
@@ -109,11 +116,35 @@ async function main() {
       }
     }
 
+    bridge.setExamActive(false);
+    const buffer = require('./ipc/violationBuffer');
+    holdDelivery = true;
+    const heldEvent = { sessionId: 'check-session', type: 'head_turn_away', severity: 2,
+      timestamp: new Date().toISOString(), details: {} };
+    const preExam = await fetch(`http://127.0.0.1:${receiverPort}/violation`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(heldEvent)
+    });
+    assert.equal(preExam.status, 409, 'New pre-exam events must remain disabled');
+    heldEvent.eventId = require('node:crypto').randomUUID();
+    const accepted = await fetch(`http://127.0.0.1:${receiverPort}/violation`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(heldEvent)
+    });
+    assert.equal(accepted.status, 202, 'Local acceptance must not wait for the backend');
+    assert.equal(buffer.getBufferStatus().pendingCount, 1);
+    assert.equal(delivered, 0);
+    const handoffDeadline = Date.now() + 5000;
+    while (!releaseHeld && Date.now() < handoffDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+    assert(releaseHeld, 'Backend should start asynchronously');
+    releaseHeld();
+    while (buffer.getBufferStatus().pendingCount && Date.now() < handoffDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(buffer.getBufferStatus().pendingCount, 0);
+    holdDelivery = false;
+    delivered = 0;
+    console.log('PASS: saved alerts recover during self-check and acknowledge before a slow backend responds');
     bridge.setExamActive(true);
     const payload = { sessionId: 'check-session', type: 'head_turn_away', severity: 2,
       timestamp: new Date().toISOString(), details: {} };
     assert.equal(await bridge.forwardViolationToServer(payload), true);
-    const buffer = require('./ipc/violationBuffer');
     assert.equal(buffer.getBufferStatus().pendingCount, 1);
     bridge.setExamActive(false);
     offline = false;

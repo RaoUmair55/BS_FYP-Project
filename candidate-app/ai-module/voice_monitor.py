@@ -42,6 +42,7 @@ class VoiceMonitor:
         self.last_verified_at = 0
         self.last_audio_at = 0
         self.verification_error = None
+        self.capture_error = None
         self.last_alert_at = float("-inf")
         self.verification_queue = queue.Queue(maxsize=2)
         self.reference_embedding = None
@@ -279,6 +280,17 @@ class VoiceMonitor:
         print("[VoiceMonitor] Voice Monitor stopped.")
 
     def _monitor_loop(self):
+        while self.running:
+            try:
+                self._capture_loop()
+            except Exception as exc:
+                self.capture_error = f'Microphone capture failed; retrying: {exc}'
+                self.mismatch_count = 0
+                print(f'[VoiceMonitor Error] {self.capture_error}')
+            if self.running:
+                time.sleep(1)
+
+    def _capture_loop(self):
         """
         Main audio capture loop.
         Processes 30ms frames from microphone stream via sounddevice.
@@ -294,9 +306,7 @@ class VoiceMonitor:
             default_input = sd.default.device[0]
             print(f"[VoiceMonitor] Opening audio input stream (Device ID: {default_input})...")
         except Exception as e:
-            print(f"[VoiceMonitor Warning] No audio input device detected: {e}. Voice monitoring paused.")
-            self.running = False
-            return
+            raise RuntimeError(f'No audio input device available: {e}') from e
 
         try:
             with sd.RawInputStream(
@@ -314,10 +324,11 @@ class VoiceMonitor:
                             voiced_frame_count = 0
                             consecutive_silent_frames = 0
                             self.mismatch_count = 0
+                            continue  # Do not score a frame from an overflowed stream.
                         if not raw_frame or len(raw_frame) != self.frame_bytes:
-                            time.sleep(0.01)
-                            continue
+                            raise RuntimeError('Microphone returned an incomplete audio frame')
                         self.last_audio_at = time.monotonic()
+                        self.capture_error = None
 
                         # -------------------------------------------------------------
                         # STAGE 1: Lightweight VAD Gate (<1% CPU)
@@ -364,18 +375,18 @@ class VoiceMonitor:
                             voiced_frame_count = 0
                             consecutive_silent_frames = 0
                     except Exception as loop_err:
-                        time.sleep(0.05)
+                        raise RuntimeError(f'Audio read failed: {loop_err}') from loop_err
 
         except Exception as stream_err:
-            print(f"[VoiceMonitor Error] Microphone stream failed: {stream_err}")
+            raise RuntimeError(f'Microphone stream failed: {stream_err}') from stream_err
         finally:
-            self.running = False
             self.stream = None
 
     def _queue_voice_segment(self, audio, duration):
         try:
             self.verification_queue.put_nowait((audio, duration))
         except queue.Full:
+            self.mismatch_count = 0
             self.verification_error = 'Voice analysis cannot keep up. Notify the examiner.'
 
     def _verification_loop(self):
@@ -438,9 +449,13 @@ class VoiceMonitor:
             if len(audio_np) < self.sample_rate or not np.all(np.isfinite(audio_np)) or float(np.sqrt(np.mean(audio_np ** 2))) < self.thresholds.get('voice_min_rms', 0.003):
                 self.mismatch_count = 0
                 return
+            if np.mean(np.abs(audio_np) >= 0.99) > 0.01:
+                self.mismatch_count = 0
+                return  # Clipped speech cannot support a reliable speaker comparison.
             wav = preprocess_wav(audio_np, source_sr=self.sample_rate)
             
             if len(wav) < self.sample_rate * 1.0:
+                self.mismatch_count = 0
                 return
 
             embedding = encoder.embed_utterance(wav)
@@ -448,7 +463,7 @@ class VoiceMonitor:
             if norm > 0:
                 embedding = embedding / norm
 
-            if not np.all(np.isfinite(embedding)) or norm <= 0:
+            if not np.isfinite(norm) or not np.all(np.isfinite(embedding)) or norm <= 0:
                 self.mismatch_count = 0
                 return
             now = time.monotonic()

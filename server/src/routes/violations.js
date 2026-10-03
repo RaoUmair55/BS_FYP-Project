@@ -122,12 +122,15 @@ router.post('/violation', uploadFields, async (req, res) => {
             uploadedAssets.push(savedAudio.path || savedAudio.url);
             newViolation.audioPath = savedAudio.url;
         }
-        // Uploads can take time; re-check completion/termination and the final cutoff before saving.
-        session = await Session.findById(sessionId);
-        if (!session) return res.status(404).json({ error: 'Exam session not found' });
-        windowError = eventWindowError(session, timestamp.getTime());
-        if (windowError) return res.status(windowError.status).json({ error: windowError.error });
-        newViolation.receivedLate = session.status !== 'active' || Boolean(session.endTime && receivedAt > session.endTime);
+        // Re-check session window only if file uploads took wall-clock time
+        if (uploadedAssets.length > 0) {
+            session = await Session.findById(sessionId);
+            if (!session) return res.status(404).json({ error: 'Exam session not found' });
+            windowError = eventWindowError(session, timestamp.getTime());
+            if (windowError) return res.status(windowError.status).json({ error: windowError.error });
+            newViolation.receivedLate = session.status !== 'active' || Boolean(session.endTime && receivedAt > session.endTime);
+        }
+
         let savedViolation;
         try {
             savedViolation = await newViolation.save();
@@ -140,21 +143,25 @@ router.post('/violation', uploadFields, async (req, res) => {
             return res.status(200).json({ ...duplicate.toObject(), duplicate: true });
         }
         committed = true;
-        const io = req.app.locals.io;
-        if (!savedViolation.receivedLate) {
-            broadcastViolation(io, { ...savedViolation.toObject(), examId: session.examId });
-        }
 
-        if (!savedViolation.receivedLate) {
-            try {
-                const scoreData = await calculateRiskScore(savedViolation.sessionId);
-                broadcastRiskScoreUpdate(io, savedViolation.sessionId, scoreData.riskScore);
-            } catch (scoreErr) {
-                console.error('Failed to update and broadcast risk score:', scoreErr);
-            }
-        }
-
+        // Respond immediately to candidate with HTTP 201 so client connection is freed in milliseconds
         res.status(201).json(savedViolation);
+
+        // Execute WebSocket broadcast and risk score update asynchronously in background
+        if (!savedViolation.receivedLate) {
+            setImmediate(async () => {
+                try {
+                    const io = req.app.locals.io;
+                    if (io) {
+                        broadcastViolation(io, { ...savedViolation.toObject(), examId: session.examId });
+                        const scoreData = await calculateRiskScore(savedViolation.sessionId);
+                        broadcastRiskScoreUpdate(io, savedViolation.sessionId, scoreData.riskScore);
+                    }
+                } catch (bgErr) {
+                    console.error('[Violation Pipeline] Background risk calculation / broadcast error:', bgErr);
+                }
+            });
+        }
     } catch (err) {
         console.error('Error saving violation:', err);
         if (err.name === 'ValidationError' || err.name === 'CastError') return res.status(400).json({ error: 'Invalid event data' });

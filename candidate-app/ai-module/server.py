@@ -8,6 +8,8 @@ app = FastAPI()
 @app.get("/health")
 def health_check():
     errors = list(globals().get('startup_errors', []))
+    if globals().get('alert_delivery_error'):
+        errors.append(alert_delivery_error)
     lab = os.environ.get('EXAM_TYPE') == 'physical_lab'
     self_check = os.environ.get('IS_SELF_CHECK', 'false').lower() in ('true', '1')
     if not lab:
@@ -16,6 +18,8 @@ def health_check():
             errors.append('Voice model not ready. Check the Python dependencies and voice model installation.')
         if voice is not None and getattr(voice, "verification_error", None):
             errors.append(voice.verification_error)
+        if voice is not None and getattr(voice, 'capture_error', None):
+            errors.append(voice.capture_error)
         if not self_check:
             camera = globals().get('ai_monitor')
             if camera is None or not getattr(camera, 'camera_ready', False) or time.monotonic() - getattr(camera, 'last_frame_at', 0) > 5:
@@ -23,7 +27,7 @@ def health_check():
             rules = json.loads(os.environ.get('EXAM_RULES', '{}'))
             if camera is not None:
                 errors.extend(camera.detector_errors.values())
-                if camera.mp_face_mesh is None and camera.face_cascade is None:
+                if getattr(camera, 'face_landmarker', None) is None and camera.mp_face_mesh is None and camera.face_cascade is None:
                     errors.append('Face detector unavailable. Check the OpenCV installation.')
             if rules.get('detectCellPhone') is not False and (camera is None or camera.ort_session is None):
                 errors.append('Object detection model unavailable. Check ai-module/yolo26n.onnx or yolo26n_int8.onnx.')

@@ -15,14 +15,215 @@ import server
 
 
 class DetectionChecks(unittest.TestCase):
+    def test_biased_neutral_cannot_label_frontal_pose_left(self):
+        monitor, events = self.camera()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        monitor.neutral_pose = np.array([-8., 0.])
+        # Current supplied screenshot estimates about +10.5 degrees. Relative to
+        # a biased -8 baseline this looks like +18.5, but is still nearly frontal.
+        for i in range(20):
+            with patch('ai_monitor.time.monotonic', return_value=100 + i * .085):
+                monitor._observe_head_pose(10.5, 0, frame)
+        self.assertEqual(events, [])
+        self.assertIsNone(monitor.head_direction)
+        for i in range(14):
+            with patch('ai_monitor.time.monotonic', return_value=103 + i * .085):
+                monitor._observe_head_pose(35, 0, frame)
+        self.assertEqual(events[0][1]['details']['direction'], 'left')
+        # Returning frontal must clear the direction, rather than hold it through
+        # the relative-angle hysteresis and repeatedly flag the same forward pose.
+        for i in range(50):
+            with patch('ai_monitor.time.monotonic', return_value=104.3 + i * .085):
+                monitor._observe_head_pose(10.5, 0, frame)
+        self.assertEqual(len(events), 1)
+        self.assertIsNone(monitor.head_direction)
+
+    def test_occlusion_handles_bright_cover_and_normal_exposure(self):
+        from services.lighting_occlusion_detector import CameraOcclusionDetector
+        detector = CameraOcclusionDetector()
+        white_cover = np.full((480, 640), 245, dtype=np.uint8)
+        with patch('services.lighting_occlusion_detector.time.monotonic', side_effect=[100, 100.3, 101.3]):
+            self.assertFalse(detector.analyze_frame(white_cover)[0])
+            self.assertFalse(detector.analyze_frame(white_cover)[0])
+            self.assertTrue(detector.analyze_frame(white_cover)[0])
+        gradient = np.tile(np.linspace(50, 220, 640, dtype=np.uint8), (480, 1))
+        self.assertFalse(detector.analyze_frame(gradient)[0])
+        self.assertIsNone(detector.occlusion_start_time)
+
+    def test_usb_query_covers_uasp_and_reports_storage_only(self):
+        monitor = USBMonitor('check-session', lambda event: None)
+        result = SimpleNamespace(returncode=0, stdout='[{"DeviceID":"USB1","Model":"External SSD","Size":100}]')
+        with patch('subprocess.run', return_value=result) as run:
+            drives = monitor.get_removable_drives()
+        self.assertEqual(drives[0]['label'], 'External SSD')
+        query = run.call_args.args[0][-1]
+        self.assertIn("BusType -eq 7", query)
+        self.assertIn('$usbNumbers -contains $_.Index', query)
+
+    def test_voice_invalid_segments_reset_mismatch_and_capture_recovers(self):
+        monitor = VoiceMonitor.__new__(VoiceMonitor)
+        monitor.is_self_check = False
+        monitor.sample_rate = 16000
+        monitor.reference_embedding = np.eye(1, 256, 0, dtype=np.float32)[0]
+        monitor.thresholds = {}
+        monitor.mismatch_count = 1
+        monitor._get_encoder = lambda: object()
+        audio = np.full(32000, 1000, dtype=np.int16).tobytes()
+        with patch('resemblyzer.preprocess_wav', return_value=np.zeros(100)):
+            monitor._verify_speaker_segment(audio, 2)
+        self.assertEqual(monitor.mismatch_count, 0)
+        monitor.mismatch_count = 1
+        monitor._verify_speaker_segment(np.full(32000, 32767, dtype=np.int16).tobytes(), 2)
+        self.assertEqual(monitor.mismatch_count, 0)
+        monitor.running = True
+        monitor.capture_error = None
+        attempts = []
+        def capture():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise RuntimeError('device disconnected')
+            monitor.running = False
+        monitor._capture_loop = capture
+        with patch('voice_monitor.time.sleep'):
+            monitor._monitor_loop()
+        self.assertEqual(len(attempts), 2)
+        self.assertIn('device disconnected', monitor.capture_error)
+
+    def test_phone_book_track_separately_and_reject_spatial_jumps(self):
+        monitor, events = self.camera()
+        tensor = np.array([[[20, 110, 120, 210, .9, 67], [300, 130, 440, 290, .8, 73]]], dtype=np.float32)
+        inputs = []
+        def infer(_, data):
+            inputs.append(data['images'])
+            return [tensor]
+        monitor.ort_session = SimpleNamespace(get_inputs=lambda: [SimpleNamespace(name='images')], run=infer)
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        with patch('ai_monitor.time.monotonic', side_effect=[100, 100.3, 100.6]):
+            for _ in range(3):
+                monitor._check_objects(frame)
+                tensor[0, 0, 4], tensor[0, 1, 4] = tensor[0, 1, 4], tensor[0, 0, 4]
+        self.assertEqual({event[0][0] for event in events}, {'cell_phone', 'unauthorized_object'})
+        self.assertTrue(np.allclose(inputs[0][0, :, :80, :], 114 / 255))
+        self.assertTrue(np.all(inputs[0][0, :, 80:560, :] == 0))
+        events.clear()
+        monitor._reset_temporal_state()
+        with patch('ai_monitor.time.monotonic', side_effect=[110, 110.3, 110.6]):
+            for x in (20, 250, 450):
+                tensor = np.array([[[x, 110, x+100, 210, .9, 67]]], dtype=np.float32)
+                monitor._check_objects(frame)
+        self.assertEqual(events, [])
+
+    def test_old_file_policy_permits_exact_path_and_targets_only_owner(self):
+        monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
+        monitor.session_id = 'file-check'
+        monitor.SAFETY_LIST = set()
+        monitor.protected_pids = set()
+        monitor.violation_counts = {}
+        approved = os.path.abspath('approved.docx')
+        old = os.path.abspath('notes.docx')
+        monitor.permitted_files = {os.path.normcase(os.path.realpath(approved))}
+        events, closed = [], []
+        monitor.on_violation_callback = events.append
+        proc = SimpleNamespace(pid=123, name=lambda: 'winword.exe',
+                               open_files=lambda: [SimpleNamespace(path=old)],
+                               terminate=lambda: closed.append(123), wait=lambda **kw: None)
+        with patch('whitelist_enforcer.capture_screenshot', return_value=None), \
+             patch('whitelist_enforcer.psutil.process_iter', side_effect=AssertionError('Must not close other app instances')):
+            monitor._handle_file_violation(proc, 'winword.exe', 'old approved file', approved)
+            self.assertEqual(events, [])
+            self.assertEqual(closed, [])
+            monitor._handle_file_violation(proc, 'winword.exe', 'old unauthorized file', old)
+            self.assertEqual(closed, [123])
+            self.assertEqual(events[0]['details']['processId'], 123)
+            monitor.violation_counts.clear()
+            monitor._handle_file_violation(None, 'winword.exe', 'recent shortcut only', old)
+            self.assertEqual(closed, [123])
+            self.assertEqual(events[-1]['details']['action'], 'file_access_review_required')
+        self.assertFalse(monitor._is_permitted_file(approved + '.other.docx'))
+
+    def test_durable_python_delivery_retries_preserve_identity(self):
+        from services.violation_delivery import enqueue, deliver_one
+        import sqlite3
+        payload = {'sessionId': 'check-session', 'type': 'head_turn_away',
+                   'timestamp': '2026-10-03T00:00:00+00:00'}
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, 'pending.sqlite3')
+            enqueue(payload, path)
+            event_id = payload['eventId']
+            enqueue(payload, path)
+            with patch('services.violation_delivery.requests.post', side_effect=RuntimeError('lost ack')):
+                with self.assertRaises(RuntimeError):
+                    deliver_one('http://127.0.0.1/violation', path)
+            connection = sqlite3.connect(path)
+            self.assertEqual(connection.execute('SELECT COUNT(*) FROM alerts').fetchone()[0], 1)
+            connection.close()
+            response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'status': 'accepted'})
+            with patch('services.violation_delivery.requests.post', return_value=response) as post:
+                self.assertTrue(deliver_one('http://127.0.0.1/violation', path))
+                self.assertEqual(post.call_args.kwargs['json']['eventId'], event_id)
+                self.assertEqual(post.call_args.kwargs['json']['timestamp'], payload['timestamp'])
+            self.assertFalse(deliver_one('http://127.0.0.1/violation', path))
+
     def camera(self):
         # Use real initialization/model loading, but feed controlled frames/inference results.
         monitor = AIMonitor('check-session', on_violation=lambda event: None)
+        if monitor.face_landmarker is not None:
+            self.addCleanup(monitor.face_landmarker.close)
         self.assertIsNotNone(monitor.face_cascade)
         self.assertIsNotNone(monitor.ort_session)
         events = []
         monitor._emit_violation = lambda *args, **kwargs: events.append((args, kwargs))
         return monitor, events
+
+    def test_calibration_wraparound_jitter_and_real_turn(self):
+        monitor, events = self.camera()
+        frame = np.full((480, 640, 3), 100, dtype=np.uint8)
+        with patch('ai_monitor.time.monotonic', return_value=100):
+            for i in range(20):
+                monitor._observe_head_pose(8, 179 if i % 2 else -179, frame)
+        self.assertIsNotNone(monitor.neutral_pose)
+        for i in range(30):
+            with patch('ai_monitor.time.monotonic', return_value=101 + i * .085):
+                monitor._observe_head_pose(8 + (i % 3 - 1), 180, frame)
+        self.assertEqual(events, [])
+        for i in range(14):
+            with patch('ai_monitor.time.monotonic', return_value=104 + i * .085):
+                monitor._observe_head_pose(33, 180, frame)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0][1]['details']['direction'], 'left')
+
+    def test_unstable_calibration_and_nonfinite_pose_do_not_alert(self):
+        monitor, events = self.camera()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        for i in range(30):
+            monitor._observe_head_pose(25 if i % 2 else -25, 0, frame)
+        self.assertIsNone(monitor.neutral_pose)
+        monitor._observe_head_pose(float('nan'), 0, frame)
+        self.assertEqual(events, [])
+        self.assertEqual(monitor.pose_baseline_samples, [])
+
+    def test_direction_changes_and_downward_duration(self):
+        monitor, events = self.camera()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        for stamp, direction in [(100, 'left'), (100.4, 'right'), (100.8, 'left'), (101, None),
+                                 (102, 'down'), (102.9, 'down'), (103.9, 'down')]:
+            with patch('ai_monitor.time.monotonic', return_value=stamp):
+                monitor._track_head_direction(direction, frame, {})
+        self.assertEqual(events, [])
+        with patch('ai_monitor.time.monotonic', return_value=104.1):
+            monitor._track_head_direction('down', frame, {})
+        self.assertEqual(events[0][1]['details']['direction'], 'down')
+
+    def test_real_landmarker_blank_frame_and_missing_model_fallback(self):
+        monitor, events = self.camera()
+        self.assertIsNotNone(monitor.face_landmarker)
+        monitor._check_head_pose(np.full((480, 640, 3), 100, dtype=np.uint8))
+        self.assertEqual(events, [])
+        with patch('ai_monitor.os.path.exists', return_value=False):
+            fallback = AIMonitor('fallback-check')
+        self.assertIsNone(fallback.face_landmarker)
+        self.assertIsNotNone(fallback.face_cascade)
+        self.assertTrue(fallback.is_active)
 
     def test_normal_high_camera_position_does_not_mean_looking_up(self):
         monitor, events = self.camera()
@@ -64,7 +265,7 @@ class DetectionChecks(unittest.TestCase):
             monitor._check_objects(frame)
             self.assertEqual(events, [])
             monitor._check_objects(frame)
-            self.assertEqual(events, [])
+            self.assertEqual(len(events), 1)
             monitor._check_objects(frame)
         self.assertEqual(events[0][0][0], 'cell_phone')
         monitor.exam_rules['detectCellPhone'] = False
@@ -72,6 +273,32 @@ class DetectionChecks(unittest.TestCase):
             for _ in range(4):
                 monitor._check_objects(frame)
         self.assertEqual(len(events), 1)
+
+    def test_weak_phone_still_needs_three_hits_and_miss_resets_confirmation(self):
+        monitor, events = self.camera()
+        tensor = np.array([[[20, 110, 120, 210, .4, 67]]], dtype=np.float32)
+        monitor.ort_session = SimpleNamespace(get_inputs=lambda: [SimpleNamespace(name='images')],
+                                             run=lambda *a: [tensor])
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        with patch('ai_monitor.time.monotonic', return_value=100):
+            monitor._check_objects(frame)
+            monitor._check_objects(frame)
+            self.assertEqual(events, [])
+            monitor._check_objects(frame)
+            self.assertEqual(len(events), 1)
+        monitor._reset_temporal_state()
+        events.clear()
+        with patch('ai_monitor.time.monotonic', return_value=110):
+            tensor[0, 0, 4] = .9
+            monitor._check_objects(frame)
+            tensor = np.empty((1, 0, 6), dtype=np.float32)
+            monitor._check_objects(frame)
+            tensor = np.array([[[20, 110, 120, 210, .9, 67]]], dtype=np.float32)
+            monitor._check_objects(frame)
+            self.assertEqual(events, [])
+            tensor[0, 0, 4] = .4
+            monitor._check_objects(frame)
+            self.assertEqual(events, [])
 
     def test_real_model_accepts_blank_frame_without_phone_alert(self):
         monitor, events = self.camera()
@@ -102,7 +329,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(events[0][0][0], 'second_person_detected')
         monitor._reset_temporal_state()
         self.assertIsNone(monitor.second_person_start)
-        self.assertEqual(monitor.object_candidate_count, 0)
+        self.assertEqual(monitor.object_candidates, {})
 
     def test_usb_reported_once_until_disconnected(self):
         events = []

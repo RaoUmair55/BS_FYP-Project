@@ -1,0 +1,112 @@
+[
+  {
+    "slide": "ppt/slides/slide1.xml",
+    "click_groups": 1,
+    "animated_objects": 1
+  },
+  {
+    "slide": "ppt/slides/slide2.xml",
+    "click_groups": 3,
+    "animated_objects": 7
+  },
+  {
+    "slide": "ppt/slides/slide3.xml",
+    "click_groups": 2,
+    "animated_objects": 6
+  },
+  {
+    "slide": "ppt/slides/slide4.xml",
+    "click_groups": 4,
+    "animated_objects": 11
+  },
+  {
+    "slide": "ppt/slides/slide5.xml",
+    "click_groups": 0,
+    "animated_objects": 0
+  },
+  {
+    "slide": "ppt/slides/slide6.xml",
+    "click_groups": 3,
+    "animated_objects": 11
+  },
+  {
+    "slide": "ppt/slides/slide7.xml",
+    "click_groups": 3,
+    "animated_objects": 11
+  },
+  {
+    "slide": "ppt/slides/slide8.xml",
+    "click_groups": 3,
+    "animated_objects": 11
+  },
+  {
+    "slide": "ppt/slides/slide9.xml",
+    "click_groups": 3,
+    "animated_objects": 11
+  },
+  {
+    "slide": "ppt/slides/slide10.xml",
+    "click_groups": 3,
+    "animated_objects": 11
+  },
+  {
+    "slide": "ppt/slides/slide11.xml",
+    "click_groups": 2,
+    "animated_objects": 4
+  },
+  {
+    "slide": "ppt/slides/slide12.xml",
+    "click_groups": 3,
+    "animated_objects": 12
+  },
+  {
+    "slide": "ppt/slides/slide13.xml",
+    "click_groups": 1,
+    "animated_objects": 1
+  },
+  {
+    "slide": "ppt/slides/slide14.xml",
+    "click_groups": 2,
+    "animated_objects": 6
+  },
+  {
+    "slide": "ppt/slides/slide15.xml",
+    "click_groups": 4,
+    "animated_objects": 4
+  },
+  {
+    "slide": "ppt/slides/slide16.xml",
+    "click_groups": 0,
+    "animated_objects": 0
+  },
+  {
+    "slide": "ppt/slides/slide17.xml",
+    "click_groups": 2,
+    "animated_objects": 6
+  },
+  {
+    "slide": "ppt/slides/slide18.xml",
+    "click_groups": 5,
+    "animated_objects": 9
+  },
+  {
+    "slide": "ppt/slides/slide19.xml",
+    "click_groups": 6,
+    "animated_objects": 14
+  },
+  {
+    "slide": "ppt/slides/slide20.xml",
+    "click_groups": 2,
+    "animated_objects": 6
+  },
+  {
+    "slide": "ppt/slides/slide21.xml",
+    "click_groups": 0,
+    "animated_objects": 0
+  },
+  {
+    "slide": "ppt/slides/slide22.xml",
+    "click_groups": 2,
+    "animated_objects": 6
+  }
+]

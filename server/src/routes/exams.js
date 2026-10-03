@@ -76,6 +76,12 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
             }
         }
         if (!parsedRules || typeof parsedRules !== 'object' || Array.isArray(parsedRules)) return res.status(400).json({ error: 'Invalid rules' });
+        const permittedFiles = parsedRules.permittedFiles ?? [];
+        if (!Array.isArray(permittedFiles) || permittedFiles.length > 50 || permittedFiles.some(file =>
+            typeof file !== 'string' || file.length > 1024 || /[\x00*?]/.test(file) ||
+            !/^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+\\)/.test(file.trim()))) {
+            return res.status(400).json({ error: 'Permitted files must be at most 50 exact, absolute Windows file paths (no wildcards).' });
+        }
         if (parsedRules.autoTerminateRiskScore !== undefined && (!Number.isFinite(Number(parsedRules.autoTerminateRiskScore)) || Number(parsedRules.autoTerminateRiskScore) < 0 || Number(parsedRules.autoTerminateRiskScore) > 100)) return res.status(400).json({ error: 'Invalid risk threshold' });
 
         let parsedAllowedApps = [];
@@ -114,6 +120,7 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
                 detectCellPhone: parsedRules.detectCellPhone !== undefined ? Boolean(parsedRules.detectCellPhone) : true,
                 detectMultiplePersons: parsedRules.detectMultiplePersons !== undefined ? Boolean(parsedRules.detectMultiplePersons) : true,
                 enforceAppWhitelist: parsedRules.enforceAppWhitelist !== undefined ? Boolean(parsedRules.enforceAppWhitelist) : true,
+                permittedFiles: [...new Set(permittedFiles.map(file => file.trim()))],
                 detectLookingAway: parsedRules.detectLookingAway !== undefined ? Boolean(parsedRules.detectLookingAway) : true,
                 autoTerminateRiskScore: parsedRules.autoTerminateRiskScore !== undefined ? Number(parsedRules.autoTerminateRiskScore) : 80
             },

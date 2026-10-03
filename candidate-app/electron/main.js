@@ -137,6 +137,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     PYTHON_IPC_PORT: '0',
     AI_INSTANCE_ID: instanceId,
     ELECTRON_RECEIVER_PORT: String(receiverPort),
+    AI_SPOOL_DIR: path.join(app.getPath('userData'), 'python-alerts'),
     EXAM_SESSION_ID: activeSessionInfo.sessionId,
     EXAM_TYPE: activeSessionInfo.examType || 'online',
     APP_MODE: mode,
@@ -235,6 +236,7 @@ if (!gotTheLock) {
       cleanUpPythonProcess();
       try {
         receiverPort = await startReceiver((violationPayload) => {
+          if (violationPayload?.sessionId !== activeSessionInfo.sessionId) return;
           if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
             const reason = violationPayload?.details?.reason || '';
             const fileName = violationPayload?.details?.fileName || '';
@@ -243,7 +245,9 @@ if (!gotTheLock) {
               mainWindow.webContents.send('pre-existing-file-blocked', {
                 fileName: fileName || (reason.includes(':') ? reason.split(':').pop().trim() : 'Document'),
                 reason: reason,
-                appName: violationPayload?.details?.object_class || 'winword.exe'
+                appName: violationPayload?.details?.object_class || 'winword.exe',
+                action: violationPayload?.details?.action,
+                alreadyReported: true
               });
             }
           }

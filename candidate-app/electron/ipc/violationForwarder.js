@@ -22,14 +22,16 @@ function startReceiver(onViolationCallback) {
 
     app.post('/violation', async (req, res) => {
       const violationPayload = req.body;
-      if (!getExamActive()) {
-        console.log(`[ViolationReceiver] Pre-exam violation dropped: ${violationPayload?.type} (Student in pre-check phase)`);
-        return res.status(200).json({ status: 'ignored_pre_exam' });
+      const examActive = getExamActive();
+      const persistedReplay = typeof violationPayload?.eventId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(violationPayload.eventId);
+      if (!examActive && !persistedReplay) {
+        console.log(`[ViolationReceiver] Pre-exam event rejected: ${violationPayload?.type}`);
+        return res.status(409).json({ status: 'exam_not_active_retry_later' });
       }
       console.log('[ViolationReceiver] Received violation from Python:', violationPayload);
       
       // Notify Electron main process listener if registered
-      if (typeof onLocalViolationCallback === 'function') {
+      if (examActive && typeof onLocalViolationCallback === 'function') {
         try {
           onLocalViolationCallback(violationPayload);
         } catch (cbErr) {
@@ -37,7 +39,7 @@ function startReceiver(onViolationCallback) {
         }
       }
 
-      const saved = await forwardViolationToServer(violationPayload);
+      const saved = await forwardViolationToServer(violationPayload, true);
       res.status(saved ? 202 : 503).json({ status: saved ? 'accepted' : 'failed' });
     });
 

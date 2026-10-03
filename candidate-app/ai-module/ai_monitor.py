@@ -10,6 +10,7 @@ import onnxruntime as ort
 import os
 from datetime import datetime, timezone
 from typing import Callable, Optional
+from types import SimpleNamespace
 from services.lighting_occlusion_detector import CameraOcclusionDetector
 
 # Standard 80-class COCO list
@@ -63,11 +64,20 @@ class AIMonitor:
         self.eye_offset_baseline_samples = []
         self.neutral_eye_offset = None
         self.neutral_eye_y = None
-        self.object_candidate = None
-        self.object_candidate_count = 0
-        self.last_object_check = 0
+        self.object_candidates = {}
+        self.last_object_alerts = {}
         self.detector_errors = {}
         self.mp_face_mesh = None
+        self.face_landmarker = None
+        self.face_backend = 'haar'
+        self.pose_baseline_samples = []
+        self.neutral_pose = None
+        self.smoothed_pose = None
+        self.pose_updated_at = None
+        self.head_direction = None
+        self.last_head_alert_at = -10.0
+        self.landmark_timestamp_ms = -1
+        self.face_failures = 0
         self.ort_session = None
         self.occlusion_detector = CameraOcclusionDetector(dark_threshold=22.0, min_variance_threshold=6.0, sustained_seconds=1.2)
         self.last_occlusion_violation_at = 0
@@ -89,17 +99,33 @@ class AIMonitor:
                     "object_detection_confidence": 0.5
                 }
                 
-            # Setup MediaPipe Face Mesh if available
+            # Prefer the current Tasks API; all model files are local for offline exams.
+            task_path = os.path.join(base_dir, 'models', 'face_landmarker.task')
+            if mp is not None and hasattr(mp, 'tasks') and os.path.exists(task_path):
+                try:
+                    options = mp.tasks.vision.FaceLandmarkerOptions(
+                        base_options=mp.tasks.BaseOptions(model_asset_path=task_path),
+                        running_mode=mp.tasks.vision.RunningMode.VIDEO,
+                        num_faces=3,
+                        min_face_detection_confidence=0.6,
+                        min_face_presence_confidence=0.6,
+                        min_tracking_confidence=0.6)
+                    self.face_landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
+                    self.face_backend = 'mediapipe_tasks'
+                except Exception as exc:
+                    print(f'[AIMonitor Warning] Face Landmarker unavailable; trying legacy/fallback: {exc}')
+
+            # Keep legacy installations working when Tasks/model loading is unavailable.
             try:
-                import mediapipe.python.solutions.face_mesh as mp_fm
-                self.mp_face_mesh = mp_fm.FaceMesh(
-                    max_num_faces=3,
-                    refine_landmarks=True,
-                    min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5
-                )
+                if self.face_landmarker is None:
+                    import mediapipe.python.solutions.face_mesh as mp_fm
+                    self.mp_face_mesh = mp_fm.FaceMesh(
+                        max_num_faces=3,
+                        refine_landmarks=True,
+                        min_detection_confidence=0.5,
+                        min_tracking_confidence=0.5)
             except Exception:
-                if mp is not None and hasattr(mp, 'solutions') and hasattr(mp.solutions, 'face_mesh'):
+                if self.face_landmarker is None and mp is not None and hasattr(mp, 'solutions') and hasattr(mp.solutions, 'face_mesh'):
                     self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
                         max_num_faces=3,
                         refine_landmarks=True,
@@ -156,9 +182,14 @@ class AIMonitor:
                     print(f"[AIMonitor Warning] Failed to load ONNX model: {e}")
 
             enable_camera = os.environ.get("ENABLE_CAMERA_MONITOR", "true").lower() == "true"
-            self.is_active = enable_camera and (self.mp_face_mesh is not None or self.face_cascade is not None or self.ort_session is not None)
+            if self.mp_face_mesh is not None:
+                self.face_backend = 'mediapipe_legacy'
+            print(f'[AIMonitor] Face backend: {self.face_backend}. Face tracking measures head direction, not eye gaze.')
+            self.is_active = enable_camera and (self.face_landmarker is not None or self.mp_face_mesh is not None or self.face_cascade is not None or self.ort_session is not None)
             if self.is_active:
                 print("[AIMonitor] AI camera monitoring initialized successfully.")
+                if self.face_landmarker is not None or self.mp_face_mesh is not None:
+                    print('[AIMonitor] At exam start, sit facing the screen for about two seconds to calibrate head direction.')
             else:
                 print("[AIMonitor] Camera monitor disabled.")
         except Exception as e:
@@ -260,12 +291,20 @@ class AIMonitor:
                 last_processed_at = loop_start
                 self.frame_count += 1
                 
-                if self.mp_face_mesh:
+                if self.face_landmarker or self.mp_face_mesh:
                     try:
                         self._check_head_pose(frame)
                         self.detector_errors.pop('face', None)
+                        self.face_failures = 0
                     except Exception as exc:
                         self._record_detector_error('face', exc)
+                        self._reset_temporal_state()
+                        self.face_failures += 1
+                        if self.face_failures >= 3 and self.face_landmarker is not None and self.face_cascade is not None:
+                            self.face_landmarker.close()
+                            self.face_landmarker = None
+                            self.face_backend = 'haar'
+                            print('[AIMonitor Warning] Repeated landmark failures; using OpenCV fallback.')
                 elif self.face_cascade:
                     try:
                         self._check_faces_opencv(frame)
@@ -273,8 +312,9 @@ class AIMonitor:
                     except Exception as exc:
                         self._record_detector_error('face', exc)
                     
-                # Run YOLO inference every 3rd frame (~3.8 inferences/sec)
-                if self.frame_count % 3 == 0 and self.ort_session:
+                # Sample every third frame; confirm a possible phone on the next frame.
+                if self.ort_session and (self.frame_count % 3 == 0 or
+                                         self.object_candidates.get(67, {}).get('count', 0) > 0):
                     try:
                         self._check_objects(frame)
                         self.detector_errors.pop('object', None)
@@ -292,11 +332,14 @@ class AIMonitor:
             self.running = False
             if 'cap' in locals() and cap and cap.isOpened():
                 cap.release()
+            if self.face_landmarker is not None:
+                self.face_landmarker.close()
+                self.face_landmarker = None
 
     def _check_faces_opencv(self, frame):
         """
         Robust multi-cascade face, eye, profile, and multi-directional head/gaze monitoring.
-        Uses downscaled grayscale processing (scale factor) for low CPU usage (<5%) while preserving accuracy.
+        Uses downscaled grayscale processing; this fallback estimates head direction, not eye gaze.
         """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         frame_h, frame_w = frame.shape[:2]
@@ -318,6 +361,8 @@ class AIMonitor:
                         frame=annotated
                     )
                 self.no_face_start = None
+                self._reset_head_tracking()
+                self.second_person_start = None
                 return
 
         # Downscale for ultra-fast Haar Cascade evaluation (4x-6x faster than full res)
@@ -376,6 +421,7 @@ class AIMonitor:
             elif now - self.no_face_start >= 3.0:
                 self._emit_violation("no_face_detected", severity=3, details={"reason": "Candidate not visible in camera view"}, frame=frame)
                 self.no_face_start = None
+            self._reset_head_tracking()
             self.lateral_turn_start = None
             self.downward_gaze_start = None
             self.upward_gaze_start = None
@@ -473,72 +519,14 @@ class AIMonitor:
                     lateral_offset = self.thresholds.get('lateral_eye_offset_threshold', 0.14)
                     if offset_ratio < -lateral_offset:
                         is_lateral_turn = True
-                        turn_reason = "Looking Left (Side Gaze)"
+                        turn_reason = "Head Turned Left"
                         turn_direction = "left"
                     elif offset_ratio > lateral_offset:
                         is_lateral_turn = True
-                        turn_reason = "Looking Right (Side Gaze)"
+                        turn_reason = "Head Turned Right"
                         turn_direction = "right"
-        # Check Lateral Head Turn (Threshold: sustained_lateral_seconds)
-        if is_lateral_turn:
-            if self.lateral_turn_start is None:
-                self.lateral_turn_start = time.monotonic()
-            else:
-                elapsed = time.monotonic() - self.lateral_turn_start
-                lateral_limit = self.thresholds.get("sustained_lateral_seconds", 1.2)
-                if elapsed >= lateral_limit:
-                    annotated = frame.copy()
-                    cv2.putText(annotated, f"SUSPICIOUS ACTIVITY: {turn_reason.upper()}", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    self._emit_violation(
-                        "head_turn_away", 
-                        severity=2, 
-                        details={"duration": round(elapsed, 1), "reason": turn_reason, "direction": turn_direction},
-                        frame=annotated
-                    )
-                    self.lateral_turn_start = None
-        else:
-            self.lateral_turn_start = None
-
-        # Check Downward Gaze / Desk Glance (Threshold: sustained_downward_seconds)
-        if is_downward_gaze:
-            if self.downward_gaze_start is None:
-                self.downward_gaze_start = time.monotonic()
-            else:
-                elapsed = time.monotonic() - self.downward_gaze_start
-                downward_limit = self.thresholds.get("sustained_downward_seconds", 2.2)
-                if elapsed >= downward_limit:
-                    annotated = frame.copy()
-                    cv2.putText(annotated, f"SUSPICIOUS ACTIVITY: {turn_reason.upper()}", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    self._emit_violation(
-                        "head_turn_away", 
-                        severity=2, 
-                        details={"duration": round(elapsed, 1), "reason": turn_reason, "direction": turn_direction},
-                        frame=annotated
-                    )
-                    self.downward_gaze_start = None
-        else:
-            self.downward_gaze_start = None
-
-        # Check Upward Gaze / Above Screen Glance (Threshold: sustained_upward_seconds)
-        if is_upward_gaze:
-            if self.upward_gaze_start is None:
-                self.upward_gaze_start = time.monotonic()
-            else:
-                elapsed = time.monotonic() - self.upward_gaze_start
-                upward_limit = self.thresholds.get("sustained_upward_seconds", 1.2)
-                if elapsed >= upward_limit:
-                    annotated = frame.copy()
-                    cv2.putText(annotated, f"SUSPICIOUS ACTIVITY: {turn_reason.upper()}", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    self._emit_violation(
-                        "head_turn_away", 
-                        severity=2, 
-                        details={"duration": round(elapsed, 1), "reason": turn_reason, "direction": turn_direction},
-                        frame=annotated
-                    )
-                    self.upward_gaze_start = None
-            self.no_face_start = None
-        else:
-            self.upward_gaze_start = None
+        direction = turn_direction if (is_lateral_turn or is_downward_gaze or is_upward_gaze) else None
+        self._track_head_direction(direction, frame, {'reason': turn_reason})
 
     def stop(self):
         """Stops the monitoring loop cleanly by breaking the while loop condition."""
@@ -548,8 +536,8 @@ class AIMonitor:
         """
         Estimates head yaw using MediaPipe Face Mesh and PnP solve.
         
-        Emits 'no_face_detected' if no face is seen for 10 seconds.
-        Emits 'camera_occluded_or_dark' immediately if lens is covered or dark.
+        Emits 'no_face_detected' after three seconds without a face.
+        Occlusion detection uses its own sustained timer.
         Emits 'head_turn_away' if absolute yaw exceeds the configured threshold
         for sustained seconds.
         """
@@ -571,14 +559,25 @@ class AIMonitor:
                         frame=annotated
                     )
                 self.no_face_start = None
+                self._reset_head_tracking()
+                self.second_person_start = None
                 return
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.mp_face_mesh.process(rgb_frame)
+        if self.face_landmarker is not None:
+            # VIDEO requires strictly increasing timestamps, including on fast test inputs.
+            stamp = max(int(time.monotonic() * 1000), self.landmark_timestamp_ms + 1)
+            self.landmark_timestamp_ms = stamp
+            result = self.face_landmarker.detect_for_video(
+                mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb_frame)), stamp)
+            results = SimpleNamespace(multi_face_landmarks=[
+                SimpleNamespace(landmark=landmarks) for landmarks in result.face_landmarks])
+        else:
+            results = self.mp_face_mesh.process(rgb_frame)
         
         self._record_face_count(len(results.multi_face_landmarks or []), frame)
         if not results.multi_face_landmarks:
-            self.head_turn_start = None
+            self._reset_head_tracking()
             if self.no_face_start is None:
                 self.no_face_start = time.monotonic()
             elif time.monotonic() - self.no_face_start >= 3.0:
@@ -590,6 +589,10 @@ class AIMonitor:
         # Face is detected, reset the no face timer
         self.no_face_start = None
         
+        # Detector ordering can change: don't estimate a bystander's head direction.
+        if len(results.multi_face_landmarks) != 1:
+            self._reset_head_tracking()
+            return  # Still count multiple faces, but do not calibrate/penalize a different person.
         face_landmarks = results.multi_face_landmarks[0]
         h, w, c = frame.shape
         
@@ -613,53 +616,102 @@ class AIMonitor:
         # Solve PnP to find rotation vector
         success, rot_vec, trans_vec = cv2.solvePnP(self.face_3d, face_2d, cam_matrix, dist_matrix)
         if not success:
+            self._reset_head_tracking()
             return
             
         rmat, jac = cv2.Rodrigues(rot_vec)
         angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
         
-        # angles[0] corresponds to pitch (up/down), angles[1] corresponds to yaw (left/right)
-        pitch = angles[0]
-        yaw = angles[1]
-        
-        is_turned = False
-        turn_reason = "Head Turned Away"
-        turn_direction = "side"
+        # Reject unusable geometry instead of interpreting it as suspicious movement.
+        projected, _ = cv2.projectPoints(self.face_3d, rot_vec, trans_vec, cam_matrix, dist_matrix)
+        face_width = (max(p.x for p in face_landmarks.landmark) - min(p.x for p in face_landmarks.landmark)) * w
+        error = float(np.sqrt(np.mean((projected.reshape(-1, 2) - face_2d) ** 2)))
+        if not np.all(np.isfinite(angles)) or face_width < 50 or error > face_width * 0.12:
+            self._reset_head_tracking()
+            return
+        self._observe_head_pose(float(angles[1]), float(angles[0]), frame)
 
-        yaw_thresh = self.thresholds.get("yaw_threshold_degrees", 13)
-        sustained_thresh = self.thresholds.get("sustained_lateral_seconds", 0.5)
+    def _reset_head_tracking(self):
+        self.head_turn_start = None
+        self.head_direction = None
+        self.smoothed_pose = None
+        self.pose_updated_at = None
+        if self.neutral_pose is None:
+            self.pose_baseline_samples.clear()
 
-        if abs(yaw) > yaw_thresh:
-            is_turned = True
-            turn_direction = "right" if yaw < 0 else "left"
-            turn_reason = f"Head Turned {turn_direction.capitalize()}"
-        elif pitch < -14:  # Head tilted upward (looking above screen / ceiling)
-            is_turned = True
-            turn_direction = "up"
-            turn_reason = "Looking Up (Above Screen View)"
-        elif pitch > 22:   # Head tilted downward (looking down at desk / lap)
-            is_turned = True
-            turn_direction = "down"
-            turn_reason = "Looking Down (Desk/Lap Gaze)"
-
-        if is_turned:
-            if self.head_turn_start is None:
-                self.head_turn_start = time.monotonic()
-            else:
-                elapsed = time.monotonic() - self.head_turn_start
-                if elapsed >= sustained_thresh:
-                    annotated = frame.copy()
-                    cv2.putText(annotated, f"SUSPICIOUS ACTIVITY: {turn_reason.upper()}", (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    self._emit_violation(
-                        "head_turn_away", 
-                        severity=2, 
-                        details={"duration": round(elapsed, 1), "reason": turn_reason, "direction": turn_direction, "pitch": round(pitch, 1), "yaw": round(yaw, 1)},
-                        frame=annotated
-                    )
-                    # Reset so it doesn't fire every frame while the head stays turned
-                    self.head_turn_start = None
-        else:
+    def _observe_head_pose(self, yaw, pitch, frame):
+        now = time.monotonic()
+        pose = np.array([yaw, pitch], dtype=float)
+        if not np.all(np.isfinite(pose)):
+            self._reset_head_tracking()
+            return
+        if self.neutral_pose is None:
+            if abs(yaw) > 20:
+                self.pose_baseline_samples.clear()
+                return  # Require a forward-facing baseline, not a sustained profile.
+            self.pose_baseline_samples.append(pose)
+            self.pose_baseline_samples = self.pose_baseline_samples[-20:]
+            if len(self.pose_baseline_samples) == 20:
+                # Work around Euler angles crossing -180/180 near a frontal pose.
+                samples = np.array(self.pose_baseline_samples)
+                offsets = (samples - samples[0] + 180) % 360 - 180
+                if np.max(np.ptp(offsets, axis=0)) <= 6:
+                    self.neutral_pose = samples[0] + np.median(offsets, axis=0)
+                    print('[AIMonitor] Neutral head position calibrated. Head-direction monitoring active.')
+            return
+        relative = (pose - self.neutral_pose + 180) % 360 - 180
+        if self.pose_updated_at is None or now - self.pose_updated_at > 0.5:
+            self.smoothed_pose = relative
             self.head_turn_start = None
+            self.head_direction = None
+        else:
+            dt = max(0, now - self.pose_updated_at)
+            alpha = dt / (0.12 + dt)
+            self.smoothed_pose += alpha * (relative - self.smoothed_pose)
+        self.pose_updated_at = now
+        yaw, pitch = self.smoothed_pose
+        # A small exit margin prevents threshold chatter; it never starts an alert earlier.
+        lateral = self.thresholds.get('yaw_threshold_degrees', 13)
+        margin = 3 if self.head_direction else 0
+        direction = None
+        absolute_yaw = (float(yaw) + float(self.neutral_pose[0]) + 180) % 360 - 180
+        # Calibration can start slightly off-centre. A frontal pose must not become
+        # a turn solely because it differs from that baseline (including on return).
+        lateral_supported = abs(absolute_yaw) > lateral and absolute_yaw * yaw > 0
+        if lateral_supported and abs(yaw) > lateral - (margin if self.head_direction in ('left', 'right') else 0):
+            direction = 'right' if yaw < 0 else 'left'
+        elif pitch < -14 + (margin if self.head_direction == 'up' else 0):
+            direction = 'up'
+        elif pitch > 22 - (margin if self.head_direction == 'down' else 0):
+            direction = 'down'
+        self._track_head_direction(direction, frame, {'yaw': round(float(yaw), 1),
+            'absolute_yaw': round(absolute_yaw, 1), 'neutral_yaw': round(float(self.neutral_pose[0]), 1),
+            'pitch': round(float(pitch), 1)})
+
+    def _track_head_direction(self, direction, frame, details):
+        now = time.monotonic()
+        if direction is None:
+            self.head_direction = None
+            self.head_turn_start = None
+            return
+        if direction != self.head_direction or self.head_turn_start is None:
+            self.head_direction = direction
+            self.head_turn_start = now
+            return
+        limit_key = {'down': 'sustained_downward_seconds', 'up': 'sustained_upward_seconds'}.get(
+            direction, 'sustained_lateral_seconds')
+        default = {'down': 2.0, 'up': 1.0}.get(direction, 0.5)
+        elapsed = now - self.head_turn_start
+        if elapsed < self.thresholds.get(limit_key, default) or now - self.last_head_alert_at < 3:
+            return
+        self.last_head_alert_at = now
+        self.head_turn_start = now
+        reason = f'Head Turned {direction.capitalize()}'
+        annotated = frame.copy()
+        cv2.putText(annotated, reason.upper(), (30, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        self._emit_violation('head_turn_away', severity=2,
+            details={**details, 'reason': reason, 'direction': direction, 'duration': round(elapsed, 1),
+                     'measurement': 'head_direction', 'backend': self.face_backend}, frame=annotated)
 
     def _record_detector_error(self, detector, error):
         message = f'{detector} detection failed: {error}'
@@ -671,8 +723,8 @@ class AIMonitor:
         for name in ('head_turn_start', 'lateral_turn_start', 'downward_gaze_start',
                      'upward_gaze_start', 'no_face_start', 'second_person_start'):
             setattr(self, name, None)
-        self.object_candidate = None
-        self.object_candidate_count = 0
+        self._reset_head_tracking()
+        self.object_candidates.clear()
         self.occlusion_detector.reset()
 
     def _record_face_count(self, count, frame):
@@ -690,9 +742,14 @@ class AIMonitor:
     def _check_objects(self, frame):
         """Require repeated target detections; handle both installed YOLO output formats."""
         now = time.monotonic()
-        if now - getattr(self, 'last_object_violation_at', -10) < 2.0:
-            return
-        batch_input = cv2.dnn.blobFromImage(frame, 1.0 / 255.0, (640, 640), swapRB=True, crop=False)
+        height, width = frame.shape[:2]
+        scale = min(640 / width, 640 / height)
+        resized_width, resized_height = round(width * scale), round(height * scale)
+        resized = cv2.resize(frame, (resized_width, resized_height))
+        left, top = (640 - resized_width) // 2, (640 - resized_height) // 2
+        padded = cv2.copyMakeBorder(resized, top, 640 - resized_height - top,
+                                   left, 640 - resized_width - left, cv2.BORDER_CONSTANT, value=(114, 114, 114))
+        batch_input = cv2.dnn.blobFromImage(padded, 1.0 / 255.0, (640, 640), swapRB=True, crop=False)
         tensor = self.ort_session.run(None, {self.ort_session.get_inputs()[0].name: batch_input})[0]
         if tensor.ndim == 3:
             tensor = tensor[0]
@@ -720,31 +777,49 @@ class AIMonitor:
                                        (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2)))
         else:
             raise ValueError(f'Unsupported object model output shape: {tensor.shape}')
-        if not detections:
-            self.object_candidate = None
-            self.object_candidate_count = 0
-            return
-        confidence, class_id, box = max(detections, key=lambda item: item[0])
-        if self.object_candidate == class_id and now - self.last_object_check <= 1.5:
-            self.object_candidate_count += 1
-        else:
-            self.object_candidate = class_id
-            self.object_candidate_count = 1
-        self.last_object_check = now
-        if self.object_candidate_count < self.thresholds.get('object_detection_consecutive_frames', 3):
-            return
-        self.object_candidate_count = 0
-        self.last_object_violation_at = now
-        h, w = frame.shape[:2]
-        x1, y1, x2, y2 = box
-        x1, x2 = int(x1 * w / 640), int(x2 * w / 640)
-        y1, y2 = int(y1 * h / 640), int(y2 * h / 640)
-        annotated = frame.copy()
-        cv2.rectangle(annotated, (max(0, x1), max(0, y1)), (min(w, x2), min(h, y2)), (0, 0, 255), 2)
-        cv2.putText(annotated, f'{targets[class_id].upper()}: {int(confidence * 100)}%',
-                    (max(0, x1), max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        self._emit_violation('cell_phone' if class_id == 67 else 'unauthorized_object', severity=3,
-                             details={'confidence': round(confidence, 2), 'object_class': targets[class_id]}, frame=annotated)
+        # Keep the strongest box per class. Phone and book observations never reset each other.
+        best = {}
+        for confidence, class_id, box in detections:
+            x1, y1, x2, y2 = box
+            box = np.array([max(0, (x1-left) / scale), max(0, (y1-top) / scale),
+                            min(width, (x2-left) / scale), min(height, (y2-top) / scale)])
+            if box[2] <= box[0] or box[3] <= box[1]:
+                continue
+            if class_id not in best or confidence > best[class_id][0]:
+                best[class_id] = (confidence, box)
+        for class_id in list(self.object_candidates):
+            if class_id not in best:
+                del self.object_candidates[class_id]
+        for class_id, (confidence, box) in best.items():
+            previous = self.object_candidates.get(class_id)
+            count = 1
+            if previous and now - previous['at'] <= 1.5:
+                old_box = previous['box']
+                intersect = max(0, min(box[2], old_box[2]) - max(box[0], old_box[0])) * max(
+                    0, min(box[3], old_box[3]) - max(box[1], old_box[1]))
+                union = (box[2]-box[0]) * (box[3]-box[1]) + (old_box[2]-old_box[0]) * (old_box[3]-old_box[1]) - intersect
+                if union > 0 and intersect / union >= 0.2:
+                    count = previous['count'] + 1
+            # Confirm a clear phone quickly, but never from a single prediction.
+            strong_count = 0
+            if class_id == 67 and confidence >= 0.6:
+                strong_count = (previous.get('strong_count', 0) if count > 1 else 0) + 1
+            self.object_candidates[class_id] = {'box': box, 'at': now, 'count': count,
+                                                'strong_count': strong_count}
+            if count < self.thresholds.get('object_detection_consecutive_frames', 3) and strong_count < 2:
+                continue
+            if now - self.last_object_alerts.get(class_id, -10) < 2:
+                continue
+            self.object_candidates[class_id]['count'] = 0
+            self.object_candidates[class_id]['strong_count'] = 0
+            self.last_object_alerts[class_id] = now
+            x1, y1, x2, y2 = map(int, box)
+            annotated = frame.copy()
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            cv2.putText(annotated, f'{targets[class_id].upper()}: {int(confidence * 100)}%',
+                        (x1, max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            self._emit_violation('cell_phone' if class_id == 67 else 'unauthorized_object', severity=3,
+                details={'confidence': round(confidence, 2), 'object_class': targets[class_id]}, frame=annotated)
 
     def _emit_violation(self, violation_type, severity, details, frame=None):
         rule_for_type = {

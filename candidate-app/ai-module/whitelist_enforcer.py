@@ -21,6 +21,9 @@ class WhitelistEnforcer:
         self.whitelist = set()
         self.unkillable_pids = set()
         self.allowed_apps = set()
+        rules = json.loads(os.environ.get('EXAM_RULES', '{}'))
+        self.permitted_files = {os.path.normcase(os.path.realpath(path))
+                                for path in rules.get('permittedFiles', []) if isinstance(path, str)}
         self.protected_pids = set()
         try:
             current_proc = psutil.Process()
@@ -642,7 +645,7 @@ class WhitelistEnforcer:
 
                         # Resolve real file directly from shortcut target
                         real_file = self._resolve_lnk_target(lnk_path)
-                        if real_file and os.path.isfile(real_file):
+                        if real_file and os.path.isfile(real_file) and not self._is_permitted_file(real_file):
                             _, ext = os.path.splitext(real_file.lower())
                             if ext in self.DOC_EXTENSIONS:
                                 file_mtime = os.path.getmtime(real_file)
@@ -671,6 +674,8 @@ class WhitelistEnforcer:
                 open_files = []
 
             for f in open_files:
+                if self._is_permitted_file(f.path):
+                    continue
                 fpath = f.path.lower()
                 if any(ign in fpath for ign in self.IGNORE_DIRS):
                     continue
@@ -690,7 +695,12 @@ class WhitelistEnforcer:
         except Exception as e:
             print(f"[WhitelistEnforcer] File inspection unavailable for {name_lower}: {e}")
 
+    def _is_permitted_file(self, path):
+        return os.path.normcase(os.path.realpath(path)) in getattr(self, 'permitted_files', set())
+
     def _handle_file_violation(self, proc, name_lower, reason, file_path=None):
+        if file_path and self._is_permitted_file(file_path):
+            return
         clean_file_name = os.path.basename(file_path) if file_path else (reason.split(":")[-1].strip() if ":" in reason else "")
         key = f"{name_lower}_{clean_file_name.lower()}_file_violation"
         now = time.time()
@@ -702,43 +712,26 @@ class WhitelistEnforcer:
         except Exception as e:
             print(f"[WhitelistEnforcer] Warning: Could not capture screenshot: {e}")
 
-        # ALWAYS turn off / terminate the application immediately if an unauthorized file is opened
+        # Only a current file handle proves which process owns this observation.
+        # Recent shortcuts remain reviewable evidence; never terminate every app by name.
         terminated = False
-        if proc:
+        verified = False
+        if proc and file_path and proc.pid not in getattr(self, 'protected_pids', set()) and name_lower not in self.SAFETY_LIST:
             try:
-                print(f"[WhitelistEnforcer] Terminating {name_lower} (PID: {proc.pid}) because a pre-existing file was opened.")
-                proc.terminate()
-                try:
-                    proc.wait(timeout=1.5)
+                expected = os.path.normcase(os.path.realpath(file_path))
+                verified = proc.name().lower() == name_lower and any(
+                    os.path.normcase(os.path.realpath(file.path)) == expected for file in proc.open_files())
+                if verified:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1.5)
+                    except psutil.TimeoutExpired:
+                        proc.kill()
                     terminated = True
-                except psutil.TimeoutExpired:
-                    proc.kill()
-                    terminated = True
-            except Exception as e:
-                print(f"[WhitelistEnforcer] Error terminating process {name_lower}: {e}")
-
-        # If proc was None (e.g. from Recent shortcuts scan) or still alive, terminate running instances of name_lower
-        if not terminated and name_lower and name_lower not in self.SAFETY_LIST:
-            for p in psutil.process_iter(['name', 'pid']):
-                try:
-                    if p.info['name'] and p.info['name'].lower() == name_lower:
-                        print(f"[WhitelistEnforcer] Terminating {name_lower} (PID: {p.pid}) due to pre-existing document access.")
-                        p.terminate()
-                        try:
-                            p.wait(timeout=1.5)
-                        except psutil.TimeoutExpired:
-                            p.kill()
-                        terminated = True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-
-        # Windows taskkill fallback to guarantee the unauthorized document window is turned off
-        if name_lower and name_lower in ("winword.exe", "word.exe", "code.exe"):
-            try:
-                import subprocess
-                subprocess.run(["taskkill", "/F", "/IM", name_lower], capture_output=True)
-            except Exception:
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+            except Exception as exc:
+                print(f'[WhitelistEnforcer] Targeted file enforcement unavailable: {exc}')
 
         # Debounce alert payload during immediate process teardown (10s window)
         # If the candidate reopens the file after 10s, a new violation alert will fire
@@ -756,7 +749,9 @@ class WhitelistEnforcer:
                 "reason": reason,
                 "fileName": clean_file_name,
                 "filePath": file_path or "",
-                "action": "file_closed_require_new"
+                "action": "file_closed_require_new" if terminated else "file_access_review_required",
+                "processId": proc.pid if proc and verified else None,
+                "processVerified": verified
             }
         }
         if screenshot_path:

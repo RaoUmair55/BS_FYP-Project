@@ -3,11 +3,9 @@ warnings.filterwarnings('ignore')
 import uvicorn
 import os
 import json
-import requests
 import threading
 import time
 import socket
-import queue
 import psutil
 from whitelist_enforcer import WhitelistEnforcer
 from usb_monitor import USBMonitor
@@ -15,31 +13,32 @@ import server
 
 ELECTRON_RECEIVER_URL = f"http://127.0.0.1:{int(os.getenv('ELECTRON_RECEIVER_PORT', '8766'))}/violation"
 
-# ponytail: one bounded transport worker; durable spool if Electron itself becomes unreliable.
-violation_queue = queue.Queue(maxsize=100)
+from services.violation_delivery import enqueue, deliver_one
+
+_delivery_ready = threading.Event()
 
 def _deliver_violations():
     while True:
-        payload = violation_queue.get()
         try:
-            started = time.monotonic()
-            requests.post(ELECTRON_RECEIVER_URL, json=payload, timeout=15.0).raise_for_status()
-            print(f"[Alert Delivery] {payload.get('type')} acknowledged in {time.monotonic() - started:.2f}s", flush=True)
-        except Exception as e:
-            print(f"[AI Module] Failed to send violation to Electron: {e}", flush=True)
-        finally:
-            violation_queue.task_done()
+            if deliver_one(ELECTRON_RECEIVER_URL):
+                server.alert_delivery_error = None
+                continue
+        except Exception as exc:
+            server.alert_delivery_error = 'Saved alerts are waiting for Electron handoff. Retry the system check if this persists.'
+            print(f'[AI Module] Alert retained for retry: {exc}', flush=True)
+        _delivery_ready.wait(2)
+        _delivery_ready.clear()
 
-threading.Thread(target=_deliver_violations, daemon=True).start()
 
 def send_violation_to_electron(payload):
     if os.environ.get("IS_SELF_CHECK", "false").lower() in ("true", "1"):
         return
     try:
-        violation_queue.put_nowait(payload)
-    except queue.Full:
-        server.startup_errors.append('Alert delivery queue full. Notify the examiner.')
-        print('[AI Module Error] Alert delivery queue full.', flush=True)
+        enqueue(payload)
+        _delivery_ready.set()
+    except Exception as exc:
+        server.startup_errors.append(f'Alert could not be saved locally: {exc}')
+        print(f'[AI Module Error] Alert persistence failed: {exc}', flush=True)
 
 
 def monitor_cpu_budget():
@@ -72,6 +71,9 @@ if __name__ == "__main__":
     listener.set_inheritable(True)
     print(f"INTEGRITYFLOW_PORT={listener.getsockname()[1]}", flush=True)
     server.startup_errors = []
+
+    # Drain previously captured alerts even during the next self-check; new self-check events remain disabled.
+    threading.Thread(target=_deliver_violations, daemon=True).start()
 
     # Start CPU budget monitor thread
     cpu_thread = threading.Thread(target=monitor_cpu_budget, daemon=True)

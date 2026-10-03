@@ -127,10 +127,24 @@ async function sendViolationDirect(violationPayload) {
  * @param {Object} violationPayload
  * @returns {Promise<boolean>}
  */
-async function forwardViolationToServer(violationPayload) {
-  if (!isExamActive) {
+async function forwardViolationToServer(violationPayload, durableFirst = false) {
+  if (!isExamActive && !durableFirst) {
     console.log(`[PythonBridge] Pre-exam violation ignored: ${violationPayload?.type} (Exam not started yet)`);
     return false;
+  }
+
+  if (durableFirst) {
+    try {
+      violationPayload.eventId ||= randomUUID();
+      violationPayload.timestamp ||= new Date().toISOString();
+      violationBuffer.enqueue(violationPayload, violationPayload.screenshotPath);
+      notifyStatusChange();
+      setImmediate(() => processOfflineBuffer());
+      return true;
+    } catch (error) {
+      console.error('[PythonBridge] Could not persist incoming alert:', error);
+      return false;
+    }
   }
 
   try {

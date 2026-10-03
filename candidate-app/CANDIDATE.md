@@ -195,3 +195,9 @@ To verify the complete security checks (`consent → identity → self-check (6 
 ## Known Limitations & Future Work
 
 - **Live vs. Recorded Audio Distinction**: The speaker verification system evaluates acoustic vocal tract characteristics against the reference embedding. It distinguishes *different speakers*, but cannot distinguish between a live second person in the room versus recorded third-party audio played aloud through a speaker (e.g., a phone call on speakerphone or a synthesized text-to-speech engine). Acoustic replay spoofing detection (e.g., high-frequency speaker artifact analysis) is identified as future work.
+
+## Durable monitoring and file-policy update
+
+Python now persists alerts before local handoff; Electron persists before acknowledging and sends evidence asynchronously. Failed handoffs survive Python restarts using the same capture timestamp and event ID. See `RELIABILITY.md` for spool location and recovery behavior.
+
+Old-file detection remains enabled. Teacher-approved exact candidate-PC paths arrive through exam `rules.permittedFiles`; other old documents are still detected. Enforcement closes only a verified owning process. Uncertain observations are reported for review, and notices preserve unrelated answer attachments. New answer-upload restrictions remain active. Voice quality/reconnection, object letterboxing/tracking, bright camera covers and UASP USB detection have dedicated regression coverage; real-device rehearsal is still required.

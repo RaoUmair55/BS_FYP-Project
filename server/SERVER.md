@@ -434,3 +434,7 @@ FAILURE BREAKDOWN: No request failures recorded (100% Success).
 1. **Tail Latency Reduction**: P99 write latency dropped from `771.01ms` down to `536.99ms` (**30.4% reduction**).
 2. **Elimination of Peak Spikes**: Max peak write latency was cut from `1394.91ms` to `640.80ms` (**54.1% reduction**), and max dashboard read latency plummeted from `1230.66ms` to `310.59ms` (**74.8% reduction**).
 3. **Database Efficiency**: Compound indexes ensure lookups by `sessionId` and `reviewed` execute via `IXSCAN`, preventing full collection scans under concurrent multi-student loads.
+
+## Permitted-file policy
+
+`POST /exams` optionally accepts `rules.permittedFiles`: an array of at most 50 exact absolute Windows paths, each at most 1024 characters, without null bytes or wildcards. Invalid input returns 400. The default is `[]`; paths are persisted and included in the candidate `/exams/code/:code` rules response. This configures candidate-PC reference-file exemptions without disabling old-file detection or application whitelisting. Server risk scoring and review semantics are unchanged.
