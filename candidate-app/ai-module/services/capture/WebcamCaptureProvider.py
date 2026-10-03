@@ -27,26 +27,13 @@ class WebcamCaptureProvider(CaptureProvider):
         if not os.path.exists(self.screenshot_dir):
             os.makedirs(self.screenshot_dir, exist_ok=True)
 
-    def _cleanup_old_screenshots(self):
-        self._ensure_directory()
-        try:
-            now = time.time()
-            for filename in os.listdir(self.screenshot_dir):
-                file_path = os.path.join(self.screenshot_dir, filename)
-                if os.path.isfile(file_path):
-                    # Delete files older than 24 hours
-                    if os.stat(file_path).st_mtime < now - 86400:
-                        os.remove(file_path)
-        except Exception as e:
-            print(f"[WebcamCaptureProvider] Failed to clean up old captures: {e}")
-
     def capture(self, session_id: str, violation_type: str, frame: Optional[Any] = None) -> Optional[str]:
         """
         Saves the provided webcam frame to the evidence folder.
         If frame is None, falls back to desktop screen capture.
         """
         try:
-            self._cleanup_old_screenshots()
+            self._ensure_directory()
 
             if frame is None:
                 # Fallback to desktop screen capture if no frame was passed

@@ -22,6 +22,10 @@ const violationSchema = new mongoose.Schema({
     },
     severity: { type: Number, required: true, min: 1, max: 5 },
     timestamp: { type: Date, required: true },
+    eventId: { type: String, maxlength: 128 },
+    deliveryFingerprint: { type: String },
+    receivedAt: { type: Date, default: Date.now },
+    receivedLate: { type: Boolean, default: false },
     details: {
         confidence: { type: Number },
         duration: { type: Number },
@@ -45,4 +49,3 @@ violationSchema.index({ reviewed: 1 });
 violationSchema.index({ sessionId: 1, reviewed: 1 });
 
 module.exports = mongoose.model('Violation', violationSchema);
-

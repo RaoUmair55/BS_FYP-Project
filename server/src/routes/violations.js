@@ -1,7 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const fs = require('fs');
 const path = require('path');
+const { createHash, randomUUID } = require('node:crypto');
 const Violation = require('../models/Violation');
 const Session = require('../models/Session');
 const Exam = require('../models/Exam');
@@ -26,16 +26,46 @@ const uploadFields = upload.fields([
 
 const router = express.Router();
 
+function eventWindowError(session, timestamp) {
+    const start = new Date(session.startTime).getTime();
+    const end = session.endTime ? new Date(session.endTime).getTime() : null;
+    if (!Number.isFinite(start) || (end !== null && !Number.isFinite(end)) || (session.status !== 'active' && end === null)) {
+        return { status: 503, error: 'Session evidence window unavailable; retry later' };
+    }
+    if (timestamp < start || (end !== null && timestamp > end)) {
+        return { status: 400, error: 'Event timestamp is outside the session exam window' };
+    }
+    return null;
+}
+
+function stableJson(value) {
+    if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
+    if (value && typeof value === 'object') {
+        return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stableJson(value[key])).join(',') + '}';
+    }
+    return JSON.stringify(value);
+}
+
 // POST /violation — Machine-to-machine (Candidate App -> Server, intentionally open)
 router.post('/violation', uploadFields, async (req, res) => {
+    const uploadedAssets = [];
+    let committed = false;
     try {
+        // A failed database write must stay in the candidate's durable retry queue.
+        if (mongoose.connection.readyState !== 1) return res.status(503).json({ error: 'Database unavailable; retry later' });
         if (!mongoose.Types.ObjectId.isValid(req.body.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
-        const session = await Session.findById(req.body.sessionId);
+        let session = await Session.findById(req.body.sessionId);
         if (!session) return res.status(404).json({ error: 'Exam session not found' });
-        
-        // If session was already terminated or completed, acknowledge gracefully so client buffer doesn't loop
-        if (session.status !== 'active') {
-            return res.status(200).json({ message: 'Session is no longer active', status: session.status, terminated: true });
+        const receivedAt = new Date();
+        const rawTimestamp = req.body.timestamp ?? (session.status === 'active' ? receivedAt.toISOString() : null);
+        if (typeof rawTimestamp !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.test(rawTimestamp)) {
+            return res.status(400).json({ error: 'A valid event timestamp with timezone is required' });
+        }
+        const timestamp = new Date(rawTimestamp);
+        const [year, month, day] = rawTimestamp.slice(0, 10).split('-').map(Number);
+        if (!Number.isFinite(timestamp.getTime()) || month < 1 || month > 12 || day < 1 ||
+            day > new Date(Date.UTC(year, month, 0)).getUTCDate() || timestamp.getTime() > receivedAt.getTime() + 5000) {
+            return res.status(400).json({ error: 'Invalid or future event timestamp' });
         }
         const numericSeverity = Number(req.body.severity);
         if (!Number.isInteger(numericSeverity) || numericSeverity < 1 || numericSeverity > 5) return res.status(400).json({ error: 'Invalid severity' });
@@ -44,77 +74,95 @@ router.post('/violation', uploadFields, async (req, res) => {
         if (typeof details === 'string') {
             try {
                 details = JSON.parse(details);
-            } catch (e) {}
+            } catch (e) { return res.status(400).json({ error: 'Invalid details JSON' }); }
         }
-        
-        let screenshotPath = null;
-        let audioPath = null;
+        if (details != null && (typeof details !== 'object' || Array.isArray(details))) return res.status(400).json({ error: 'Details must be an object' });
+        if (req.body.eventId !== undefined && (typeof req.body.eventId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(req.body.eventId))) {
+            return res.status(400).json({ error: 'Invalid eventId' });
+        }
+        const sessionId = String(session._id);
+        const deliveryFingerprint = createHash('sha256').update(stableJson({ sessionId, type: req.body.type,
+            severity: numericSeverity, timestamp: timestamp.toISOString(), details: details || {} })).digest('hex');
+        const eventId = req.body.eventId || deliveryFingerprint;
+        // Reuse MongoDB's existing unique _id index: no new index/migration is needed for retry safety.
+        const id = new mongoose.Types.ObjectId(createHash('sha256').update(sessionId + ':' + eventId).digest('hex').slice(0, 24));
+        const sameEvent = violation => violation.type === req.body.type && violation.severity === numericSeverity &&
+            new Date(violation.timestamp).getTime() === timestamp.getTime() &&
+            (!violation.deliveryFingerprint || violation.deliveryFingerprint === deliveryFingerprint);
+        const existing = await Violation.findById(id);
+        if (existing) {
+            if (!sameEvent(existing)) {
+                return res.status(400).json({ error: 'eventId was already used for a different event' });
+            }
+            return res.status(200).json({ ...existing.toObject(), duplicate: true });
+        }
+        let windowError = eventWindowError(session, timestamp.getTime());
+        if (windowError) return res.status(windowError.status).json({ error: windowError.error });
+        const newViolation = new Violation({
+            _id: id, eventId, deliveryFingerprint, sessionId, type: req.body.type, severity: numericSeverity, timestamp,
+            receivedAt, receivedLate: session.status !== 'active' || Boolean(session.endTime && receivedAt > session.endTime), details,
+            reviewed: false, decision: 'pending'
+        });
+        await newViolation.validate();
 
         // Process screenshot file if provided
         const screenshotFile = (req.files && req.files['screenshot'] && req.files['screenshot'][0]) || req.file;
         if (screenshotFile && screenshotFile.fieldname === 'screenshot') {
-            try {
-                const uniqueFilename = `screenshot-${Date.now()}-${screenshotFile.originalname || 'snapshot.jpg'}`;
-                const saved = await storageService.save(screenshotFile.buffer, uniqueFilename, 'screenshots');
-                screenshotPath = saved.url;
-            } catch (uploadErr) {
-                console.error('[Violations Route] Failed to upload screenshot to storage service:', uploadErr);
-            }
+            const uniqueFilename = `screenshot-${randomUUID()}-${path.basename(screenshotFile.originalname || 'snapshot.jpg')}`;
+            const saved = await storageService.save(screenshotFile.buffer, uniqueFilename, 'screenshots');
+            uploadedAssets.push(saved.path || saved.url);
+            newViolation.screenshotPath = saved.url;
         }
 
         // Process audio evidence file if provided
         const audioFile = req.files && req.files['audio'] && req.files['audio'][0];
         if (audioFile) {
-            try {
-                const uniqueAudioFilename = `voice-${Date.now()}-${audioFile.originalname || 'voice_clip.wav'}`;
-                const savedAudio = await storageService.save(audioFile.buffer, uniqueAudioFilename, 'audio_clips');
-                audioPath = savedAudio.url;
-            } catch (audioErr) {
-                console.error('[Violations Route] Failed to upload audio clip to storage service:', audioErr);
-            }
+            const uniqueAudioFilename = `voice-${randomUUID()}-${path.basename(audioFile.originalname || 'voice_clip.wav')}`;
+            const savedAudio = await storageService.save(audioFile.buffer, uniqueAudioFilename, 'audio_clips');
+            uploadedAssets.push(savedAudio.path || savedAudio.url);
+            newViolation.audioPath = savedAudio.url;
         }
-        
-        const severity = numericSeverity;
-        
-        const newViolation = new Violation({
-            sessionId: req.body.sessionId,
-            type: req.body.type,
-            severity: severity,
-            timestamp: req.body.timestamp || new Date(),
-            details: details,
-            screenshotPath: screenshotPath,
-            audioPath: audioPath,
-            reviewed: false,
-            decision: "pending"
-        });
-
-        if (mongoose.connection.readyState !== 1) {
-            console.warn('[WARNING] MongoDB unreachable. Writing violation to local fallback.');
-            const fallbackFilename = `violation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`;
-            await storageService.save(JSON.stringify(newViolation.toObject(), null, 2), fallbackFilename, 'failed-violations');
-            
-            const io = req.app.locals.io;
-            broadcastViolation(io, newViolation);
-            return res.status(200).json({ message: "Saved locally (MongoDB unreachable)", fallback: true });
+        // Uploads can take time; re-check completion/termination and the final cutoff before saving.
+        session = await Session.findById(sessionId);
+        if (!session) return res.status(404).json({ error: 'Exam session not found' });
+        windowError = eventWindowError(session, timestamp.getTime());
+        if (windowError) return res.status(windowError.status).json({ error: windowError.error });
+        newViolation.receivedLate = session.status !== 'active' || Boolean(session.endTime && receivedAt > session.endTime);
+        let savedViolation;
+        try {
+            savedViolation = await newViolation.save();
+        } catch (err) {
+            if (err.code !== 11000) throw err;
+            // Two retries may race; the unique _id lets only one commit.
+            const duplicate = await Violation.findById(id);
+            if (!duplicate) throw err;
+            if (!sameEvent(duplicate)) return res.status(400).json({ error: 'eventId was already used for a different event' });
+            return res.status(200).json({ ...duplicate.toObject(), duplicate: true });
         }
-
-        const savedViolation = await newViolation.save();
+        committed = true;
         const io = req.app.locals.io;
-        if (session.status === 'active') {
+        if (!savedViolation.receivedLate) {
             broadcastViolation(io, { ...savedViolation.toObject(), examId: session.examId });
         }
 
-        try {
-            const scoreData = await calculateRiskScore(savedViolation.sessionId);
-            broadcastRiskScoreUpdate(io, savedViolation.sessionId, scoreData.riskScore);
-        } catch (scoreErr) {
-            console.error('Failed to update and broadcast risk score:', scoreErr);
+        if (!savedViolation.receivedLate) {
+            try {
+                const scoreData = await calculateRiskScore(savedViolation.sessionId);
+                broadcastRiskScoreUpdate(io, savedViolation.sessionId, scoreData.riskScore);
+            } catch (scoreErr) {
+                console.error('Failed to update and broadcast risk score:', scoreErr);
+            }
         }
 
         res.status(201).json(savedViolation);
     } catch (err) {
         console.error('Error saving violation:', err);
-        res.status(400).json({ error: 'Invalid data', details: err.message });
+        if (err.name === 'ValidationError' || err.name === 'CastError') return res.status(400).json({ error: 'Invalid event data' });
+        res.status(503).json({ error: 'Evidence could not be saved; retry later' });
+    } finally {
+        if (!committed) {
+            await Promise.allSettled(uploadedAssets.map(asset => storageService.delete(asset)));
+        }
     }
 });
 
@@ -132,7 +180,8 @@ router.get('/violations', requireAuth, async (req, res) => {
 
         // Enforce teacher isolation: only return violations from exams owned by this teacher
         let myCodes = null;
-        if (!isAdmin && currentTeacherId) {
+        if (!isAdmin) {
+            if (!currentTeacherId) return res.json([]);
             const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
             myCodes = [];
             myExams.forEach(e => {
@@ -146,12 +195,10 @@ router.get('/violations', requireAuth, async (req, res) => {
             }
 
             if (!activeOnly) {
-                const mySessions = await Session.find({ examId: { $in: myCodes } }).select('_id sessionId studentId').lean();
+                const mySessions = await Session.find({ examId: { $in: myCodes } }).select('_id').lean();
                 const mySessionIds = [];
                 mySessions.forEach(s => {
                     mySessionIds.push(String(s._id));
-                    if (s.sessionId) mySessionIds.push(String(s.sessionId));
-                    if (s.studentId) mySessionIds.push(String(s.studentId));
                 });
 
                 if (mySessionIds.length === 0) {
@@ -165,11 +212,11 @@ router.get('/violations', requireAuth, async (req, res) => {
         if (activeOnly) {
             const sessionFilter = { status: 'active' };
             if (myCodes) sessionFilter.examId = { $in: myCodes };
-            const activeSessions = await Session.find(sessionFilter).select('_id sessionId studentId examId').lean();
+            const activeSessions = await Session.find(sessionFilter).select('_id examId').lean();
             const activeSessionIds = [];
             sessionById = new Map();
             activeSessions.forEach(session => {
-                [session._id, session.sessionId, session.studentId].filter(Boolean).forEach(id => {
+                [session._id].forEach(id => {
                     const key = String(id);
                     activeSessionIds.push(key);
                     sessionById.set(key, session);
@@ -202,11 +249,9 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
 
         // Find currently active exams (scoped by teacher RBAC)
         const activeExamFilter = { status: 'active' };
-        if (!isAdmin && currentTeacherId) {
-            activeExamFilter.$or = [
-                { createdBy: currentTeacherId },
-                { status: 'active' }
-            ];
+        if (!isAdmin) {
+            if (!currentTeacherId) return res.json([]);
+            activeExamFilter.createdBy = currentTeacherId;
         }
 
         const activeExams = await Exam.find(activeExamFilter).select('examCode examId _id').lean();
@@ -256,7 +301,6 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
         const activeSessionMap = new Map();
         activeSessions.forEach(s => {
             activeSessionMap.set(String(s._id), s);
-            if (s.studentId) activeSessionMap.set(String(s.studentId), s);
         });
 
         const activeSessionIds = Array.from(activeSessionMap.keys());
@@ -270,25 +314,6 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
         const rawViolations = await Violation.find(violationQuery)
             .sort({ severity: -1, timestamp: -1 })
             .lean();
-
-        // 3. Fallback lookup for any session IDs not cached
-        const missingSessionIds = rawViolations
-            .map(v => String(v.sessionId))
-            .filter(id => !activeSessionMap.has(id));
-
-        if (missingSessionIds.length > 0) {
-            const validObjectIds = missingSessionIds.filter(id => mongoose.Types.ObjectId.isValid(id));
-            const extraSessions = await Session.find({
-                $or: [
-                    { _id: { $in: validObjectIds } },
-                    { studentId: { $in: missingSessionIds } }
-                ]
-            }).lean();
-            extraSessions.forEach(s => {
-                activeSessionMap.set(String(s._id), s);
-                if (s.studentId) activeSessionMap.set(String(s.studentId), s);
-            });
-        }
 
         // 4. Enrich with student details for immediate display
         const enrichedViolations = rawViolations.map(v => {

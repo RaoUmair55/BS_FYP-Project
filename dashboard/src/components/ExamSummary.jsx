@@ -180,6 +180,9 @@ const ExamSummary = ({ examId, onBack }) => {
 
                     {/* Export Action Controls */}
                     <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button type="button" className="md-btn md-btn-outlined md-btn-sm" onClick={fetchSummary} title="Refresh summary to include newly delivered evidence">
+                            <RefreshCw size={14} /> Refresh
+                        </button>
                         <button 
                             className="md-btn md-btn-outlined md-btn-sm"
                             onClick={handleExportCSV}
@@ -199,6 +202,12 @@ const ExamSummary = ({ examId, onBack }) => {
                     </div>
                 </div>
             </div>
+
+            {summary.pendingLateEvidenceCount > 0 && (
+                <p role="status" style={{ color: 'var(--warning)', marginBottom: '20px' }}>
+                    {summary.pendingLateEvidenceCount} event(s) arrived after a candidate session ended and await review. Late evidence affects risk scores only after examiner confirmation.
+                </p>
+            )}
 
             {/* Aggregated Stat Cards Grid */}
             <div className="summary-stats-grid">
@@ -359,6 +368,11 @@ const ExamSummary = ({ examId, onBack }) => {
                                             <span className={`violation-count-badge ${s.violationCount > 0 ? 'has-violations' : ''}`}>
                                                 {s.violationCount} alerts
                                             </span>
+                                            {s.pendingLateEvidenceCount > 0 && (
+                                                <div style={{ color: 'var(--warning)', fontSize: '12px', marginTop: '4px' }}>
+                                                    {s.pendingLateEvidenceCount} late arrival(s) to review
+                                                </div>
+                                            )}
                                         </td>
                                         <td>
                                             <RiskScoreBadge score={s.finalRiskScore} />

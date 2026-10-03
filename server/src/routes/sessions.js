@@ -22,11 +22,9 @@ router.get('/active', requireAuth, async (req, res) => {
 
         // Find all currently active exams (scoped by teacher RBAC)
         const activeExamFilter = { status: 'active' };
-        if (!isAdmin && currentTeacherId) {
-            activeExamFilter.$or = [
-                { createdBy: currentTeacherId },
-                { status: 'active' }
-            ];
+        if (!isAdmin) {
+            if (!currentTeacherId) return res.json([]);
+            activeExamFilter.createdBy = currentTeacherId;
         }
 
         const activeExams = await Exam.find(activeExamFilter).select('examCode examId _id').lean();

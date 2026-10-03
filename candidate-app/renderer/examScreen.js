@@ -11,9 +11,87 @@ let autoSubmitting = false;
 let autoSubmitExam = null;
 let seenWarningCount = 0;
 let statusInterval = null;
+let monitoringHealthy = true;
+let statusPollInFlight = false;
+let submissionInFlight = false;
+let backendConnected = true;
 
 let isPaperLoaded = false;
 let isPaperReleased = false;
+
+function setWorkspaceLock(locked) {
+  const answerText = document.getElementById('answerText');
+  const fileInput = document.getElementById('fileInput');
+  const dropzone = document.getElementById('dropzone');
+  const submitExamBtn = document.getElementById('submitExamBtn');
+  let lockBanner = document.getElementById('workspaceLockedBanner');
+
+  if (locked) {
+    if (answerText) {
+      answerText.disabled = true;
+      answerText.placeholder = "🔒 Waiting for examiner to release question paper... Answer workspace will unlock automatically.";
+      answerText.style.background = "#f8fafc";
+      answerText.style.cursor = "not-allowed";
+    }
+    if (fileInput) fileInput.disabled = true;
+    if (dropzone) {
+      dropzone.style.pointerEvents = "none";
+      dropzone.style.opacity = "0.5";
+      dropzone.style.cursor = "not-allowed";
+    }
+    if (submitExamBtn) {
+      submitExamBtn.disabled = true;
+      submitExamBtn.style.opacity = "0.5";
+      submitExamBtn.style.cursor = "not-allowed";
+      submitExamBtn.title = "Answer submission is locked until the examiner releases the paper.";
+    }
+
+    if (!lockBanner) {
+      const workspace = document.getElementById('answerWorkspace');
+      if (workspace) {
+        lockBanner = document.createElement('div');
+        lockBanner.id = 'workspaceLockedBanner';
+        lockBanner.style.cssText = `
+          background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 8px;
+          padding: 12px 16px; margin: 12px 16px 0 16px; color: #0369a1;
+          font-size: 13.5px; display: flex; align-items: center; gap: 10px; font-weight: 500;
+        `;
+        lockBanner.innerHTML = `
+          <span style="font-size: 20px;">🔒</span>
+          <div>
+            <strong>Answer Workspace Locked:</strong> Please stand by in the waiting lobby. Typing answers and attaching files will unlock as soon as the examiner releases the question paper.
+          </div>
+        `;
+        workspace.prepend(lockBanner);
+      }
+    } else {
+      lockBanner.style.display = 'flex';
+    }
+  } else {
+    // UNLOCKED: Examiner released paper!
+    if (answerText) {
+      answerText.disabled = false;
+      answerText.placeholder = "Type your exam answers here... Auto-saves automatically as you type.";
+      answerText.style.background = "#ffffff";
+      answerText.style.cursor = "text";
+    }
+    if (fileInput) fileInput.disabled = false;
+    if (dropzone) {
+      dropzone.style.pointerEvents = "auto";
+      dropzone.style.opacity = "1";
+      dropzone.style.cursor = "pointer";
+    }
+    if (submitExamBtn) {
+      submitExamBtn.disabled = false;
+      submitExamBtn.style.opacity = "1";
+      submitExamBtn.style.cursor = "pointer";
+      submitExamBtn.title = "";
+    }
+    if (lockBanner) {
+      lockBanner.style.display = 'none';
+    }
+  }
+}
 
 function renderWatermark() {
   const overlay = document.getElementById('watermarkOverlay');
@@ -45,11 +123,12 @@ async function loadExamPaper() {
 
   try {
     const paperUrl = `${sessionInfo.serverUrl}/exam/${encodeURIComponent(sessionInfo.examId)}/paper?sessionId=${encodeURIComponent(sessionInfo.sessionId)}`;
-    const response = await fetch(paperUrl);
+    const response = await fetch(paperUrl, { signal: AbortSignal.timeout(15000) });
 
     // HTTP 423: Paper is locked in waiting lobby by examiner
     if (response.status === 423) {
       isPaperReleased = false;
+      setWorkspaceLock(true);
       if (waitingLobby) waitingLobby.style.display = 'flex';
       if (loadingEl) loadingEl.style.display = 'none';
       if (paperViewer) paperViewer.style.display = 'none';
@@ -69,6 +148,7 @@ async function loadExamPaper() {
     if (response.status === 404) {
       // No paper file attached to this exam — start exam workspace and countdown immediately
       isPaperReleased = true;
+      setWorkspaceLock(false);
       isPaperLoaded = true;
       if (waitingLobby) waitingLobby.style.display = 'none';
       if (paperViewer) {
@@ -114,6 +194,7 @@ async function loadExamPaper() {
     // Paper is unlocked & available!
     isPaperReleased = true;
     isPaperLoaded = true;
+    setWorkspaceLock(false);
     if (waitingLobby) waitingLobby.style.display = 'none';
     if (paperViewer) paperViewer.style.display = 'block';
     if (paperStatusPill) {
@@ -191,6 +272,7 @@ async function init() {
         }
         if (statusData.paperReleased !== undefined) {
           isPaperReleased = statusData.paperReleased;
+          setWorkspaceLock(!isPaperReleased);
         }
       }
     } catch (e) {
@@ -281,11 +363,16 @@ function updateBufferStatusUI(pendingCount) {
   const badge = document.getElementById('monitoringBadge');
   if (!badge) return;
 
-  if (pendingCount > 0) {
+  if (!monitoringHealthy) {
+    badge.className = 'monitoring-badge offline';
+    badge.textContent = 'Monitoring unavailable — notify your examiner';
+    return;
+  }
+  if (pendingCount > 0 || !backendConnected) {
     badge.className = 'monitoring-badge offline';
     badge.innerHTML = `
       <span class="pulse-dot offline"></span>
-      <span>Offline &mdash; ${pendingCount} event${pendingCount === 1 ? '' : 's'} queued</span>
+      <span>Offline &mdash; ${pendingCount ? `${pendingCount} event${pendingCount === 1 ? '' : 's'} queued` : 'monitoring locally'}</span>
     `;
     badge.title = 'Network disconnected. Violations are safely queued in local SQLite disk buffer and will auto-sync upon reconnection.';
   } else {
@@ -303,6 +390,11 @@ function startSessionStatusPolling() {
   if (statusInterval) clearInterval(statusInterval);
 
   statusInterval = setInterval(async () => {
+    if (statusPollInFlight || isSubmitted) return;
+    statusPollInFlight = true;
+    try {
+    const health = await window.api.getMonitoringHealth();
+    monitoringHealthy = health.status === 'ok';
     // 1. Poll offline violation buffer state from Electron IPC
     if (window.api && typeof window.api.getBufferStatus === 'function') {
       try {
@@ -312,7 +404,8 @@ function startSessionStatusPolling() {
     }
 
     try {
-      const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`);
+      const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`, { signal: AbortSignal.timeout(8000) });
+      backendConnected = res.ok;
       if (!res.ok) return;
       const data = await res.json();
 
@@ -367,8 +460,14 @@ function startSessionStatusPolling() {
       // Sync in-exam chat messages and announcements
       await fetchStudentMessages();
     } catch (e) {
+      backendConnected = false;
       console.warn('Error polling session status:', e);
     }
+    } catch (err) {
+      monitoringHealthy = false;
+      updateBufferStatusUI(0);
+      console.warn('Monitoring health check unavailable:', err);
+    } finally { statusPollInFlight = false; }
   }, 3000);
 }
 
@@ -506,7 +605,14 @@ function showExaminerWarningToast(msg) {
   toast.style.display = 'flex';
 }
 
+let lastPreExistingModalTime = 0;
+let lastBlockedFileName = '';
+
 function showPreExistingFileModal(data) {
+  const now = Date.now();
+  const fileName = data?.fileName || 'Existing Document';
+  const appName = data?.appName || 'File Upload';
+
   // 1. Immediately disarm and clear any attached file from the upload widget so it cannot be submitted
   selectedFile = null;
   const fileInput = document.getElementById('fileInput');
@@ -517,6 +623,33 @@ function showPreExistingFileModal(data) {
   if (fileCard) fileCard.style.display = 'none';
   if (dropzone) dropzone.style.display = 'block';
   if (summaryFile) summaryFile.textContent = 'None';
+
+  // Debounce duplicate modal triggers within 4 seconds for the same event
+  if (now - lastPreExistingModalTime < 4000 && lastBlockedFileName === fileName) {
+    return;
+  }
+  lastPreExistingModalTime = now;
+  lastBlockedFileName = fileName;
+
+  // Report violation to backend with screenshot so teacher dashboard immediately receives alert + screenshot evidence
+  if (window.api && typeof window.api.sendTestViolation === 'function' && sessionInfo && sessionInfo.sessionId) {
+    try {
+      window.api.sendTestViolation({
+        sessionId: sessionInfo.sessionId,
+        type: 'unauthorized_app',
+        severity: 4,
+        timestamp: new Date().toISOString(),
+        details: {
+          reason: data?.reason || `Pre-existing file upload attempt: "${fileName}" modified before exam start.`,
+          fileName: fileName,
+          object_class: appName,
+          action: 'file_closed_require_new'
+        }
+      });
+    } catch (e) {
+      console.warn('[ExamScreen] Error emitting pre-existing file violation to backend:', e);
+    }
+  }
 
   let modal = document.getElementById('preExistingFileBlockedModal');
   if (!modal) {
@@ -530,9 +663,6 @@ function showPreExistingFileModal(data) {
     `;
     document.body.appendChild(modal);
   }
-
-  const fileName = data?.fileName || 'Existing Document';
-  const appName = data?.appName || 'Microsoft Word';
 
   modal.innerHTML = `
     <div style="background: #ffffff; border-radius: 14px; width: 100%; max-width: 540px; padding: 28px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35); border: 2px solid #f59e0b; text-align: left; animation: fadeInScale 0.2s ease-out;">
@@ -587,6 +717,7 @@ function showPreExistingFileModal(data) {
 }
 
 function handleSessionTerminated(reason) {
+  window.api.finishExam().catch(console.error);
   if (statusInterval) clearInterval(statusInterval);
   if (timerInterval) clearInterval(timerInterval);
 
@@ -667,6 +798,11 @@ async function renderDocx(buffer, container) {
 
 // Setup Event Listeners
 window.addEventListener('DOMContentLoaded', () => {
+  window.api.onPythonCrash(() => {
+    monitoringHealthy = false;
+    updateBufferStatusUI(0);
+  });
+
   init();
 
   // Enforce clipboard & copy/cut/paste lockdown during exam
@@ -876,7 +1012,8 @@ window.addEventListener('DOMContentLoaded', () => {
   autoSubmitExam = handleAutoSubmit;
 
   async function performSubmission(isAutoSubmit = false) {
-    if (!sessionInfo || isSubmitted) return;
+    if (!sessionInfo || isSubmitted || submissionInFlight) return;
+    submissionInFlight = true;
 
     if (errorAlert) errorAlert.style.display = 'none';
     if (submitExamBtn) {
@@ -907,6 +1044,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       const submissionUrl = `${sessionInfo.serverUrl}/submissions`;
       const response = await fetch(submissionUrl, {
+        signal: AbortSignal.timeout(60000),
         method: 'POST',
         body: formData
       });
@@ -918,6 +1056,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
       // Success!
       isSubmitted = true;
+      await window.api.finishExam().catch(console.error);
       if (timerInterval) clearInterval(timerInterval);
       if (statusInterval) clearInterval(statusInterval);
       localStorage.removeItem(`integrityflow_draft_${sessionInfo.sessionId}`);
@@ -947,7 +1086,7 @@ window.addEventListener('DOMContentLoaded', () => {
         errorAlertMsg.textContent = `Submission failed: ${err.message}`;
         errorAlert.style.display = 'flex';
       }
-    }
+    } finally { submissionInFlight = false; }
   }
 
   // Test violation button handler
@@ -1050,7 +1189,7 @@ async function fetchStudentMessages() {
 
   try {
     const examQuery = sessionInfo.examId ? `?examId=${encodeURIComponent(sessionInfo.examId)}` : '';
-    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}${examQuery}`);
+    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}${examQuery}`, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return;
     const data = await res.json();
     const newMessages = Array.isArray(data) ? data : (data.messages || []);

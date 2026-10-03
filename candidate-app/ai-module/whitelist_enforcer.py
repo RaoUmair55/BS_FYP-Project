@@ -3,7 +3,6 @@ import threading
 import time
 import json
 import os
-import re
 from datetime import datetime, timezone
 from services.capture import capture_screenshot
 
@@ -56,10 +55,6 @@ class WhitelistEnforcer:
         self.DOC_EXTENSIONS = {
             ".docx", ".doc", ".pdf", ".txt", ".py", ".cpp", ".c", ".java", 
             ".cs", ".js", ".html", ".md", ".rtf", ".ppt", ".pptx", ".xls", ".xlsx"
-        }
-        self.SUSPICIOUS_TITLE_WORDS = {
-            "cheat", "notes", "solution", "answers", "summary", "slides", 
-            "ch1", "ch2", "ch3", "ch4", "chapter", "exam_cheat"
         }
         self.IGNORE_DIRS = (
             "system32", "program files", "node_modules", "site-packages", 
@@ -169,9 +164,12 @@ class WhitelistEnforcer:
             "defendersessionhelper.exe", "phoneexperiencehost.exe", "git-remote-https.exe",
             # Intel platform & graphics services
             "esif_uf.exe", "esif_assist.exe", "oneapp.igcc.winservice.exe", "jhi_service.exe",
-            "ipfsvc.exe", "dptf.exe",
-            # Audio drivers & services
-            "rtkaudioservice64.exe", "ravbg64.exe", "ravcpl64.exe",
+            "ipfsvc.exe", "dptf.exe", "igcc.exe", "igcctray.exe",
+            # Audio drivers & services (Realtek / Waves MaxxAudio)
+            "rtkaudioservice64.exe", "ravbg64.exe", "ravcpl64.exe", "rtkngui64.exe", "wavessvc64.exe",
+            # Windows system UI, touch keyboard & shell helpers
+            "tabtip.exe", "rundll32.exe", "systemsettingsbroker.exe", "appvshnotify.exe", "video.ui.exe",
+            "node_repl.exe", "codex.exe", "codex-code-mode-host.exe",
             # Hyper-V, virtualization & container services
             "vmcompute.exe", "vmms.exe", "vmmem", "vmmemx", "wslservice.exe", "wslhost.exe",
             "docker.exe", "dockerd.exe",
@@ -298,11 +296,12 @@ class WhitelistEnforcer:
             with open(config_path, 'r') as f:
                 data = json.load(f)
                 key = f"{self.mode}_whitelist"
-                entries = data.get(key, [])
+                entries = data[key]
+                if not isinstance(entries, list) or not entries or not all(isinstance(app, str) and app for app in entries):
+                    raise ValueError(f'Invalid {key}: expected a non-empty list of process names')
                 self.whitelist = {app.lower() for app in entries}
         except Exception as e:
-            print(f"[WhitelistEnforcer] Error loading whitelist: {e}")
-            self.whitelist = set()
+            raise RuntimeError(f'Cannot load process whitelist at {config_path}: {e}') from e
 
         # Merge dynamic teacher-allowed applications for this specific exam
         if self.allowed_apps:
@@ -596,69 +595,22 @@ class WhitelistEnforcer:
         return unauthorized_apps
                 
     def _resolve_lnk_target(self, lnk_path):
-        """Extracts absolute target file path from Windows Shell Link (.lnk) binary file."""
-        try:
-            with open(lnk_path, 'rb') as f:
-                content = f.read()
-            # Match drive letter paths like C:\... or D:\...
-            matches = re.findall(rb'[A-Za-z]:\\[a-zA-Z0-9_\-\.\ \(\)\\\/]+', content)
-            for m in matches:
-                try:
-                    decoded = m.decode('latin1', errors='ignore').strip()
-                    if os.path.isfile(decoded):
-                        return decoded
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return None
-
-    def _find_user_file_on_disk(self, filename):
-        """Locates document files in common user directories, trying possible extensions if missing."""
-        if not filename:
+        """Resolve the actual Windows shortcut target, including Unicode paths."""
+        if os.name != 'nt':
             return None
-        user_home = os.path.expanduser("~")
-        search_dirs = [
-            os.path.join(user_home, "Desktop"),
-            os.path.join(user_home, "Documents"),
-            os.path.join(user_home, "Downloads"),
-            os.path.join(user_home, "OneDrive", "Desktop"),
-            os.path.join(user_home, "OneDrive", "Documents"),
-            os.path.join(user_home, "OneDrive", "Downloads"),
-            r"C:\ExamWorkspace",
-            r"D:\BS_FYP Project",
-            r"C:\\",
-            r"D:\\"
-        ]
-        clean_name = os.path.basename(filename).strip()
-        # Clean common window title artifacts
-        clean_name = re.sub(r'\s*-\s*(Word|Visual Studio Code|Notepad).*$', '', clean_name, flags=re.IGNORECASE).strip()
-        
-        # Build candidate names
-        _, ext = os.path.splitext(clean_name.lower())
-        candidates_to_try = [clean_name]
-        if not ext:
-            for d_ext in self.DOC_EXTENSIONS:
-                candidates_to_try.append(f"{clean_name}{d_ext}")
-        
-        for sdir in search_dirs:
-            if not os.path.isdir(sdir):
-                continue
-            for cand_name in candidates_to_try:
-                cand_path = os.path.join(sdir, cand_name)
-                if os.path.isfile(cand_path):
-                    return cand_path
-            # Check 1 level of subdirectories
-            try:
-                for sub in os.listdir(sdir):
-                    subpath = os.path.join(sdir, sub)
-                    if os.path.isdir(subpath):
-                        for cand_name in candidates_to_try:
-                            c = os.path.join(subpath, cand_name)
-                            if os.path.isfile(c):
-                                return c
-            except Exception:
-                pass
+        import subprocess
+        escaped_path = lnk_path.replace("'", "''")
+        command = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+        command += f"(New-Object -ComObject WScript.Shell).CreateShortcut('{escaped_path}').TargetPath"
+        try:
+            result = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', command],
+                                    capture_output=True, encoding='utf-8', errors='replace', timeout=3,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            target = result.stdout.strip().lstrip('\ufeff')
+            if result.returncode == 0 and os.path.isfile(target):
+                return target
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         return None
 
     def _check_recent_opened_files(self):
@@ -690,11 +642,6 @@ class WhitelistEnforcer:
 
                         # Resolve real file directly from shortcut target
                         real_file = self._resolve_lnk_target(lnk_path)
-                        if not real_file:
-                            # Fallback: search disk by shortcut base name
-                            base_name = item[:-4]
-                            real_file = self._find_user_file_on_disk(base_name)
-                        
                         if real_file and os.path.isfile(real_file):
                             _, ext = os.path.splitext(real_file.lower())
                             if ext in self.DOC_EXTENSIONS:
@@ -740,63 +687,8 @@ class WhitelistEnforcer:
                     except (OSError, PermissionError):
                         pass
 
-            # 2. Check active window title for document name and suspicious keywords
-            try:
-                import ctypes
-                user32 = ctypes.windll.user32
-                hwnd = user32.GetForegroundWindow()
-                if hwnd:
-                    wpid = ctypes.c_ulong()
-                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
-                    if wpid.value == proc.pid:
-                        length = user32.GetWindowTextLengthW(hwnd)
-                        if length > 0:
-                            buff = ctypes.create_unicode_buffer(length + 1)
-                            user32.GetWindowTextW(hwnd, buff, length + 1)
-                            title = buff.value.strip()
-                            title_lower = title.lower()
-
-                            # For Microsoft Word: check if open document is not a blank new document
-                            if "winword" in name_lower or "word" in name_lower:
-                                blank_names = {"document1", "document 1", "document2", "document 2", "document3", "document 3", "word"}
-                                doc_title = title.split(" - Word")[0].split(" [")[0].strip()
-                                if doc_title.lower() not in blank_names and len(doc_title) > 0:
-                                    real_file = self._find_user_file_on_disk(doc_title)
-                                    if real_file:
-                                        if os.path.getmtime(real_file) < (self.exam_start_time - 15.0):
-                                            fname = os.path.basename(real_file)
-                                            print(f"[WhitelistEnforcer] Flagged pre-existing Word document: {fname}")
-                                            self._handle_file_violation(proc, name_lower, f"Pre-existing Word file opened: {fname}", file_path=real_file)
-                                            return
-                                    else:
-                                        if any(doc_title.lower().endswith(ext) for ext in [".docx", ".doc", ".rtf"]):
-                                            print(f"[WhitelistEnforcer] Flagged saved Word document by title: {doc_title}")
-                                            self._handle_file_violation(proc, name_lower, f"Pre-existing Word file opened: {doc_title}")
-                                            return
-
-                            # For Visual Studio Code
-                            if "code" in name_lower:
-                                if not any(blank in title_lower for blank in ["untitled-", "welcome", "get started"]):
-                                    # Try to extract filename
-                                    parts = title.split(" - ")
-                                    if len(parts) >= 2:
-                                        code_file = parts[0].strip()
-                                        real_file = self._find_user_file_on_disk(code_file)
-                                        if real_file and os.path.getmtime(real_file) < (self.exam_start_time - 15.0):
-                                            fname = os.path.basename(real_file)
-                                            print(f"[WhitelistEnforcer] Flagged pre-existing code file in VS Code: {fname}")
-                                            self._handle_file_violation(proc, name_lower, f"Pre-existing source file opened: {fname}", file_path=real_file)
-                                            return
-
-                            # Check blacklisted keywords in title
-                            if any(w in title_lower for w in self.SUSPICIOUS_TITLE_WORDS):
-                                print(f"[WhitelistEnforcer] Flagged suspicious window title in {name_lower}: {title}")
-                                self._handle_file_violation(proc, name_lower, f"Suspicious notes window title: {title}")
-                                return
-            except Exception:
-                pass
         except Exception as e:
-            pass
+            print(f"[WhitelistEnforcer] File inspection unavailable for {name_lower}: {e}")
 
     def _handle_file_violation(self, proc, name_lower, reason, file_path=None):
         clean_file_name = os.path.basename(file_path) if file_path else (reason.split(":")[-1].strip() if ":" in reason else "")

@@ -5,13 +5,15 @@ The Candidate App is the desktop application run by students during an exam. It 
 ## What This Does
 
 This module implements the full end-to-end exam experience, AI monitoring pipeline, **Module 1: Whitelist Enforcement**, **Module 2: AI Monitoring**, **Module 7: File & Typed Text Submissions**, and **Section 10.4 of the Scope Document (Data Ethics & Informed Consent)**:
-1. **Startup**: The Electron main process boots up and immediately starts a local Express receiver on `ELECTRON_RECEIVER_PORT` (e.g., 8766).
+1. **Startup**: Electron starts a loopback receiver on an available port and passes that port to Python. Python also binds an available loopback port and announces it to Electron; neither service requires port 8000 or 8766.
 2. **Dynamic Login & Session Initialization**: Candidate logs in with Student ID, Name, and Exam Code. Electron creates the session on the central server.
 3. **Informed Consent Screen (Section 10.4 Data Ethics)**:
    - Before any self-check or monitoring begins, the student is presented with `consent.html` ("Before You Begin").
-   - Explains in plain, student-friendly language what is monitored (camera orientation/multi-face, process whitelist, screenshots **only** on violations).
+   - Explains camera orientation/multi-face checks, process monitoring, identity photos, event screenshots, and online-mode voice monitoring. Physical lab mode skips camera and voice monitoring.
    - Prominently clarifies our privacy commitments: **continuous video is NEVER recorded or stored in files/databases** (in-memory frame analysis only), and **no biometric facial profiling databases are created**.
-   - Requires explicit checkbox agreement: *"I understand and consent to this monitoring for the duration of this exam."*
+   - Discloses session speaker-reference vectors saved locally and suspicious audio clips saved locally and uploaded to the configured evidence storage for examiner/admin review. Raw enrollment recordings are processed in memory rather than saved as enrollment audio files.
+   - Discloses that there is no automatic expiry: retained profiles and evidence remain after the exam until an authorized operator manually removes the local and uploaded copies. Candidates can contact their examiner/coordinator about retention and removal.
+   - Requires explicit checkbox agreement covering monitoring, voice-reference storage, evidence uploads, and retention. Electron and identity submission both reject missing or false consent. Run `npm run check:consent` from `electron/` to verify these gates.
    - "Continue to Identification" remains disabled until consent is checked.
    - Provides an explicit "Decline & Exit" option that gracefully exits the application.
 4. **Identity Capture & Session Creation (`identity.html`)**:
@@ -20,7 +22,7 @@ This module implements the full end-to-end exam experience, AI monitoring pipeli
    - **Consolidated Session Creation**: Submits `POST /sessions` to create the MongoDB session with `studentName`, `rollNumber`, `studentId`, `examId`, and verified consent flags.
 5. **AI Module Spawning & Dual-Mode Self-Check Flow (`selfCheck.html`)**:
    - Displays candidate identification badge.
-   - **🌐 Remote Online Mode**: Runs 6 checks (Camera, Microphone, Voice Reference 4s calibration, Background Process Whitelist, USB storage, and Multi-display).
+   - **🌐 Remote Online Mode**: Runs 6 checks (Camera, Microphone, Voice Reference 8s enrollment + 4s confirmation, Background Process Whitelist, USB storage, and Multi-display).
    - **🏫 Physical Lab Mode**: Automatically bypasses camera and microphone hardware checks (ideal for lab PCs without webcams), requiring only Process Whitelist, USB, and Display checks.
    - Captures and uploads initial reference selfie and voice embedding (online mode only).
    - "Begin Exam" switches Python daemon into strict `exam` mode, triggers `isExamActive = true`, and opens the exam workspace.
@@ -59,11 +61,15 @@ The Candidate App's AI monitoring engine applies the **Dependency Inversion Prin
    - Placing display monitoring in the Electron main process avoids external OS polling overhead and enables instant event-driven violation triggers with zero CPU penalty. When a secondary monitor is connected mid-exam, Electron immediately forwards a `multiple_displays_detected` (Severity 4) violation directly to the server.
 
 2. **USB Removable Storage Monitoring in Python (`ai-module/usb_monitor.py`)**:
-   - USB storage monitoring requires low-level OS volume inspection. We use Python with `psutil.disk_partitions()`, Windows kernel32 `GetDriveTypeW` (checking for `DRIVE_REMOVABLE == 2`), and WMI `Win32_LogicalDisk(DriveType=2)`.
+   - Windows USB storage monitoring uses PowerShell CIM `Win32_DiskDrive`, filtering USB disks with nonzero capacity. Each connected disk is reported once, with a new alert if it is disconnected and reconnected. Enumeration failures are surfaced as errors.
    
 3. **Deliberate Design: Structural Exclusion of HID Devices (Mice/Keyboards)**:
    - **Critical Requirement**: Wired USB mice, keyboards, webcams, headsets, and barcode scanners must NEVER be flagged as violations.
-   - **How this is solved**: Detection operates exclusively on **mounted logical disk drive letters** (`E:\`, `F:\`). USB Human Interface Devices (HID) and audio/video peripherals communicate through HID/UVC USB endpoints and never mount as file system volumes with drive letters. Therefore, wired mice and keyboards are structurally impossible to flag.
+   - **How this is solved**: Detection filters USB disk devices, excluding empty readers. Ordinary HID and audio/video peripherals are not disk devices.
+
+## Reliability and presentation rehearsal
+
+See [RELIABILITY.md](RELIABILITY.md) for startup safeguards, detector changes, limitations and the presentation checklist. Run `npm run check:reliability` from this directory before the demonstration. Online monitoring uses MediaPipe when available and OpenCV otherwise; fallback gaze uses a neutral-position baseline. Automated checks do not replace a real camera/microphone rehearsal.
 
 ---
 

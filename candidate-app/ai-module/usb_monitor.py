@@ -4,7 +4,6 @@ import os
 import ctypes
 from datetime import datetime, timezone
 import psutil
-from services.capture import capture_screenshot
 
 # Windows Drive Type Constants
 DRIVE_UNKNOWN = 0
@@ -31,132 +30,51 @@ class USBMonitor:
         self.is_self_check = is_self_check
         self.running = False
         self.monitor_thread = None
-        self.known_drives = set()
-        
-        # Initialize baseline of currently connected removable drives
-        try:
-            initial = self.get_removable_drives()
-            self.known_drives = {d.get("device", "").upper() for d in initial if d.get("device")}
-        except Exception:
-            self.known_drives = set()
-
-    def _get_volume_label(self, drive_path):
-        """Retrieves the volume name/label for a given drive letter (e.g. 'E:\\')."""
-        try:
-            kernel32 = ctypes.windll.kernel32
-            volume_name_buffer = ctypes.create_unicode_buffer(1024)
-            fs_name_buffer = ctypes.create_unicode_buffer(1024)
-            serial_number = ctypes.c_ulong()
-            max_component_length = ctypes.c_ulong()
-            file_system_flags = ctypes.c_ulong()
-
-            res = kernel32.GetVolumeInformationW(
-                ctypes.c_wchar_p(drive_path),
-                volume_name_buffer,
-                ctypes.sizeof(volume_name_buffer),
-                ctypes.byref(serial_number),
-                ctypes.byref(max_component_length),
-                ctypes.byref(file_system_flags),
-                fs_name_buffer,
-                ctypes.sizeof(fs_name_buffer)
-            )
-            if res:
-                return volume_name_buffer.value or "Removable Disk"
-        except Exception:
-            pass
-        return "Removable Disk"
+        self.reported_drives = set()
+        self.last_error = None
 
     def get_removable_drives(self):
         """
-        Returns a list of currently mounted removable mass storage devices.
-        Uses psutil, Windows Win32 API GetDriveTypeW (DriveType == 2), and WMI cross-check.
+        Returns a list of currently connected USB physical mass storage devices.
+        Uses Windows CIM Win32_DiskDrive where InterfaceType='USB'.
+        Runs cleanly without hangs on unmounted card reader slots or empty drive letters.
         """
-        removable_drives = []
-        seen_devices = set()
+        import subprocess
+        import json
 
-        # Method 1: Cross-check via WMI Win32_LogicalDisk if available
-        wmi_removable_letters = set()
+        ps_script = "$ErrorActionPreference = 'Stop'; $disks = Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -eq 'USB' -and $_.Size -gt 0 }; if ($disks) { $disks | Select-Object DeviceID, Model, Size, Caption | ConvertTo-Json -Compress } else { '[]' }"
         try:
-            import pythoncom
-            pythoncom.CoInitialize()
-            try:
-                import wmi
-                c = wmi.WMI()
-                for disk in c.Win32_LogicalDisk(DriveType=2): # 2 = Removable disk
-                    dev_id = disk.DeviceID
-                    if dev_id:
-                        wmi_removable_letters.add(dev_id.upper().rstrip('\\') + '\\')
-                c = None
-            except Exception:
-                pass
-            finally:
-                pythoncom.CoUninitialize()
-        except Exception:
-            # WMI optional / fallback
-            pass
-
-        # Method 2: Inspect psutil partitions and Windows kernel32 GetDriveTypeW
-        try:
-            partitions = psutil.disk_partitions(all=False)
-        except Exception:
-            partitions = []
-
-        for p in partitions:
-            mount = p.mountpoint
-            if not mount:
-                continue
-            mount_norm = mount.upper()
-            if not mount_norm.endswith('\\'):
-                mount_norm += '\\'
-
-            is_removable = False
-
-            # Check WMI list
-            if mount_norm in wmi_removable_letters:
-                is_removable = True
-
-            # Check psutil mount opts
-            if 'removable' in getattr(p, 'opts', '').lower():
-                is_removable = True
-
-            # Check Windows GetDriveTypeW
-            try:
-                drive_type = ctypes.windll.kernel32.GetDriveTypeW(mount_norm)
-                if drive_type == DRIVE_REMOVABLE:
-                    is_removable = True
-            except Exception:
-                pass
-
-            if is_removable and mount_norm not in seen_devices:
-                seen_devices.add(mount_norm)
-                label = self._get_volume_label(mount_norm)
-                removable_drives.append({
-                    "device": mount_norm,
-                    "mountpoint": mount_norm,
-                    "label": label,
-                    "fstype": p.fstype or "FAT32"
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            )
+            if res.returncode != 0:
+                raise RuntimeError('Windows USB enumeration failed. Retry the USB check.')
+            self.last_error = None
+            out = res.stdout.strip()
+            if not out or out == '[]':
+                return []
+            data = json.loads(out)
+            if isinstance(data, dict):
+                data = [data]
+            results = []
+            for d in data:
+                name = d.get("Model") or d.get("Caption") or "USB Flash Drive"
+                dev_id = d.get("DeviceID", "USB Disk")
+                results.append({
+                    "device": dev_id,
+                    "mountpoint": dev_id,
+                    "label": name,
+                    "fstype": "USB Mass Storage"
                 })
-
-        # Method 3: Direct drive letter scan (A-Z) fallback with GetDriveTypeW
-        for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
-            drive_path = f"{letter}:\\"
-            if drive_path in seen_devices:
-                continue
-            try:
-                dtype = ctypes.windll.kernel32.GetDriveTypeW(drive_path)
-                if dtype == DRIVE_REMOVABLE or drive_path in wmi_removable_letters:
-                    seen_devices.add(drive_path)
-                    label = self._get_volume_label(drive_path)
-                    removable_drives.append({
-                        "device": drive_path,
-                        "mountpoint": drive_path,
-                        "label": label,
-                        "fstype": "Removable"
-                    })
-            except Exception:
-                pass
-
-        return removable_drives
+            return results
+        except Exception as e:
+            self.last_error = f'USB scan unavailable: {e}'
+            print(f"[USBMonitor] Drive enumeration error: {e}")
+            return []
 
     def check_for_existing_removable_drives(self):
         """
@@ -167,12 +85,7 @@ class USBMonitor:
     def start(self):
         """Starts background continuous monitoring thread."""
         self.running = True
-        # Re-sync baseline on start
-        try:
-            initial = self.get_removable_drives()
-            self.known_drives = {d.get("device", "").upper() for d in initial if d.get("device")}
-        except Exception:
-            self.known_drives = set()
+        self.reported_drives.clear()
 
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
@@ -194,31 +107,21 @@ class USBMonitor:
 
             try:
                 current_drives = self.get_removable_drives()
-                current_drive_map = {d.get("device", "").upper(): d for d in current_drives if d.get("device")}
-                
-                # Check for any new removable drives that were connected
-                new_drive_keys = set(current_drive_map.keys()) - self.known_drives
-
-                # In exam mode, ANY connected removable drive is a violation
-                drives_to_report = []
-                if new_drive_keys:
-                    for key in new_drive_keys:
-                        drives_to_report.append(current_drive_map[key])
-                elif current_drive_map and not self.is_self_check:
-                    # If any removable drives remain plugged in during active exam
-                    for key, drive in current_drive_map.items():
-                        drives_to_report.append(drive)
-
-                if drives_to_report:
-                    for drive in drives_to_report:
-                        self._handle_violation(drive)
-
-                # Update baseline
-                self.known_drives = set(current_drive_map.keys())
+                if self.last_error:
+                    time.sleep(3.0)
+                    continue
+                self._report_connected_drives(current_drives)
             except Exception as e:
                 print(f"[USBMonitor] Error during monitor loop poll: {e}")
 
             time.sleep(3.0)
+
+    def _report_connected_drives(self, current_drives):
+        current = {d['device'].upper(): d for d in current_drives if d.get('device')}
+        self.reported_drives.intersection_update(current)
+        for key in current.keys() - self.reported_drives:
+            self._handle_violation(current[key])
+            self.reported_drives.add(key)
 
     def _handle_violation(self, drive_info):
         device = drive_info.get("device", "Unknown Drive")
@@ -228,6 +131,7 @@ class USBMonitor:
         # Capture evidence screenshot
         screenshot_path = None
         try:
+            from services.capture import capture_screenshot
             screenshot_path = capture_screenshot(self.session_id, "usb_device_detected")
         except Exception as e:
             print(f"[USBMonitor] Warning: Could not capture screenshot: {e}")

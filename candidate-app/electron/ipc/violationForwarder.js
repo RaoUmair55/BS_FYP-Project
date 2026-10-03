@@ -5,8 +5,6 @@ const { forwardViolationToServer, getExamActive } = require('./pythonBridge');
 
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
-const ELECTRON_RECEIVER_PORT = process.env.ELECTRON_RECEIVER_PORT || 8766;
-
 let server;
 let onLocalViolationCallback = null;
 
@@ -43,9 +41,10 @@ function startReceiver(onViolationCallback) {
       res.status(saved ? 202 : 503).json({ status: saved ? 'accepted' : 'failed' });
     });
 
-    server = app.listen(ELECTRON_RECEIVER_PORT, '127.0.0.1', () => {
-      console.log(`[ViolationReceiver] Listening for Python violations on port ${ELECTRON_RECEIVER_PORT}`);
-      resolve();
+    server = app.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      console.log(`[ViolationReceiver] Listening for Python violations on port ${port}`);
+      resolve(port);
     });
 
     server.on('error', (err) => {

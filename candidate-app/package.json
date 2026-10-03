@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "cd electron && npm start",
-    "install-all": "cd electron && npm install && cd ../ai-module && pip install -r requirements.txt"
+    "install-all": "cd electron && npm install && cd ../ai-module && pip install -r requirements.txt",
+    "check:reliability": "cd electron && npm run check:reliability"
   }
 }

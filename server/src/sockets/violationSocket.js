@@ -3,6 +3,7 @@ const { verifyAccessToken } = require('../utils/tokens');
 const Teacher = require('../models/Teacher');
 const Exam = require('../models/Exam');
 const Session = require('../models/Session');
+const mongoose = require('mongoose');
 
 function initSocket(server) {
     const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:5173';
@@ -40,18 +41,22 @@ function initSocket(server) {
 }
 
 async function broadcastToExam(io, examCode, event, data) {
-    if (!io || !examCode) return;
+    if (!io || typeof examCode !== 'string' || !examCode) return;
     try {
+        const literalCode = examCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const identifiers = [
+            { examCode: new RegExp('^' + literalCode + '$', 'i') },
+            { examId: new RegExp('^' + literalCode + '$', 'i') }
+        ];
+        if (mongoose.Types.ObjectId.isValid(examCode)) identifiers.push({ _id: examCode });
         const exam = await Exam.findOne({ 
-            $or: [
-                { examCode: new RegExp('^' + examCode + '$', 'i') }, 
-                { examId: new RegExp('^' + examCode + '$', 'i') }
-            ] 
-        }).select('createdBy status');
+            $or: identifiers
+        }).select('createdBy');
+        if (!exam) return;
         for (const socket of io.sockets.sockets.values()) {
             if (
                 socket.teacher?.role === 'admin' || 
-                (exam && (socket.teacher?.id === String(exam.createdBy) || exam.status === 'active'))
+                (exam.createdBy && socket.teacher?.id === String(exam.createdBy))
             ) {
                 socket.emit(event, data);
             }

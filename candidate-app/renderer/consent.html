@@ -342,7 +342,7 @@
           <span class="feature-icon">👤</span>
           <div class="feature-text">
             <h4>Camera & Visual Orientation</h4>
-            <p>Monitors head orientation (sustained looking away) and checks for multiple faces or unauthorized objects (such as mobile devices) in view.</p>
+            <p>In online exams, monitors head orientation (sustained looking away) and checks for multiple faces or unauthorized objects (such as mobile devices) in view. Camera and voice checks are skipped in physical-lab mode.</p>
           </div>
         </div>
         <div class="feature-item">
@@ -350,6 +350,14 @@
           <div class="feature-text">
             <h4>Screen & Application Environment</h4>
             <p>Enforces the exam process whitelist to ensure prohibited background applications and communication tools are closed.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🎙️</span>
+          <div class="feature-text">
+            <h4>Microphone &amp; Speaker Verification (Online Exams)</h4>
+            <p>During self-check, you record an eight-second voice sample and a separate four-second confirmation. The application stores a session-specific speaker reference vector on this computer. This is biometric voice data used to compare exam speech with your enrolled voice.</p>
+            <p>During the exam, microphone audio is processed locally in short segments. A possible unfamiliar-speaker alert can save a short WAV recording on this computer and upload it as evidence to the exam server or its configured storage service. Your examiner and authorized administrators can review it. A voice mismatch is a signal for human review, not proof of misconduct.</p>
           </div>
         </div>
       </div>
@@ -365,21 +373,29 @@
           <span class="feature-icon">🚫</span>
           <div class="feature-text">
             <h4>Continuous Video is NEVER Recorded or Stored</h4>
-            <p>Camera frames are processed in-memory in real time and instantly discarded. No raw continuous video stream is saved or uploaded.</p>
+            <p>No continuous video or full-exam audio recording is saved or uploaded. Camera frames and microphone segments are processed locally. Identity photos, violation stills and suspicious audio clips described in this notice may be retained.</p>
           </div>
         </div>
         <div class="feature-item highlight">
           <span class="feature-icon">📸</span>
           <div class="feature-text">
-            <h4>Evidence Screenshots ONLY on Violations</h4>
-            <p>A single still screenshot is captured strictly if a potential integrity violation is triggered for human examiner review.</p>
+            <h4>Identity Photo &amp; Event Evidence</h4>
+            <p>Online self-check may save an identity photo. Potential violations may save a screen screenshot or annotated camera still, and voice alerts may include a short audio clip, for examiner review.</p>
           </div>
         </div>
         <div class="feature-item highlight">
           <span class="feature-icon">🛡️</span>
           <div class="feature-text">
-            <h4>No Biometric Face Profiling</h4>
-            <p>No facial recognition databases or permanent biometric templates are stored or shared.</p>
+            <h4>No Facial Recognition Database</h4>
+            <p>The system does not identify you using a facial recognition database. The session-specific speaker reference vector described above is stored for voice comparison.</p>
+          </div>
+        </div>
+        <div class="feature-item highlight">
+          <span class="feature-icon">🗂️</span>
+          <div class="feature-text">
+            <h4>Retention &amp; Deletion</h4>
+            <p>This version has no automatic expiry for voice reference vectors or saved audio evidence. They remain on this computer and, for uploaded clips, in the server's configured storage until an authorized operator manually removes them. Closing the application or submitting the exam does not delete them.</p>
+            <p>Ask your examiner or exam coordinator about the institution's retention period and how to request removal of local and uploaded copies. Raw enrollment recordings are processed for calibration and are not saved as audio files by this application.</p>
           </div>
         </div>
       </div>
@@ -391,7 +407,7 @@
     <label class="consent-checkbox-container" for="consentCheckbox">
       <input type="checkbox" id="consentCheckbox" />
       <span class="consent-label">
-        I understand and consent to this automated monitoring for the duration of this exam.
+        I understand and consent to the monitoring, voice-reference storage in online exams, event-evidence uploads and retention described above. I understand that saved data may remain after the exam until manually removed.
       </span>
     </label>
 

@@ -33,7 +33,7 @@ async function handleLogin() {
     let rules = {};
     // Confirm the exam before starting local monitoring.
     {
-      const checkRes = await fetch(`${serverUrl}/exams/code/${encodeURIComponent(examId)}`);
+      const checkRes = await fetch(`${serverUrl}/exams/code/${encodeURIComponent(examId)}`, { signal: AbortSignal.timeout(15000) });
       if (checkRes.ok) {
         const examData = await checkRes.json();
         if (examData.status && examData.status.toLowerCase() !== 'active') {
@@ -71,7 +71,8 @@ async function handleLogin() {
     }
   } catch (error) {
     isSubmitting = false;
-    errorMsg.textContent = error.message;
+    errorMsg.textContent = error.name === 'TimeoutError' || error.name === 'AbortError'
+      ? 'The exam server did not respond. Check your network and SERVER_URL, then retry.' : error.message;
     btn.disabled = false;
     btn.textContent = 'Enter Exam ➔';
   }

@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 import webrtcvad
 import sounddevice as sd
-from resemblyzer import VoiceEncoder, preprocess_wav
 import io
 import wave
+import queue
 
 class VoiceMonitor:
     """
@@ -39,6 +39,11 @@ class VoiceMonitor:
         self.monitor_thread = None
         self.stream = None
         self.mismatch_count = 0
+        self.last_verified_at = 0
+        self.last_audio_at = 0
+        self.verification_error = None
+        self.last_alert_at = float("-inf")
+        self.verification_queue = queue.Queue(maxsize=2)
         self.reference_embedding = None
         
         # Audio configuration (WebRTC VAD standard requirements)
@@ -53,7 +58,10 @@ class VoiceMonitor:
         self.thresholds = {
             "vad_sustained_seconds": 2.0,
             "voice_similarity_threshold": 0.75,
-            "consecutive_mismatches_threshold": 2
+            "consecutive_mismatches_threshold": 2,
+            "voice_alert_cooldown_seconds": 60,
+            "voice_segment_seconds": 3.0,
+            "voice_min_rms": 0.003
         }
         if os.path.exists(config_path):
             try:
@@ -70,19 +78,30 @@ class VoiceMonitor:
             print(f"[VoiceMonitor Error] Could not initialize WebRTC VAD: {e}")
             self.vad = None
 
-        # Initialize Resemblyzer VoiceEncoder on CPU
-        try:
-            print("[VoiceMonitor] Initializing Resemblyzer VoiceEncoder model...")
-            self.encoder = VoiceEncoder(device="cpu")
-            print("[VoiceMonitor] Resemblyzer VoiceEncoder loaded successfully.")
-        except Exception as e:
-            print(f"[VoiceMonitor Error] Could not load VoiceEncoder: {e}")
-            self.encoder = None
+        # Resemblyzer VoiceEncoder initialized lazily / in background
+        self.encoder = None
+        self._encoder_lock = threading.Lock()
+        threading.Thread(target=self._get_encoder, daemon=True).start()
 
         # Persistence directory for reference embeddings
         self.storage_dir = os.path.join(base_dir, "config", "voice_profiles")
         os.makedirs(self.storage_dir, exist_ok=True)
         self._load_persisted_reference()
+
+    def _get_encoder(self):
+        """Thread-safe lazy initializer for VoiceEncoder."""
+        if self.encoder is None:
+            with self._encoder_lock:
+                if self.encoder is None:
+                    try:
+                        print("[VoiceMonitor] Initializing Resemblyzer VoiceEncoder model...")
+                        from resemblyzer import VoiceEncoder
+                        self.encoder = VoiceEncoder(device="cpu")
+                        print("[VoiceMonitor] Resemblyzer VoiceEncoder loaded successfully.")
+                    except Exception as e:
+                        print(f"[VoiceMonitor Error] Could not load VoiceEncoder: {e}")
+                        self.encoder = None
+        return self.encoder
 
     def _get_reference_path(self, session_id: Optional[str] = None) -> str:
         """Returns the file path for storing the session's reference embedding."""
@@ -103,14 +122,18 @@ class VoiceMonitor:
         for path in candidates:
             if os.path.exists(path):
                 try:
-                    self.reference_embedding = np.load(path)
+                    embedding = np.load(path, allow_pickle=False)
+                    norm = np.linalg.norm(embedding)
+                    if embedding.shape != (256,) or not np.all(np.isfinite(embedding)) or norm <= 0:
+                        raise ValueError('Invalid saved voice profile. Please re-record your voice.')
+                    self.reference_embedding = embedding / norm
                     print(f"[VoiceMonitor] Loaded reference voice embedding from: {path}")
                     return
                 except Exception as e:
                     print(f"[VoiceMonitor Warning] Could not load persisted reference voice from {path}: {e}")
 
 
-    def set_reference_voice(self, audio_data, session_id: Optional[str] = None) -> dict:
+    def set_reference_voice(self, audio_data, session_id: Optional[str] = None, confirmation_audio=None, microphone_label=None) -> dict:
         """
         Creates and stores the candidate's reference voice embedding from a 3-5 second sample.
         
@@ -122,35 +145,61 @@ class VoiceMonitor:
         Returns:
             dict with success status and embedding information.
         """
-        if self.encoder is None:
+        encoder = self._get_encoder()
+        if encoder is None:
             return {"success": False, "error": "VoiceEncoder not initialized"}
 
         if session_id and str(session_id).lower() not in ("null", "undefined", "none"):
             self.session_id = session_id
 
         try:
+            from resemblyzer import preprocess_wav
             wav_float = self._convert_to_float_wav(audio_data)
-            if wav_float is None or len(wav_float) < self.sample_rate * 1.2:
+            if wav_float is None or wav_float.ndim != 1 or not np.all(np.isfinite(wav_float)) or len(wav_float) < self.sample_rate * 1.2:
                 return {
                     "success": False,
                     "error": "Audio sample too short. Please speak clearly for at least 2-3 seconds."
                 }
 
+            if np.mean(np.abs(wav_float) >= 0.99) > 0.01:
+                return {"success": False, "error": "Microphone is clipping. Reduce input volume and retry."}
+            if microphone_label:
+                device_name = sd.query_devices(kind="input")["name"].casefold()
+                browser_name = microphone_label.casefold().removeprefix("default - ").removeprefix("communications - ")
+                if device_name not in browser_name and browser_name not in device_name:
+                    return {"success": False, "error": "Calibration and monitoring microphones differ. Set the same default input in Windows and retry."}
             processed = preprocess_wav(wav_float, source_sr=self.sample_rate)
-            embedding = self.encoder.embed_utterance(processed)
+            if len(processed) < self.sample_rate * 3 or not np.all(np.isfinite(processed)):
+                return {'success': False, 'error': 'Not enough clear speech. Re-record in a quiet room.'}
+            embedding = encoder.embed_utterance(processed)
             # Normalize embedding for fast cosine similarity via dot product
             norm = np.linalg.norm(embedding)
-            if norm > 0:
-                embedding = embedding / norm
+            if not np.isfinite(norm) or norm <= 0 or not np.all(np.isfinite(embedding)):
+                return {'success': False, 'error': 'Invalid voice sample. Please re-record.'}
+            embedding = embedding / norm
 
-            self.reference_embedding = embedding
-            
-            # Persist to disk (both session-specific and latest fallback)
+            if confirmation_audio is None:
+                return {"success": False, "error": "A separate confirmation recording is required."}
+            confirm = self._convert_to_float_wav(confirmation_audio)
+            if confirm is None or not np.all(np.isfinite(confirm)) or np.mean(np.abs(confirm) >= 0.99) > 0.01:
+                return {"success": False, "error": "Invalid confirmation audio. Please retry."}
+            confirm = preprocess_wav(confirm, source_sr=self.sample_rate)
+            if len(confirm) < self.sample_rate * 2:
+                return {"success": False, "error": "Please speak clearly throughout the confirmation recording."}
+            check = encoder.embed_utterance(confirm)
+            check_norm = np.linalg.norm(check)
+            if not np.isfinite(check_norm) or check_norm <= 0 or not np.all(np.isfinite(check)):
+                return {"success": False, "error": "Invalid confirmation voice. Please retry."}
+            if float(np.dot(embedding, check / check_norm)) < self.thresholds["voice_similarity_threshold"]:
+                return {"success": False, "error": "The two recordings do not match reliably. Use the same microphone and speak naturally in a quiet room."}
             ref_path = self._get_reference_path(self.session_id)
-            latest_path = os.path.join(self.storage_dir, "voice_reference_latest.npy")
-            np.save(ref_path, embedding)
-            np.save(latest_path, embedding)
-            print(f"[VoiceMonitor] Reference voice calibrated & saved to {ref_path} and {latest_path}")
+            temp_path = ref_path + '.tmp'
+            with open(temp_path, 'wb') as handle:
+                np.save(handle, embedding, allow_pickle=False)
+            os.replace(temp_path, ref_path)
+            self.reference_embedding = embedding
+            self.mismatch_count = 0
+            print(f"[VoiceMonitor] Reference voice calibrated & saved to {ref_path}")
 
             return {
                 "success": True,
@@ -183,7 +232,7 @@ class VoiceMonitor:
                         elif sampwidth == 1:  # 8-bit
                             audio_np = (np.frombuffer(frames, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
                         else:
-                            audio_np = np.frombuffer(frames, dtype=np.float32)
+                            raise ValueError('Unsupported WAV bit depth. Use 16-bit PCM.')
 
                         if channels > 1:
                             audio_np = audio_np[::channels]  # Use first channel
@@ -198,7 +247,8 @@ class VoiceMonitor:
                             ).astype(np.float32)
                         return audio_np
                 except Exception as e:
-                    print(f"[VoiceMonitor] WAV parse fallback: {e}")
+                    print(f"[VoiceMonitor] Invalid WAV: {e}")
+                    return None
 
             # Treat as raw 16-bit 16kHz PCM
             return np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
@@ -211,6 +261,7 @@ class VoiceMonitor:
             return
         
         self.running = True
+        threading.Thread(target=self._verification_loop, daemon=True).start()
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
         print("[VoiceMonitor] Two-Stage Voice Monitor started.")
@@ -233,6 +284,7 @@ class VoiceMonitor:
         Processes 30ms frames from microphone stream via sounddevice.
         """
         sustained_speech_frames = []
+        voiced_frame_count = 0
         consecutive_silent_frames = 0
         min_speech_frames = int(self.thresholds.get("vad_sustained_seconds", 2.0) / (self.frame_duration_ms / 1000.0))
         max_silent_gap_frames = int(0.4 / (self.frame_duration_ms / 1000.0))  # Allow 400ms pause between words
@@ -243,6 +295,7 @@ class VoiceMonitor:
             print(f"[VoiceMonitor] Opening audio input stream (Device ID: {default_input})...")
         except Exception as e:
             print(f"[VoiceMonitor Warning] No audio input device detected: {e}. Voice monitoring paused.")
+            self.running = False
             return
 
         try:
@@ -256,9 +309,15 @@ class VoiceMonitor:
                 while self.running:
                     try:
                         raw_frame, overflowed = stream.read(self.frame_size)
+                        if overflowed:
+                            sustained_speech_frames = []
+                            voiced_frame_count = 0
+                            consecutive_silent_frames = 0
+                            self.mismatch_count = 0
                         if not raw_frame or len(raw_frame) != self.frame_bytes:
                             time.sleep(0.01)
                             continue
+                        self.last_audio_at = time.monotonic()
 
                         # -------------------------------------------------------------
                         # STAGE 1: Lightweight VAD Gate (<1% CPU)
@@ -267,10 +326,12 @@ class VoiceMonitor:
                         if self.vad is not None:
                             try:
                                 is_speech = self.vad.is_speech(bytes(raw_frame), self.sample_rate)
-                            except Exception:
+                            except Exception as vad_error:
+                                self.verification_error = f"Speech detection failed: {vad_error}"
                                 is_speech = False
 
                         if is_speech:
+                            voiced_frame_count += 1
                             sustained_speech_frames.append(bytes(raw_frame))
                             consecutive_silent_frames = 0
                         else:
@@ -281,23 +342,52 @@ class VoiceMonitor:
                                     sustained_speech_frames.append(bytes(raw_frame))
                                 else:
                                     # Phrase ended. Check if speech sustained past threshold (> 2.0s)
-                                    speech_count = len(sustained_speech_frames) - consecutive_silent_frames
+                                    speech_count = voiced_frame_count
                                     if speech_count >= min_speech_frames:
                                         # Stage 1 Gated In -> Trigger Stage 2
                                         audio_segment_bytes = b"".join(sustained_speech_frames)
                                         duration = len(audio_segment_bytes) / (self.sample_rate * 2)
-                                        self._verify_speaker_segment(audio_segment_bytes, duration)
+                                        self._queue_voice_segment(audio_segment_bytes, duration)
                                     else:
                                         # Brief sound (cough, click, single word) -> Discarded
                                         pass
                                     
                                     sustained_speech_frames = []
+                                    voiced_frame_count = 0
                                     consecutive_silent_frames = 0
+                        # Bound continuous speech as well as phrases that end in silence.
+                        if len(sustained_speech_frames) >= int(self.thresholds.get("voice_segment_seconds", 3.0) * self.sample_rate / self.frame_size):
+                            if voiced_frame_count >= min_speech_frames:
+                                segment = b''.join(sustained_speech_frames)
+                                self._queue_voice_segment(segment, len(segment) / (self.sample_rate * 2))
+                            sustained_speech_frames = []
+                            voiced_frame_count = 0
+                            consecutive_silent_frames = 0
                     except Exception as loop_err:
                         time.sleep(0.05)
 
         except Exception as stream_err:
             print(f"[VoiceMonitor Error] Microphone stream failed: {stream_err}")
+        finally:
+            self.running = False
+            self.stream = None
+
+    def _queue_voice_segment(self, audio, duration):
+        try:
+            self.verification_queue.put_nowait((audio, duration))
+        except queue.Full:
+            self.verification_error = 'Voice analysis cannot keep up. Notify the examiner.'
+
+    def _verification_loop(self):
+        while self.running:
+            try:
+                audio, duration = self.verification_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self._verify_speaker_segment(audio, duration)
+            finally:
+                self.verification_queue.task_done()
 
     def _save_audio_clip(self, audio_bytes: bytes) -> Optional[str]:
         """Saves suspicious audio speech segment as a WAV file for evidence review."""
@@ -306,6 +396,8 @@ class VoiceMonitor:
             clips_dir = os.path.join(base_dir, "audio_evidence")
             os.makedirs(clips_dir, exist_ok=True)
             
+            if not audio_bytes or len(audio_bytes) < self.sample_rate * 2 or len(audio_bytes) % 2:
+                raise ValueError("Audio evidence is empty or too short")
             sid = self.session_id or "default"
             safe_sid = "".join(c for c in str(sid) if c.isalnum() or c in ("-", "_"))
             timestamp = int(time.time() * 1000)
@@ -329,27 +421,42 @@ class VoiceMonitor:
         STAGE 2: Speaker Verification (Runs ONLY when gated in by Stage 1).
         Extracts Resemblyzer embedding and tests similarity against student's reference.
         """
+        if self.is_self_check:
+            return
         if self.reference_embedding is None:
             print("[VoiceMonitor] Sustained speech detected, but no reference voice calibrated. Skipping comparison.")
             return
 
-        if self.encoder is None:
+        encoder = self._get_encoder()
+        if encoder is None:
             return
 
         try:
+            from resemblyzer import preprocess_wav
             # Convert raw 16-bit PCM bytes to float32 wav
             audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+            if len(audio_np) < self.sample_rate or not np.all(np.isfinite(audio_np)) or float(np.sqrt(np.mean(audio_np ** 2))) < self.thresholds.get('voice_min_rms', 0.003):
+                self.mismatch_count = 0
+                return
             wav = preprocess_wav(audio_np, source_sr=self.sample_rate)
             
             if len(wav) < self.sample_rate * 1.0:
                 return
 
-            embedding = self.encoder.embed_utterance(wav)
+            embedding = encoder.embed_utterance(wav)
             norm = np.linalg.norm(embedding)
             if norm > 0:
                 embedding = embedding / norm
 
+            if not np.all(np.isfinite(embedding)) or norm <= 0:
+                self.mismatch_count = 0
+                return
+            now = time.monotonic()
+            if now - self.last_verified_at > 60.0:
+                self.mismatch_count = 0
+            self.last_verified_at = now
             # Cosine similarity
+            self.verification_error = None
             similarity = float(np.dot(self.reference_embedding, embedding))
             similarity_thresh = float(self.thresholds.get("voice_similarity_threshold", 0.75))
             mismatch_thresh = int(self.thresholds.get("consecutive_mismatches_threshold", 2))
@@ -361,8 +468,16 @@ class VoiceMonitor:
                 print(f"[VoiceMonitor Warning] Voice mismatch detected! Consecutive mismatch count: {self.mismatch_count}/{mismatch_thresh}")
                 
                 if self.mismatch_count >= mismatch_thresh:
+                    if now - getattr(self, "last_alert_at", float("-inf")) < self.thresholds.get("voice_alert_cooldown_seconds", 60):
+                        self.mismatch_count = 0
+                        return
                     # Save suspicious audio clip for evidence playback
                     audio_clip_path = self._save_audio_clip(audio_bytes)
+                    if not audio_clip_path:
+                        self.verification_error = "Voice evidence could not be saved. Notify the examiner."
+                        self.mismatch_count = 0
+                        return
+                    self.last_alert_at = now
                     
                     # Fire second_voice_detected violation
                     self._emit_violation(
@@ -371,7 +486,7 @@ class VoiceMonitor:
                         details={
                             "similarity_score": round(similarity, 2),
                             "duration_seconds": round(duration, 1),
-                            "reason": "Unrecognized voice detected speaking for a sustained duration",
+                            "reason": "Possible unfamiliar speaker; examiner review required",
                             "consecutive_segments": self.mismatch_count,
                             "audioPath": audio_clip_path
                         },
@@ -387,6 +502,8 @@ class VoiceMonitor:
                 self.mismatch_count = 0
 
         except Exception as e:
+            self.verification_error = "Speaker verification failed. Notify the examiner and retry the microphone check."
+            self.mismatch_count = 0
             print(f"[VoiceMonitor Error] Speaker verification failed: {e}")
 
     def _emit_violation(self, violation_type: str, severity: int, details: dict, audio_path: Optional[str] = None):

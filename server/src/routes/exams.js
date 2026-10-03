@@ -332,10 +332,16 @@ router.get('/:examId/summary', requireAuth, requireOwnedExam, async (req, res) =
         const violations = await Violation.find({ sessionId: { $in: sessionIds } });
 
         const violationBreakdown = {};
+        const pendingLateBySession = new Map();
         violations.forEach(v => {
             const key = v.type || 'other';
             violationBreakdown[key] = (violationBreakdown[key] || 0) + 1;
+            if (v.receivedLate && v.decision !== 'confirmed' && v.decision !== 'dismissed') {
+                const id = String(v.sessionId);
+                pendingLateBySession.set(id, (pendingLateBySession.get(id) || 0) + 1);
+            }
         });
+        sessionSummaries.forEach(s => { s.pendingLateEvidenceCount = pendingLateBySession.get(String(s.sessionId)) || 0; });
 
         res.json({
             exam,
@@ -344,6 +350,7 @@ router.get('/:examId/summary', requireAuth, requireOwnedExam, async (req, res) =
             avgRiskScore,
             riskDistribution,
             violationBreakdown,
+            pendingLateEvidenceCount: [...pendingLateBySession.values()].reduce((sum, count) => sum + count, 0),
             sessions: sessionSummaries
         });
     } catch (err) {

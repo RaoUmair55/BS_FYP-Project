@@ -1,3 +1,4 @@
+import AudioEvidence from './AudioEvidence';
 import React, { useEffect, useState, useMemo } from 'react';
 import { getViolations } from '../services/api';
 import { assetUrl } from '../services/api';
@@ -5,7 +6,7 @@ import {
     Check, X, Clock, CheckCircle, XCircle, Eye, Camera, AlertTriangle, 
     ShieldCheck, FileText, Download, Paperclip, AlertOctagon, MessageSquare, 
     Send, UserX, AlertCircle, Image, Maximize2, ChevronDown, ChevronUp,
-    Layers, Filter, Sparkles, Smartphone, Users, Copy, CheckCheck, ExternalLink, FileCode, Volume2
+    Layers, Filter, Sparkles, Smartphone, Users, Copy, CheckCheck, ExternalLink, FileCode, Volume2, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
@@ -32,7 +33,7 @@ function formatType(typeStr, details = {}) {
     }
     if (typeStr === 'second_voice_detected') {
         const sim = details?.similarity_score !== undefined ? ` (${Math.round(details.similarity_score * 100)}% match)` : '';
-        return `🎙️ Second Voice Detected${sim}`;
+        return `🎙️ Possible Unfamiliar Speaker${sim}`;
     }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
@@ -892,6 +893,9 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <button type="button" className="md-btn md-btn-sm md-btn-outlined" onClick={fetchHistory} disabled={loading} title="Refresh evidence, including late arrivals">
+                            <RefreshCw size={13} /> Refresh
+                        </button>
                         {/* Group By Category Toggle */}
                         <button
                             type="button"
@@ -1076,6 +1080,13 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                             </div>
                                                         </div>
 
+                                                        {v.receivedLate && (
+                                                            <p style={{ color: 'var(--warning)', fontSize: '12px', margin: '6px 0' }}>
+                                                                Received after session ended{v.receivedAt ? ` · Received ${new Date(v.receivedAt).toLocaleString()}` : ''}. Captured {new Date(v.timestamp).toLocaleString()}.
+                                                                {decision === 'pending' && ' Excluded from risk score until confirmed.'}
+                                                            </p>
+                                                        )}
+
                                                         {v.details?.reason && (
                                                             <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '6px' }}>
                                                                 Detail: {v.details.reason}
@@ -1108,7 +1119,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <audio 
+                                                                <AudioEvidence
                                                                     controls 
                                                                     src={assetUrl(v.audioPath || v.details.audioPath)} 
                                                                     style={{ width: '100%', height: '36px', outline: 'none' }}
@@ -1243,7 +1254,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                     </span>
                                                 )}
                                             </div>
-                                            <audio 
+                                            <AudioEvidence
                                                 controls 
                                                 src={assetUrl(v.audioPath || v.details.audioPath)} 
                                                 style={{ width: '100%', height: '36px', outline: 'none' }}

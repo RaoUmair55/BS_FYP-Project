@@ -60,6 +60,7 @@ export default function useSocket() {
         });
 
         socket.on('violation', (newViolation) => {
+            console.debug('[Alert Delivery] Dashboard received', newViolation.type, 'event age ms:', Date.now() - Date.parse(newViolation.timestamp));
             setViolations((prev) => {
                 const updated = [newViolation, ...prev];
                 return updated.slice(0, 50);

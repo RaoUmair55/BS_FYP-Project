@@ -1,3 +1,4 @@
+import AudioEvidence from './AudioEvidence';
 import React, { useState, useMemo } from 'react';
 import { 
     AlertCircle, AlertTriangle, Info, CheckCircle, XCircle, Clock, 
@@ -31,7 +32,7 @@ function formatType(typeStr, details = {}) {
     }
     if (typeStr === 'second_voice_detected') {
         const sim = details?.similarity_score !== undefined ? ` (${Math.round(details.similarity_score * 100)}% match)` : '';
-        return `🎙️ Second Voice Detected${sim}`;
+        return `🎙️ Possible Unfamiliar Speaker${sim}`;
     }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
@@ -304,7 +305,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                                 </span>
                                             )}
                                         </div>
-                                        <audio 
+                                        <AudioEvidence
                                             controls 
                                             src={assetUrl(group.audioPath || group.details.audioPath)} 
                                             style={{ width: '100%', height: '32px', outline: 'none' }}

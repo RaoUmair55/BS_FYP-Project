@@ -30,19 +30,6 @@ class MssCaptureProvider(CaptureProvider):
         if not os.path.exists(self.screenshot_dir):
             os.makedirs(self.screenshot_dir, exist_ok=True)
 
-    def _cleanup_old_screenshots(self):
-        self._ensure_directory()
-        try:
-            now = time.time()
-            for filename in os.listdir(self.screenshot_dir):
-                file_path = os.path.join(self.screenshot_dir, filename)
-                if os.path.isfile(file_path):
-                    # Delete files older than 24 hours
-                    if os.stat(file_path).st_mtime < now - 86400:
-                        os.remove(file_path)
-        except Exception as e:
-            print(f"[MssCaptureProvider] Failed to clean up old screenshots: {e}")
-
     def capture(self, session_id: str, violation_type: str) -> Optional[str]:
         """
         Captures the full screen, compresses it to JPEG (targeting <200KB),
@@ -50,7 +37,7 @@ class MssCaptureProvider(CaptureProvider):
         Returns the absolute path to the saved image, or None if failed.
         """
         try:
-            self._cleanup_old_screenshots()
+            self._ensure_directory()
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
             filename = f"{session_id}_{violation_type}_{timestamp}.jpg"

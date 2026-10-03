@@ -3,17 +3,28 @@ const dotenv = require('dotenv');
 const path = require('path');
 const FormData = require('form-data');
 const fs = require('fs');
+const { randomUUID, createHash } = require('node:crypto');
 const violationBuffer = require('./violationBuffer');
 
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
-const PYTHON_IPC_PORT = process.env.PYTHON_IPC_PORT || 8000;
+let pythonPort = null;
+let lastHealthError = '';
+function setPythonPort(port) {
+  pythonPort = port;
+  lastHealthError = '';
+}
+function getPythonUrl() {
+  if (!Number.isInteger(pythonPort) || pythonPort < 1 || pythonPort > 65535) throw new Error('AI module is not ready. Retry the system check.');
+  return `http://127.0.0.1:${pythonPort}`;
+}
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:5000';
 
 let retryIntervalTimer = null;
 let wasOffline = false;
 let statusChangeCallback = null;
 let isExamActive = false;
+let bufferDrainRunning = false;
 
 function setExamActive(active) {
   isExamActive = Boolean(active);
@@ -24,13 +35,14 @@ function getExamActive() {
   return isExamActive;
 }
 
-async function checkPythonHealth() {
+async function checkPythonHealth(instanceId) {
   try {
-    const response = await axios.get(`http://127.0.0.1:${PYTHON_IPC_PORT}/health`, { 
+    const response = await axios.get(`${getPythonUrl()}/health`, {
       timeout: 2000,
       proxy: false
     });
-    return response.status === 200;
+    lastHealthError = (response.data.errors || []).join('; ');
+    return response.status === 200 && response.data.status === 'ok' && response.data.instanceId === instanceId;
   } catch (error) {
     console.log(`[Electron] Python health check waiting (${error.code || error.message})...`);
     return false;
@@ -41,10 +53,13 @@ async function checkPythonHealth() {
  * Direct single-shot HTTP transport to POST /violation.
  * Preserves the exact original timestamp in the payload.
  *
- * @param {Object} violationPayload 
+ * @param {Object} violationPayload
  * @returns {Promise<boolean>}
  */
 async function sendViolationDirect(violationPayload) {
+  // Assign once before delivery so buffering preserves the same event on a lost acknowledgement.
+  violationPayload.eventId ||= randomUUID();
+  violationPayload.timestamp ||= new Date().toISOString();
   let requestData = violationPayload;
   let requestHeaders = {};
 
@@ -63,6 +78,7 @@ async function sendViolationDirect(violationPayload) {
   if (hasValidScreenshot || hasValidAudio) {
     const form = new FormData();
     form.append('sessionId', violationPayload.sessionId);
+    form.append('eventId', violationPayload.eventId);
     form.append('type', violationPayload.type);
     form.append('severity', String(violationPayload.severity));
     form.append('timestamp', violationPayload.timestamp || new Date().toISOString());
@@ -86,16 +102,18 @@ async function sendViolationDirect(violationPayload) {
     requestHeaders = form.getHeaders();
   }
 
+  const deliveryStarted = Date.now();
   try {
     const response = await axios.post(`${SERVER_URL}/violation`, requestData, {
       timeout: 8000,
       headers: requestHeaders
     });
+    console.log(`[Alert Delivery] ${violationPayload.type}: server accepted after ${Date.now() - deliveryStarted}ms; event age ${Date.now() - Date.parse(violationPayload.timestamp)}ms`);
     return response.status >= 200 && response.status < 300;
   } catch (err) {
     if (err.response && (err.response.status === 404 || err.response.status === 400)) {
       // Invalid/stale session on backend - treat as consumed so it doesn't poison the retry loop
-      console.warn(`[PythonBridge] Server rejected invalid/stale session violation (${err.response.status}): discarding from queue.`);
+      console.warn(`[PythonBridge] Server rejected invalid event/session (${err.response.status}): ${err.response.data?.error || 'Invalid data'}. Discarding from queue.`);
       return true;
     }
     throw err;
@@ -106,7 +124,7 @@ async function sendViolationDirect(violationPayload) {
  * Forwards a violation event to the backend. If network transport fails,
  * the event is automatically enqueued into the SQLite disk-backed offline buffer.
  *
- * @param {Object} violationPayload 
+ * @param {Object} violationPayload
  * @returns {Promise<boolean>}
  */
 async function forwardViolationToServer(violationPayload) {
@@ -143,9 +161,8 @@ async function forwardViolationToServer(violationPayload) {
  * Executes a single drainage pass over the offline buffer, oldest first.
  */
 async function processOfflineBuffer() {
-  if (!isExamActive) {
-    return;
-  }
+  if (bufferDrainRunning) return;
+  bufferDrainRunning = true;
   try {
     const pending = violationBuffer.getPending();
     const currentCount = pending.length;
@@ -185,6 +202,8 @@ async function processOfflineBuffer() {
 
       // Strictly preserve the violation's ORIGINAL timestamp
       payload.timestamp = item.original_timestamp;
+      // Older queue records have no ID; derive one from their unchanged persisted contents.
+      payload.eventId ||= createHash('sha256').update(item.payload_json + '\n' + item.original_timestamp).digest('hex');
       if (item.screenshot_path) {
         payload.screenshotPath = item.screenshot_path;
       }
@@ -207,7 +226,7 @@ async function processOfflineBuffer() {
     }
   } catch (err) {
     console.error(`[ViolationBuffer] Error processing buffer retry pass:`, err);
-  }
+  } finally { bufferDrainRunning = false; }
 }
 
 function notifyStatusChange() {
@@ -253,7 +272,7 @@ function stopBufferRetryLoop() {
 
 async function killApp(name) {
   try {
-    const response = await axios.post(`http://127.0.0.1:${PYTHON_IPC_PORT}/kill-app`, { name }, { timeout: 3000 });
+    const response = await axios.post(`${getPythonUrl()}/kill-app`, { name }, { timeout: 3000, proxy: false });
     return response.data;
   } catch (error) {
     console.error(`[PythonBridge] Error killing app ${name}:`, error.message);
@@ -262,6 +281,9 @@ async function killApp(name) {
 }
 
 module.exports = {
+  setPythonPort,
+  getPythonUrl,
+  getLastPythonHealthError: () => lastHealthError,
   checkPythonHealth,
   forwardViolationToServer,
   sendViolationDirect,

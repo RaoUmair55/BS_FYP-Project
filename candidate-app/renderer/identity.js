@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sessionInfo.studentName) nameInput.value = sessionInfo.studentName;
       if (sessionInfo.rollNumber) rollInput.value = sessionInfo.rollNumber;
       consentData = {
-        consentGiven: sessionInfo.consentGiven !== undefined ? sessionInfo.consentGiven : true,
+        consentGiven: sessionInfo.consentGiven === true,
         consentTimestamp: sessionInfo.consentTimestamp || new Date().toISOString()
       };
     }
@@ -47,6 +47,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function handleSubmit() {
     clearError();
+    if (consentData?.consentGiven !== true) {
+      showError('Monitoring consent is missing. Return to the consent screen and accept the notice before joining.');
+      return;
+    }
     const studentName = nameInput.value.trim();
     const rollNumber = rollInput.value.trim();
 
@@ -84,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         studentName: studentName,
         rollNumber: rollNumber,
         studentId: rollNumber,
-        consentGiven: consentData ? consentData.consentGiven : true,
+        consentGiven: consentData.consentGiven,
         consentTimestamp: consentData ? consentData.consentTimestamp : new Date().toISOString()
       };
 
@@ -92,6 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const response = await fetch(`${serverUrl}/sessions`, {
         method: 'POST',
+        signal: AbortSignal.timeout(15000),
         headers: {
           'Content-Type': 'application/json'
         },

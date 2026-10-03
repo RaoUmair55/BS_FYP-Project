@@ -1,8 +1,9 @@
 {
   "sessionId": "string",
+  "eventId": "string, stable across delivery retries; optional for legacy clients",
   "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | pre_existing_file | camera_occluded_or_dark",
   "severity": "number (1-5)",
-  "timestamp": "ISO 8601 string",
+  "timestamp": "ISO 8601 string with timezone; original capture time, preserved on retry",
   "details": {
     "confidence": "number, optional",
     "duration": "number, optional",

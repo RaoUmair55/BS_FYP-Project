@@ -1,14 +1,18 @@
-const { app, BrowserWindow, dialog, ipcMain, screen, clipboard } = require('electron');
+let displayCheckInterval = null;
+const { app, BrowserWindow, dialog, ipcMain, screen, clipboard, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { randomUUID } = require('crypto');
+const { StringDecoder } = require('string_decoder');
 const { spawn, execSync } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
-const { checkPythonHealth, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive } = require('./ipc/pythonBridge');
+const { checkPythonHealth, setPythonPort, getPythonUrl, getLastPythonHealthError, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive } = require('./ipc/pythonBridge');
 const violationBuffer = require('./ipc/violationBuffer');
+const { getPythonExecutable } = require('./ipc/pythonRuntime');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // --- Added for development: Handle EPIPE / Broken pipe errors ---
-// This prevents the Electron app from crashing if the parent process (like Antigravity IDE) 
+// This prevents the Electron app from crashing if the parent process (like Antigravity IDE)
 // closes and standard output/error pipes are broken before this process exits.
 process.on('uncaughtException', function (err) {
   if (err.code === 'EPIPE') {
@@ -20,6 +24,7 @@ process.on('uncaughtException', function (err) {
 // ----------------------------------------------------------------
 let mainWindow;
 let pythonProcess = null;
+let receiverPort = null;
 let displayAddedListener = null;
 let displayRemovedListener = null;
 let activeSessionInfo = {
@@ -36,39 +41,12 @@ let activeSessionInfo = {
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
 };
 
-function killProcessOnPort(port = 8000) {
-  if (process.platform === 'win32') {
-    try {
-      const output = execSync('netstat -ano -p tcp', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-      const lines = output.trim().split('\n');
-      const pidsToKill = new Set();
-      for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length >= 5 && parts[1].endsWith(`:${port}`) && parts[3] === 'LISTENING') {
-          const pid = parseInt(parts[4], 10);
-          if (pid && pid !== process.pid) {
-            pidsToKill.add(pid);
-          }
-        }
-      }
-      for (const pid of pidsToKill) {
-        console.log(`[Electron] Freeing occupied port ${port}: terminating PID ${pid}...`);
-        try {
-          execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
-        } catch (e) {}
-      }
-    } catch (e) {
-      // Ignore errors when netstat has no match
-    }
-  }
-}
-
 function cleanUpPythonProcess() {
   if (pythonProcess) {
     console.log('[Electron] Cleaning up existing Python process...');
     pythonProcess.killedIntentional = true;
     const pid = pythonProcess.pid;
-    if (process.platform === 'win32' && pid) {
+    if (process.platform === 'win32' && pid && !pythonProcess.hasExited) {
       try {
         execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
       } catch (e) {}
@@ -77,7 +55,7 @@ function cleanUpPythonProcess() {
     }
     pythonProcess = null;
   }
-  killProcessOnPort(8000);
+  setPythonPort(null);
 }
 
 async function createWindow() {
@@ -112,85 +90,69 @@ async function createWindow() {
 
 async function waitForPythonReady(proc) {
   console.log('[Electron] Waiting for Python backend to be ready...');
-  const maxAttempts = 90; // Up to 54 seconds for heavy ML models/DLLs on cold start
-  
-  for (let i = 0; i < maxAttempts; i++) {
-    if (proc && proc.hasExited) {
-      console.error(`[Electron] Aborting health check: Python process exited prematurely with code ${proc.exitCode}.`);
+  const maxAttempts = 200;
+  const deadline = Date.now() + 120000; // Cold-start ML imports have a bounded two-minute budget.
+
+  for (let i = 0; i < maxAttempts && Date.now() < deadline; i++) {
+    if (!proc || proc.hasExited) {
+      console.error(`[Electron] Aborting health check: Python process exited prematurely with code ${proc?.exitCode}.`);
       return false;
     }
-    const isReady = await checkPythonHealth();
+    const isReady = await checkPythonHealth(proc.instanceId);
     if (isReady) {
       console.log(`[Electron] Python backend is ready on attempt ${i + 1}!`);
       return true;
     }
     await new Promise(resolve => setTimeout(resolve, 600)); // Poll every 600ms
   }
-  
+
   return false;
 }
 
 let lastPythonStderr = '';
 
-function getPythonExecutable() {
-  if (process.env.PYTHON_PATH) {
-    return process.env.PYTHON_PATH;
-  }
-
-  // Automatically check for local virtual environment folders (venv or .venv)
-  const aiDir = path.join(__dirname, '..', 'ai-module');
-  const candidateDir = path.join(__dirname, '..');
-  
-  const venvCandidates = [
-    path.join(aiDir, 'venv', 'Scripts', 'python.exe'),
-    path.join(aiDir, '.venv', 'Scripts', 'python.exe'),
-    path.join(candidateDir, 'venv', 'Scripts', 'python.exe'),
-    path.join(candidateDir, '.venv', 'Scripts', 'python.exe'),
-    path.join(aiDir, 'venv', 'bin', 'python'),
-    path.join(aiDir, '.venv', 'bin', 'python'),
-    path.join(candidateDir, 'venv', 'bin', 'python'),
-    path.join(candidateDir, '.venv', 'bin', 'python')
-  ];
-
-  for (const venvExe of venvCandidates) {
-    if (fs.existsSync(venvExe)) {
-      console.log(`[Electron] Auto-detected Python virtual environment at: ${venvExe}`);
-      return venvExe;
-    }
-  }
-
-  // Default to system python on PATH
-  return 'python';
-}
-
 function spawnPythonProcess(mode, isSelfCheck = false) {
   cleanUpPythonProcess();
 
   const pythonScript = path.join(__dirname, '..', 'ai-module', 'main.py');
-  const pythonExe = getPythonExecutable();
+  let pythonExe;
+  try {
+    if (!fs.existsSync(pythonScript)) throw new Error(`AI entry point missing: ${pythonScript}`);
+    pythonExe = getPythonExecutable();
+  } catch (err) {
+    lastPythonStderr = err.message;
+    return null;
+  }
+  const instanceId = randomUUID();
   console.log(`[Electron] Spawning Python process in ${mode} mode (isSelfCheck=${isSelfCheck}): ${pythonExe} ${pythonScript}`);
-  
+
   lastPythonStderr = '';
 
   // Inject session ID and allowed applications to the Python environment
-  const pythonEnv = { 
-    ...process.env, 
+  const pythonEnv = {
+    ...process.env,
     PYTHONUNBUFFERED: '1',
     PYTHONIOENCODING: 'utf-8',
-    PYTHON_IPC_PORT: '8000',
-    EXAM_SESSION_ID: activeSessionInfo.sessionId, 
+    PYTHONUTF8: '1',
+    PYTHON_IPC_PORT: '0',
+    AI_INSTANCE_ID: instanceId,
+    ELECTRON_RECEIVER_PORT: String(receiverPort),
+    EXAM_SESSION_ID: activeSessionInfo.sessionId,
     EXAM_TYPE: activeSessionInfo.examType || 'online',
     APP_MODE: mode,
     IS_SELF_CHECK: isSelfCheck ? 'true' : 'false',
     ALLOWED_APPLICATIONS: JSON.stringify(activeSessionInfo.allowedApplications || []),
     EXAM_RULES: JSON.stringify(activeSessionInfo.rules || {})
   };
-  
+
   let proc;
   try {
-    proc = spawn(pythonExe, [pythonScript], { 
-      env: pythonEnv
+    proc = spawn(pythonExe, [pythonScript], {
+      env: pythonEnv,
+      cwd: path.dirname(pythonScript),
+      windowsHide: true
     });
+    proc.instanceId = instanceId;
     proc.hasExited = false;
     proc.exitCode = null;
   } catch (err) {
@@ -200,21 +162,27 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   }
 
   proc.on('error', (err) => {
-    lastPythonStderr = err.message;
+    proc.hasExited = true;
+    lastPythonStderr = `${err.message}. Interpreter: ${pythonExe}. Check PYTHON_PATH and the local virtual environment.`;
     console.error(`[Electron] Python spawn process error:`, err);
   });
 
+  const decoder = new StringDecoder('utf8');
+  let pendingOutput = '';
   proc.stdout.on('data', (data) => {
-    console.log(`[Python] ${data.toString().trim()}`);
+    pendingOutput += decoder.write(data);
+    const lines = pendingOutput.split(/\r?\n/);
+    pendingOutput = lines.pop();
+    for (const line of lines) {
+      const match = /^INTEGRITYFLOW_PORT=(\d+)$/.exec(line.trim());
+      if (match && !proc.killedIntentional) setPythonPort(Number(match[1]));
+      else if (line.trim()) console.log(`[Python] ${line}`);
+    }
   });
 
   proc.stderr.on('data', (data) => {
     const msg = data.toString().trim();
-    const lower = msg.toLowerCase();
-    const isHarmlessWarning = lower.includes('warning') || lower.includes('info:') || lower.includes('pkg_resources') || lower.includes('deprecated');
-    if (!isHarmlessWarning) {
-      lastPythonStderr = (lastPythonStderr + '\n' + msg).trim();
-    }
+    if (!proc.killedIntentional) lastPythonStderr = (lastPythonStderr + '\n' + msg).trim().slice(-8192);
     console.log(`[Python Log] ${msg}`);
   });
 
@@ -222,11 +190,11 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     proc.hasExited = true;
     proc.exitCode = code;
     console.log(`[Electron] Python process exited with code ${code} and signal ${signal}`);
-    if (code !== 0 && mainWindow && !proc.killedIntentional) {
+    if (mainWindow && !mainWindow.isDestroyed() && !proc.killedIntentional) {
       mainWindow.webContents.send('python-crashed', { code, signal, error: lastPythonStderr });
     }
   });
-  
+
   return proc;
 }
 
@@ -250,9 +218,23 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     try {
       console.log('[Electron] app.whenReady entered');
+
+      // Grant media, camera, and microphone permissions explicitly for local file:// and renderer
+      session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowed = ['media', 'camera', 'microphone', 'audioCapture', 'videoCapture', 'display-capture', 'notifications'];
+        if (allowed.includes(permission)) {
+          return callback(true);
+        }
+        return callback(true);
+      });
+
+      session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+        return true;
+      });
+
       cleanUpPythonProcess();
       try {
-        await startReceiver((violationPayload) => {
+        receiverPort = await startReceiver((violationPayload) => {
           if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
             const reason = violationPayload?.details?.reason || '';
             const fileName = violationPayload?.details?.fileName || '';
@@ -293,6 +275,8 @@ if (!gotTheLock) {
       });
     } catch (err) {
       console.error('[Electron] Fatal error during startup:', err);
+      dialog.showErrorBox('Candidate app startup failed', err.message);
+      app.quit();
     }
   });
 }
@@ -339,13 +323,25 @@ ipcMain.handle('get-buffer-status', () => {
 // Listen for test violations from renderer
 ipcMain.on('test-violation', async (event, payload) => {
   console.log('[Electron] Received test-violation from renderer:', payload);
+  if (!payload.screenshotPath && mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      const image = await mainWindow.webContents.capturePage();
+      const screenshotsDir = path.join(__dirname, '..', 'ai-module', 'screenshots');
+      if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir, { recursive: true });
+      const screenshotFile = path.join(screenshotsDir, `shot_${payload.sessionId || 'session'}_${Date.now()}.jpg`);
+      fs.writeFileSync(screenshotFile, image.toJPEG(80));
+      payload.screenshotPath = screenshotFile;
+    } catch (e) {
+      console.warn('[Electron] Could not capture renderer page screenshot:', e);
+    }
+  }
   await forwardViolationToServer(payload);
 });
 
 // Check apps via Python
 ipcMain.handle('check-apps', async () => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/check-apps');
+    const response = await fetch(`${getPythonUrl()}/check-apps`, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return { error: 'App check unavailable' };
     return await response.json();
   } catch (error) {
@@ -357,7 +353,7 @@ ipcMain.handle('check-apps', async () => {
 // Check USB removable storage drives via Python
 ipcMain.handle('check-usb-drives', async () => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/check-usb');
+    const response = await fetch(`${getPythonUrl()}/check-usb`, { signal: AbortSignal.timeout(7000) });
     if (!response.ok) return { error: 'USB check unavailable' };
     return await response.json();
   } catch (error) {
@@ -366,12 +362,31 @@ ipcMain.handle('check-usb-drives', async () => {
   }
 });
 
-// Get display count and information via Electron screen module
+function getPhysicalMonitorCount() {
+  const electronDisplays = screen.getAllDisplays();
+  let count = electronDisplays.length;
+
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = require('child_process');
+      const cmd = 'powershell -NoProfile -NonInteractive -Command "@(Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorConnectionParams -ErrorAction SilentlyContinue | Where-Object { $_.Active -eq $true }).Count"';
+      const stdout = execSync(cmd, { timeout: 3000, encoding: 'utf8', windowsHide: true });
+      const wmiCount = parseInt(stdout.trim(), 10);
+      if (!isNaN(wmiCount) && wmiCount > 0) {
+        count = Math.max(count, wmiCount);
+      }
+    } catch (e) {}
+  }
+  return count;
+}
+
+// Get display count and information via Electron screen module & WMI hardware query
 ipcMain.handle('get-display-count', () => {
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();
+  const totalCount = getPhysicalMonitorCount();
   return {
-    count: displays.length,
+    count: totalCount,
     displays: displays.map(d => ({
       id: d.id,
       bounds: d.bounds,
@@ -388,12 +403,15 @@ ipcMain.handle('kill-app', async (event, name) => {
 // Set Reference Voice profile via Python
 ipcMain.handle('set-reference-voice', async (event, audioBase64) => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/set-reference-voice', {
+    const response = await fetch(`${getPythonUrl()}/set-reference-voice`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        audio_base64: audioBase64,
-        session_id: activeSessionInfo.sessionId 
+      signal: AbortSignal.timeout(60000),
+      body: JSON.stringify({
+        audio_base64: typeof audioBase64 === "string" ? audioBase64 : audioBase64.audio,
+        confirmation_audio: audioBase64.confirmation,
+        microphone_label: audioBase64.microphoneLabel,
+        session_id: activeSessionInfo.sessionId
       })
     });
     if (!response.ok) return { success: false, error: 'HTTP error ' + response.status };
@@ -407,12 +425,34 @@ ipcMain.handle('set-reference-voice', async (event, audioBase64) => {
 // Check Voice profile calibration status
 ipcMain.handle('check-voice', async () => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/check-voice');
+    const response = await fetch(`${getPythonUrl()}/check-voice`, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return { calibrated: false };
     return await response.json();
   } catch (error) {
     return { calibrated: false };
   }
+});
+
+ipcMain.handle('detect-face', async (_event, image) => {
+  const response = await fetch(`${getPythonUrl()}/detect-face`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image }), signal: AbortSignal.timeout(3000)
+  });
+  if (!response.ok) throw new Error('Face alignment service unavailable.');
+  return response.json();
+});
+
+ipcMain.handle('monitoring-health', async () => {
+  try {
+    const response = await fetch(`${getPythonUrl()}/health`, { signal: AbortSignal.timeout(3000) });
+    return await response.json();
+  } catch (err) { return { status: 'unavailable', errors: [err.message] }; }
+});
+
+ipcMain.handle('finish-exam', () => {
+  setExamActive(false);
+  cleanUpPythonProcess();
+  return { success: true };
 });
 
 // Return session info to renderer
@@ -429,9 +469,13 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
     return { success: false, error: 'Login in progress' };
   }
   isLoggingIn = true;
+  try {
 
   console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
   setExamActive(false);
+  activeSessionInfo.sessionId = null;
+  activeSessionInfo.consentGiven = false;
+  activeSessionInfo.consentTimestamp = null;
   activeSessionInfo.examId = examId;
   if (examType) activeSessionInfo.examType = examType;
   activeSessionInfo.rules = rules || {};
@@ -441,7 +485,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   if (allowedApplications && Array.isArray(allowedApplications)) {
     activeSessionInfo.allowedApplications = allowedApplications;
   }
-  
+
   // Clean up any previously running Python child process before spawning a new one
   cleanUpPythonProcess();
 
@@ -451,14 +495,16 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   }
 
   // 2. Spawn python in configured mode (exam/dev) for self-check
-  const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
+  const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
   pythonProcess = spawnPythonProcess(targetMode, true);
-  
+
   const isPythonReady = await waitForPythonReady(pythonProcess);
   if (!isPythonReady) {
     isLoggingIn = false;
-    const errorDetail = lastPythonStderr 
-      ? `The AI module failed to start.\n\nDiagnostics / Error:\n${lastPythonStderr}`
+    const startupError = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr;
+    cleanUpPythonProcess();
+    const errorDetail = startupError
+      ? `The AI module failed to start.\n\nDiagnostics / Error:\n${startupError}`
       : 'The AI module failed to start.\n\nPlease verify that Python is in your system PATH and all dependencies are installed.';
     dialog.showErrorBox('Initialization Error', errorDetail);
     if (mainWindow) {
@@ -467,27 +513,22 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
     return { success: false, error: 'AI module failed to start' };
   }
 
-  // Send allowed applications to Python daemon
-  try {
-    await fetch('http://127.0.0.1:8000/configure-whitelist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ allowed_apps: activeSessionInfo.allowedApplications || [] })
-    });
-  } catch (e) {
-    console.warn('[Electron] Warning configuring Python whitelist:', e);
-  }
-  
   // 3. Python is ready -> proceed to consent screen
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/consent.html'));
   }
   isLoggingIn = false;
   return { success: true };
+  } catch (err) {
+    cleanUpPythonProcess();
+    if (mainWindow && !mainWindow.isDestroyed()) await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
+    return { success: false, error: err.message };
+  } finally { isLoggingIn = false; }
 });
 
 // Handle Transition from Consent Screen to Identity Screen
 ipcMain.handle('proceed-to-identity', async (event, consentData) => {
+  if (consentData?.consentGiven !== true) throw new Error('Please review and accept the monitoring notice before continuing.');
   console.log('[Electron] Consent granted. Proceeding to Identity Capture...');
   if (consentData) {
     activeSessionInfo.consentGiven = true;
@@ -525,10 +566,15 @@ ipcMain.handle('decline-consent', async () => {
 });
 
 // Start Exam Mode
+let isStartingExam = false;
 ipcMain.handle('start-exam-mode', async () => {
+  if (isStartingExam) return { success: false, error: 'Exam startup is already in progress.' };
+  isStartingExam = true;
+  setExamActive(false);
+  try {
   console.log('[Electron] Transitioning to Exam Mode...');
   cleanUpPythonProcess();
-  
+
   // Clean up any existing screen listeners before registering fresh ones
   if (displayAddedListener) {
     screen.removeListener('display-added', displayAddedListener);
@@ -543,7 +589,7 @@ ipcMain.handle('start-exam-mode', async () => {
   displayAddedListener = async (event, newDisplay) => {
     const totalDisplays = screen.getAllDisplays().length;
     console.log(`[Electron] Display change detected during exam! Total displays: ${totalDisplays}, New display ID: ${newDisplay?.id}`);
-    
+
     const violationPayload = {
       sessionId: activeSessionInfo.sessionId,
       type: 'multiple_displays_detected',
@@ -555,7 +601,7 @@ ipcMain.handle('start-exam-mode', async () => {
         totalDisplays: totalDisplays
       }
     };
-    
+
     // Direct call to backend via forwardViolationToServer (originates in Electron)
     await forwardViolationToServer(violationPayload);
   };
@@ -566,23 +612,36 @@ ipcMain.handle('start-exam-mode', async () => {
   };
   screen.on('display-removed', displayRemovedListener);
 
+  if (displayCheckInterval) {
+    clearInterval(displayCheckInterval);
+    displayCheckInterval = null;
+  }
+  displayCheckInterval = setInterval(async () => {
+    if (!getExamActive()) return;
+    const currentCount = getPhysicalMonitorCount();
+    if (currentCount > 1) {
+      console.log(`[Electron] Multiple physical displays detected during exam via WMI scan! Total: ${currentCount}`);
+      const violationPayload = {
+        sessionId: activeSessionInfo.sessionId,
+        type: 'multiple_displays_detected',
+        severity: 4,
+        timestamp: new Date().toISOString(),
+        details: {
+          object_class: 'secondary_display',
+          totalDisplays: currentCount,
+          detectionMethod: 'wmi_hardware_scan'
+        }
+      };
+      await forwardViolationToServer(violationPayload);
+    }
+  }, 4000);
+
   // Small delay to ensure port is freed
-  const targetMode = process.env.APP_MODE === 'dev' ? 'dev' : 'exam';
+  const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
   pythonProcess = spawnPythonProcess(targetMode, false);
   const isReady = await waitForPythonReady(pythonProcess);
-  
-  if (isReady) {
-    // Re-send allowed applications to newly spawned exam-mode daemon
-    try {
-      await fetch('http://127.0.0.1:8000/configure-whitelist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allowed_apps: activeSessionInfo.allowedApplications || [] })
-      });
-    } catch (e) {
-      console.warn('[Electron] Warning configuring Python whitelist in exam mode:', e);
-    }
 
+  if (isReady) {
     if (mainWindow) {
       clipboard.clear();
       await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
@@ -592,8 +651,15 @@ ipcMain.handle('start-exam-mode', async () => {
     return { success: true };
   } else {
     setExamActive(false);
-    return { success: false, error: 'AI module failed to start in exam mode.' };
+    const error = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr || 'AI module failed to start in exam mode. Retry the system check.';
+    cleanUpPythonProcess();
+    return { success: false, error };
   }
+  } catch (err) {
+    setExamActive(false);
+    cleanUpPythonProcess();
+    return { success: false, error: err.message };
+  } finally { isStartingExam = false; }
 });
 
 ipcMain.handle('clear-clipboard', () => {

@@ -8,10 +8,11 @@ This document serves as the single source of truth for data contracts between th
 
 ```json
 {
-  "sessionId": "string (UUID / Session identifier)",
+  "sessionId": "string (MongoDB Session ObjectId)",
+  "eventId": "string, optional (1-128 letters/digits/underscore/hyphen; stable across retries)",
   "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark",
   "severity": "number (1-5)",
-  "timestamp": "ISO 8601 string (Microsecond precision preserved)",
+  "timestamp": "ISO 8601 string with timezone (original capture time; stored at millisecond precision)",
   "details": {
     "confidence": "number, optional (0.00 - 1.00)",
     "similarity_score": "number, optional (0.00 - 1.00 for voice similarity)",
@@ -29,6 +30,8 @@ This document serves as the single source of truth for data contracts between th
 ```
 
 ---
+
+Evidence captured within the session start/end window may arrive after completion or termination. The response adds `receivedAt` and `receivedLate`; repeat deliveries return the existing record with `duplicate: true`. Late evidence remains pending and is excluded from scoring until examiner confirmation. Database/storage failures return 503 for durable retry; invalid events return 400 and missing sessions return 404. Closed sessions without a reliable end time return 503 rather than guessing a cutoff.
 
 ## 2. In-Exam Live Chat & Broadcast Message Schema (`POST /messages`)
 

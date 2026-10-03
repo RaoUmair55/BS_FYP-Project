@@ -1,10 +1,40 @@
 from fastapi import FastAPI
+import os
+import json
+import time
 
 app = FastAPI()
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    errors = list(globals().get('startup_errors', []))
+    lab = os.environ.get('EXAM_TYPE') == 'physical_lab'
+    self_check = os.environ.get('IS_SELF_CHECK', 'false').lower() in ('true', '1')
+    if not lab:
+        voice = globals().get('voice_monitor')
+        if voice is None or voice.vad is None or voice.encoder is None:
+            errors.append('Voice model not ready. Check the Python dependencies and voice model installation.')
+        if voice is not None and getattr(voice, "verification_error", None):
+            errors.append(voice.verification_error)
+        if not self_check:
+            camera = globals().get('ai_monitor')
+            if camera is None or not getattr(camera, 'camera_ready', False) or time.monotonic() - getattr(camera, 'last_frame_at', 0) > 5:
+                errors.append('Camera monitoring is unavailable. Close other camera apps and retry the system check.')
+            rules = json.loads(os.environ.get('EXAM_RULES', '{}'))
+            if camera is not None:
+                errors.extend(camera.detector_errors.values())
+                if camera.mp_face_mesh is None and camera.face_cascade is None:
+                    errors.append('Face detector unavailable. Check the OpenCV installation.')
+            if rules.get('detectCellPhone') is not False and (camera is None or camera.ort_session is None):
+                errors.append('Object detection model unavailable. Check ai-module/yolo26n.onnx or yolo26n_int8.onnx.')
+            if voice is not None and (not voice.running or voice.stream is None or voice.reference_embedding is None):
+                errors.append('Voice monitoring unavailable or reference voice missing. Re-record the voice sample.')
+            elif voice is not None and time.monotonic() - getattr(voice, 'last_audio_at', 0) > 5:
+                errors.append('Microphone stopped delivering audio. Notify your examiner.')
+    usb = globals().get('usb_monitor')
+    if usb is not None and usb.last_error:
+        errors.append(usb.last_error)
+    return {'status': 'ok' if not errors else 'degraded', 'instanceId': os.environ.get('AI_INSTANCE_ID'), 'errors': errors}
 
 @app.post("/violation")
 def log_violation(payload: dict):
@@ -26,15 +56,17 @@ def check_apps():
     if hasattr(server, 'enforcer') and server.enforcer:
         unauthorized = server.enforcer.check_running_apps()
         return {"unauthorized_apps": unauthorized}
-    return {"unauthorized_apps": []}
+    return {"error": "Application monitor not initialized. Retry the system check."}
 
 @app.get("/check-usb")
 def check_usb():
     import server
     if hasattr(server, 'usb_monitor') and server.usb_monitor:
         removable = server.usb_monitor.check_for_existing_removable_drives()
+        if server.usb_monitor.last_error:
+            return {"error": server.usb_monitor.last_error}
         return {"removable_drives": removable}
-    return {"removable_drives": []}
+    return {"error": "USB monitor not initialized. Retry the system check."}
 
 @app.post("/kill-app")
 def kill_app(payload: dict):
@@ -154,14 +186,16 @@ def set_reference_voice(payload: dict):
             
         audio_bytes = base64.b64decode(audio_b64)
         
+        confirmation = payload.get("confirmation_audio", "")
+        confirmation_bytes = base64.b64decode(confirmation.split(",", 1)[-1]) if confirmation else None
         # Use existing VoiceMonitor instance if available on server
         if hasattr(server, 'voice_monitor') and server.voice_monitor:
-            result = server.voice_monitor.set_reference_voice(audio_bytes, session_id=session_id)
+            result = server.voice_monitor.set_reference_voice(audio_bytes, session_id=session_id, confirmation_audio=confirmation_bytes, microphone_label=payload.get("microphone_label"))
             return result
         else:
             # Create a temporary VoiceMonitor to calibrate and persist embedding to disk
             temp_vm = VoiceMonitor(session_id=session_id, is_self_check=True)
-            result = temp_vm.set_reference_voice(audio_bytes, session_id=session_id)
+            result = temp_vm.set_reference_voice(audio_bytes, session_id=session_id, confirmation_audio=confirmation_bytes, microphone_label=payload.get("microphone_label"))
             return result
     except Exception as e:
         print(f"[Server Error] /set-reference-voice failed: {e}")

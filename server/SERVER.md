@@ -10,10 +10,21 @@ The IntegrityFlow backend is a robust Node.js/Express and MongoDB service provid
 - **Teacher Route Protection**: Enforces JWT verification via `requireAuth` on all examiner endpoints (`/exams`, `/sessions/active`, `/violations`, `/risk-score`), while keeping machine-to-machine candidate routes (such as `POST /violation` and `POST /sessions`) open.
 
 ### Student Identity & Session Management (Part B)
+- **Examiner Isolation**: Live socket events are sent only to the exam's owning teacher and administrators. Active rosters, priority queues, and violation lists apply the same ownership boundary; candidate-controlled student IDs cannot expand evidence access. Unknown exam identifiers do not broadcast. Run `npm run check:isolation` from `server/` for the database-free regression check.
 - **Comprehensive Candidate Profiles**: `Session` model enforces mandatory `studentName` (String, required) and `rollNumber` (String, required) alongside `studentId`, `examId`, `consentGiven`, and timestamps.
 - **Strict Validation on Creation (`POST /sessions`)**: Rejects session creation with `400 Bad Request` if `studentName`, `rollNumber`, or `examId` are missing.
 - **Consolidated 4-Step Candidate Lifecycle**: Coordinates seamless progression (`consent → identity → self-check → exam`).
 - **Real-Time Examiner Visibility**: Returns enriched session objects across active candidate queries (`GET /sessions/active`), candidate status checks (`GET /sessions/:sessionId/status`), and historical analytics aggregates (`GET /exams/:examId/summary`).
+
+### Late Evidence and Retry Safety
+
+`POST /violation` accepts evidence for completed/terminated sessions when its original capture timestamp falls within the stored session start/end window. Timestamps must include a timezone; closed sessions require an explicit timestamp. Invalid events return 400; unavailable database/storage or an unknown closed-session cutoff returns 503 so Electron retains its durable retry. Missing sessions return 404.
+
+An optional stable `eventId` identifies retries within a session. The server derives a deterministic MongoDB `_id`, using the existing unique index without a migration, and rejects reuse for a different event. Legacy requests without an ID use a canonical event fingerprint. Failed attempts clean up their uploaded assets through the existing storage provider.
+
+Late records expose `receivedLate` and `receivedAt`, remain pending review, and do not reopen sessions or broadcast normal live alerts. Scoring excludes them until an examiner confirms them; dismissed evidence remains excluded. Historical summaries include `pendingLateEvidenceCount`, and dashboard Refresh controls retrieve newly delivered evidence. Existing scoring/decay behavior otherwise remains unchanged.
+
+Run `npm run check:late-evidence` from `server/`. This database-free check uses actual HTTP/multipart delivery and Electron's durable buffer with isolated model/storage doubles. A real database/cloud-storage rehearsal remains necessary.
 
 ### Standalone Modular Email Verification (Part C)
 - **Decoupled Verification Architecture**: Built and fully tested verification subsystem using the **Strategy Pattern** (`LinkVerificationStrategy` for magic links, `OtpVerificationStrategy` for 6-digit numeric codes) alongside a **Mail Provider Interface** (`MailProvider`, `EtherealMailProvider`).
@@ -423,4 +434,3 @@ FAILURE BREAKDOWN: No request failures recorded (100% Success).
 1. **Tail Latency Reduction**: P99 write latency dropped from `771.01ms` down to `536.99ms` (**30.4% reduction**).
 2. **Elimination of Peak Spikes**: Max peak write latency was cut from `1394.91ms` to `640.80ms` (**54.1% reduction**), and max dashboard read latency plummeted from `1230.66ms` to `310.59ms` (**74.8% reduction**).
 3. **Database Efficiency**: Compound indexes ensure lookups by `sessionId` and `reviewed` execute via `IXSCAN`, preventing full collection scans under concurrent multi-student loads.
-

@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   sendTestViolation: (payload) => ipcRenderer.send('test-violation', payload),
   onPythonCrash: (callback) => ipcRenderer.on('python-crashed', (_event, value) => callback(value)),
+  detectFace: (image) => ipcRenderer.invoke('detect-face', image),
+  getMonitoringHealth: () => ipcRenderer.invoke('monitoring-health'),
+  finishExam: () => ipcRenderer.invoke('finish-exam'),
   checkApps: () => ipcRenderer.invoke('check-apps'),
   killApp: (name) => ipcRenderer.invoke('kill-app', name),
   login: (entryData) => ipcRenderer.invoke('login', entryData),

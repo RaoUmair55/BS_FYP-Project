@@ -17,7 +17,9 @@ async function calculateRiskScore(sessionId) {
         };
     }
 
-    const riskScore = scoringStrategy.calculateScore(violations);
+    // Late arrivals remain evidence, but affect scoring only after explicit examiner confirmation.
+    const scoredViolations = violations.filter(v => !v.receivedLate || v.decision === 'confirmed');
+    const riskScore = scoringStrategy.calculateScore(scoredViolations);
 
     return {
         sessionId,
@@ -28,4 +30,3 @@ async function calculateRiskScore(sessionId) {
 }
 
 module.exports = { calculateRiskScore };
-

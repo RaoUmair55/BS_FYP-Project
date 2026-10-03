@@ -85,7 +85,7 @@ async function uploadCameraVerificationSnapshot(video) {
     try {
       sessionInfo = await window.api.getSessionInfo();
     } catch (e) {}
-    
+
     if (!sessionInfo || !sessionInfo.sessionId) {
       try {
         sessionInfo = JSON.parse(sessionStorage.getItem('sessionInfo') || localStorage.getItem('sessionInfo') || '{}');
@@ -93,8 +93,7 @@ async function uploadCameraVerificationSnapshot(video) {
     }
 
     if (!sessionInfo || !sessionInfo.sessionId) {
-      console.warn('[SelfCheck] Cannot upload camera verification photo: missing sessionId');
-      return;
+      throw new Error('Candidate session missing. Return to exam entry and retry.');
     }
 
     const canvas = document.createElement('canvas');
@@ -107,12 +106,14 @@ async function uploadCameraVerificationSnapshot(video) {
     const res = await fetch(`${sessionInfo.serverUrl || 'http://localhost:5000'}/sessions/${sessionInfo.sessionId}/camera-verification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photoBase64 })
+      body: JSON.stringify({ photoBase64 }),
+      signal: AbortSignal.timeout(15000)
     });
     if (!res.ok) throw new Error(`Camera verification upload failed (${res.status})`);
     console.log('[SelfCheck] Uploaded initial camera verification photo for session:', sessionInfo.sessionId);
   } catch (err) {
     console.error('[SelfCheck] Failed to upload camera verification photo:', err);
+    throw err;
   }
 }
 
@@ -120,7 +121,7 @@ function setStatus(id, status, errorMsg = '') {
   const container = document.getElementById(id);
   const icon = container.querySelector('.status-icon');
   const errorText = container.querySelector('.error-text');
-  
+
   icon.classList.remove('status-pending', 'status-pass', 'status-fail');
   if (status === 'pass') {
     icon.classList.add('status-pass');
@@ -145,7 +146,7 @@ let isFaceProperlyAligned = false;
 
 function startFaceAlignmentTracking(video) {
   if (faceAlignmentInterval) clearInterval(faceAlignmentInterval);
-  
+
   const guideEllipse = document.getElementById('face-guide-ellipse');
   const guideText = document.getElementById('camera-guide-text');
   const btnCapture = document.getElementById('btn-capture-calibration');
@@ -169,20 +170,12 @@ function startFaceAlignmentTracking(video) {
       ctx.drawImage(video, 0, 0, 240, 180);
       const thumbnailB64 = canvas.toDataURL('image/jpeg', 0.6);
 
-      const resp = await fetch('http://127.0.0.1:8000/detect-face', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: thumbnailB64 }),
-        signal: AbortSignal.timeout(1000)
-      });
-
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.detected) {
-          faceDetected = true;
-          faceCenterX = data.faceCenterX;
-          faceCenterY = data.faceCenterY;
-        }
+      const data = await window.api.detectFace(thumbnailB64);
+      if (data.error) throw new Error(data.error);
+      if (data.detected && data.count === 1) {
+        faceDetected = true;
+        faceCenterX = data.faceCenterX;
+        faceCenterY = data.faceCenterY;
       }
     } catch (e) {
       // If Python endpoint temporarily unreachable, try native browser detector
@@ -236,7 +229,7 @@ function startFaceAlignmentTracking(video) {
       }
       if (guideText) {
         if (!isHorizontallyCentered) {
-          guideText.textContent = faceCenterX < 0.36 ? '⚠️ Move slightly right into oval' : '⚠️ Move slightly left into oval';
+          guideText.textContent = faceCenterX < 0.36 ? '⚠️ Move slightly left into oval' : '⚠️ Move slightly right into oval';
         } else {
           guideText.textContent = faceCenterY < 0.22 ? '⚠️ Lower your head slightly' : '⚠️ Raise your head slightly';
         }
@@ -270,14 +263,72 @@ function startFaceAlignmentTracking(video) {
 }
 
 btnCamera.addEventListener('click', async () => {
-  try {
-    let stream = null;
+  btnCamera.disabled = true;
+  btnCamera.textContent = 'Opening Camera...';
+
+  // Cleanly release any prior active stream in the page
+  if (activeCameraStream) {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
-    } catch (firstErr) {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      activeCameraStream.getTracks().forEach(t => t.stop());
+    } catch (e) {}
+    activeCameraStream = null;
+  }
+
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('MediaDevices API is not supported in this browser window.');
     }
-    
+
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+    console.log('[SelfCheck] Detected video devices:', videoDevices);
+
+    let stream = null;
+    let lastError = null;
+
+    // 1. Try default ideal resolution
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+    } catch (e1) {
+      console.warn('[SelfCheck] Ideal constraint failed:', e1);
+      lastError = e1;
+    }
+
+    // 2. Try generic video constraint
+    if (!stream) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch (e2) {
+        console.warn('[SelfCheck] Generic video constraint failed:', e2);
+        lastError = e2;
+      }
+    }
+
+    // 3. Try each enumerated video device individually
+    if (!stream && videoDevices.length > 0) {
+      for (const dev of videoDevices) {
+        if (!dev.deviceId) continue;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: dev.deviceId } }
+          });
+          if (stream) {
+            console.log(`[SelfCheck] Successfully connected to device: ${dev.label || dev.deviceId}`);
+            break;
+          }
+        } catch (devErr) {
+          console.warn(`[SelfCheck] Device ${dev.deviceId} failed:`, devErr);
+          lastError = devErr;
+        }
+      }
+    }
+
+    if (!stream) {
+      throw (lastError || new Error('No working camera stream could be initialized.'));
+    }
+
     activeCameraStream = stream;
     const video = document.getElementById('camera-preview');
     if (video) {
@@ -298,7 +349,22 @@ btnCamera.addEventListener('click', async () => {
     }
   } catch (err) {
     console.error('Camera Check Error:', err);
-    setStatus('check-camera', 'fail', 'Camera access denied or device not found.');
+    btnCamera.disabled = false;
+    btnCamera.textContent = 'Retry Camera Check';
+
+    let userMsg = 'Camera access denied or device not found.';
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      userMsg = 'Camera permission denied. Please allow camera access in Windows Settings > Privacy & Security > Camera.';
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      userMsg = 'No camera device detected. Please connect or enable your webcam.';
+    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+      userMsg = 'Camera is currently locked by another application (Zoom, Teams, Discord, or Chrome tab). Please close them and click Retry.';
+    } else if (err.name === 'OverconstrainedError') {
+      userMsg = 'Camera resolution constraint not supported by your webcam hardware.';
+    } else {
+      userMsg = `Camera error (${err.name || 'Error'}): ${err.message || 'Device unavailable'}`;
+    }
+    setStatus('check-camera', 'fail', userMsg);
   }
 });
 
@@ -374,7 +440,9 @@ if (btnCaptureCalibration) {
       console.error('Calibration error:', err);
       btnCaptureCalibration.disabled = false;
       btnCaptureCalibration.textContent = 'Retry Calibration';
-      setStatus('check-camera', 'fail', 'Failed to save baseline calibration.');
+      cameraPassed = false;
+      updateBeginButton();
+      setStatus('check-camera', 'fail', 'Photo was not saved. Check the server connection and retry calibration.');
     }
   });
 }
@@ -389,10 +457,10 @@ btnMic.addEventListener('click', async () => {
     analyser.fftSize = 256;
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-    
+
     const meter = document.getElementById('mic-level');
     let hasDetectedSound = false;
-    
+
     const updateMeter = () => {
       analyser.getByteFrequencyData(dataArray);
       let sum = 0;
@@ -401,7 +469,7 @@ btnMic.addEventListener('click', async () => {
       }
       const average = sum / bufferLength;
       meter.style.width = Math.min(100, average * 2) + '%';
-      
+
       if (average > 10 && !hasDetectedSound) {
         hasDetectedSound = true;
         micPassed = true;
@@ -409,9 +477,12 @@ btnMic.addEventListener('click', async () => {
         updateBeginButton();
         btnMic.disabled = true;
         btnMic.textContent = 'Microphone OK';
+        stream.getTracks().forEach(track => track.stop());
+        microphone.disconnect();
+        audioContext.close().catch(console.error);
       }
-      
-      if (!micPassed || hasDetectedSound) {
+
+      if (!micPassed) {
           requestAnimationFrame(updateMeter);
       }
     };
@@ -464,13 +535,14 @@ function arrayBufferToBase64(buffer) {
   return window.btoa(binary);
 }
 
-async function recordVoiceSample(durationSeconds = 4) {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+async function recordVoiceSample(durationSeconds = 8) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  const microphoneLabel = stream.getAudioTracks()[0].label;
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   const sampleRate = audioContext.sampleRate;
   const source = audioContext.createMediaStreamSource(stream);
   const scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
-  
+
   const recordedChunks = [];
   scriptNode.onaudioprocess = (e) => {
     const inputData = e.inputBuffer.getChannelData(0);
@@ -481,19 +553,24 @@ async function recordVoiceSample(durationSeconds = 4) {
   scriptNode.connect(audioContext.destination);
 
   const statusBox = document.getElementById('voice-recording-status');
-  const countdownEl = document.getElementById('voice-countdown');
-  if (statusBox) statusBox.style.display = 'block';
-
-  for (let s = durationSeconds; s > 0; s--) {
-    if (countdownEl) countdownEl.textContent = `${s}s`;
-    await new Promise(res => setTimeout(res, 1000));
+  if (statusBox) {
+    statusBox.innerHTML = 'Read the verification phrase aloud: <span id="voice-countdown"></span>';
+    statusBox.style.display = 'block';
   }
-  if (countdownEl) countdownEl.textContent = 'Processing...';
+  const countdownEl = document.getElementById('voice-countdown');
 
-  source.disconnect();
-  scriptNode.disconnect();
-  stream.getTracks().forEach(t => t.stop());
-  await audioContext.close();
+  try {
+    for (let s = durationSeconds; s > 0; s--) {
+      if (countdownEl) countdownEl.textContent = `${s}s`;
+      await new Promise(res => setTimeout(res, 1000));
+    }
+    if (countdownEl) countdownEl.textContent = 'Processing...';
+  } finally {
+    source.disconnect();
+    scriptNode.disconnect();
+    stream.getTracks().forEach(t => t.stop());
+    await audioContext.close();
+  }
 
   let totalLength = 0;
   for (const chunk of recordedChunks) totalLength += chunk.length;
@@ -523,7 +600,7 @@ async function recordVoiceSample(durationSeconds = 4) {
 
   const wavBuffer = encodeWAV(resampled, targetSr);
   const base64Wav = arrayBufferToBase64(wavBuffer);
-  return 'data:audio/wav;base64,' + base64Wav;
+  return { audio: 'data:audio/wav;base64,' + base64Wav, microphoneLabel };
 }
 
 async function handleVoiceRecord() {
@@ -535,13 +612,19 @@ async function handleVoiceRecord() {
   if (btnRecordAgainVoice) {
     btnRecordAgainVoice.style.display = 'none';
   }
+  voicePassed = false;
+  updateBeginButton();
   setStatus('check-voice', 'pending');
 
   try {
-    const wavDataUrl = await recordVoiceSample(4);
+    const sample = await recordVoiceSample(8);
+    if (statusBox) statusBox.textContent = 'Confirmation: repeat the phrase naturally after the countdown.';
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const confirmation = await recordVoiceSample(4);
+    if (sample.microphoneLabel !== confirmation.microphoneLabel) throw new Error('Microphone changed between recordings.');
     if (statusBox) statusBox.textContent = 'Calibrating speaker embedding profile...';
 
-    const result = await window.api.setReferenceVoice(wavDataUrl);
+    const result = await window.api.setReferenceVoice({ ...sample, confirmation: confirmation.audio });
     if (result && result.success) {
       voicePassed = true;
       setStatus('check-voice', 'pass');
@@ -611,10 +694,10 @@ btnApps.addEventListener('click', async () => {
     const result = await window.api.checkApps();
     if (result.error) throw new Error(result.error);
     const apps = result.unauthorized_apps || [];
-    
+
     const list = document.getElementById('unauthorized-list');
     list.innerHTML = '';
-    
+
     if (apps.length === 0) {
       appsPassed = true;
       const successMsg = document.createElement('li');
@@ -632,7 +715,7 @@ btnApps.addEventListener('click', async () => {
       explanation.style.color = '#374151';
       explanation.style.marginBottom = '0.5rem';
       list.appendChild(explanation);
-      
+
       apps.forEach(app => {
         const li = document.createElement('li');
         li.style.display = 'flex';
@@ -646,13 +729,13 @@ btnApps.addEventListener('click', async () => {
 
         const text = document.createElement('span');
         text.textContent = app.display;
-        
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         closeBtn.style.padding = '4px 12px';
         closeBtn.style.fontSize = '12px';
         closeBtn.style.backgroundColor = '#ef4444';
-        
+
         closeBtn.onclick = async () => {
            closeBtn.disabled = true;
            closeBtn.textContent = 'Closing...';
@@ -664,7 +747,7 @@ btnApps.addEventListener('click', async () => {
                closeBtn.style.backgroundColor = '#6b7280';
            }
         };
-        
+
         li.appendChild(text);
         li.appendChild(closeBtn);
         list.appendChild(li);
@@ -690,7 +773,7 @@ btnUsb.addEventListener('click', async () => {
     const result = await window.api.checkUsbDrives();
     if (result.error) throw new Error(result.error);
     const drives = result.removable_drives || [];
-    
+
     const list = document.getElementById('usb-list');
     list.innerHTML = '';
 
