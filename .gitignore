@@ -10,3 +10,8 @@ build/
 ./client/.env
 *.npy
 candidate-app/ai-module/config/voice_profiles/*.npy
+
+# Presentation and Chart Build Caches
+presentation/.build-*/
+.chart-data-*/
+*.tmp
