@@ -163,6 +163,7 @@ function startFaceAlignmentTracking(video) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   let isChecking = false;
+  let centeredChecks = 0;
 
   faceAlignmentInterval = setInterval(async () => {
     if (!activeCameraStream || cameraPassed || !video || video.readyState < 2 || isChecking) return;
@@ -187,9 +188,9 @@ function startFaceAlignmentTracking(video) {
       // If Python endpoint temporarily unreachable, try native browser detector
       if ('FaceDetector' in window) {
         try {
-          const nativeDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+          const nativeDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
           const faces = await nativeDetector.detect(video);
-          if (faces && faces.length > 0) {
+          if (faces && faces.length === 1) {
             faceDetected = true;
             const box = faces[0].boundingBox;
             const vw = video.videoWidth || 640;
@@ -204,6 +205,7 @@ function startFaceAlignmentTracking(video) {
     }
 
     if (!faceDetected) {
+      centeredChecks = 0;
       isFaceProperlyAligned = false;
       if (guideEllipse) {
         guideEllipse.setAttribute('stroke', '#ef4444');
@@ -222,10 +224,28 @@ function startFaceAlignmentTracking(video) {
       return;
     }
 
-    // Check if face is centered inside the oval guide (Target: 36% to 64% horizontal, 22% to 68% vertical)
-    const isHorizontallyCentered = faceCenterX >= 0.36 && faceCenterX <= 0.64;
-    const isVerticallyCentered = faceCenterY >= 0.22 && faceCenterY <= 0.68;
+    // Map the detected center to the mirrored, object-fit:cover preview rather
+    // than accepting a wide range of positions anywhere inside the oval.
+    const preview = video.getBoundingClientRect();
+    const oval = guideEllipse?.getBoundingClientRect();
+    if (!oval || !preview.width || !preview.height || !oval.width || !oval.height) {
+      centeredChecks = 0;
+      isFaceProperlyAligned = false;
+      if (btnCapture) btnCapture.disabled = true;
+      return;
+    }
+    const sourceWidth = video.videoWidth || 640;
+    const sourceHeight = video.videoHeight || 480;
+    const scale = Math.max(preview.width / sourceWidth, preview.height / sourceHeight);
+    const displayedX = preview.left + preview.width / 2 - (faceCenterX - 0.5) * sourceWidth * scale;
+    const displayedY = preview.top + preview.height / 2 + (faceCenterY - 0.5) * sourceHeight * scale;
+    const targetX = oval.left + oval.width / 2;
+    const targetY = oval.top + oval.height / 2;
+    // A small margin for detector jitter: 10% of the oval's full width/height.
+    const isHorizontallyCentered = Math.abs(displayedX - targetX) <= oval.width * 0.10;
+    const isVerticallyCentered = Math.abs(displayedY - targetY) <= oval.height * 0.10;
     const isCentered = isHorizontallyCentered && isVerticallyCentered;
+    centeredChecks = isCentered ? centeredChecks + 1 : 0;
 
     if (!isCentered) {
       isFaceProperlyAligned = false;
@@ -235,9 +255,9 @@ function startFaceAlignmentTracking(video) {
       }
       if (guideText) {
         if (!isHorizontallyCentered) {
-          guideText.textContent = faceCenterX < 0.36 ? '⚠️ Move slightly left into oval' : '⚠️ Move slightly right into oval';
+          guideText.textContent = displayedX < targetX ? '⚠️ Move your face right in the preview' : '⚠️ Move your face left in the preview';
         } else {
-          guideText.textContent = faceCenterY < 0.22 ? '⚠️ Lower your head slightly' : '⚠️ Raise your head slightly';
+          guideText.textContent = displayedY < targetY ? '⚠️ Lower your head slightly' : '⚠️ Raise your head slightly';
         }
         guideText.style.borderColor = '#f59e0b';
         guideText.style.color = '#fef08a';
@@ -247,6 +267,15 @@ function startFaceAlignmentTracking(video) {
         btnCapture.style.background = '#64748b';
         btnCapture.textContent = 'Center Face in Oval to Enable';
       }
+    } else if (centeredChecks < 3) {
+      isFaceProperlyAligned = false;
+      if (guideEllipse) guideEllipse.setAttribute('stroke', '#f59e0b');
+      if (guideText) {
+        guideText.textContent = 'Hold still in the center...';
+        guideText.style.borderColor = '#f59e0b';
+        guideText.style.color = '#fef08a';
+      }
+      if (btnCapture) btnCapture.disabled = true;
     } else {
       // Face is properly centered inside the oval!
       isFaceProperlyAligned = true;
