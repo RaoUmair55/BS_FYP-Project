@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Interactive candidate workspace during the exam.
+ * How it works: Loads the released paper, manages timing and local answer drafts, accepts text/file answers and submits them. Polls session state, handles examiner messages/warnings, camera re-verification and file notices, and shows monitoring/offline-buffer status.
+ * Connection: Works with examScreen.html, the central server and window.api; uses Mammoth for DOCX paper display.
+ */
 import mammoth from '../electron/node_modules/mammoth/mammoth.browser.js';
 
 let sessionInfo = null;

@@ -1,3 +1,7 @@
+# IntegrityFlow file overview
+# Purpose: Desktop screenshot evidence implementation.
+# How it works: Uses MSS to capture the combined desktop, converts it with Pillow, reduces JPEG quality toward the configured size target, and saves a timestamped file.
+# Connection: Returns its local path for later upload; capture failures return None.
 import os
 import time
 import io

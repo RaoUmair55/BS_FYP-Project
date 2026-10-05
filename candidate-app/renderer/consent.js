@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Behavior for accepting or declining monitoring consent.
+ * How it works: Requires the checkbox before continuing, passes an acceptance timestamp to Electron, displays failures, and confirms a decline before exiting.
+ * Connection: Works with consent.html and moves an accepting candidate to the identity screen.
+ */
 document.addEventListener('DOMContentLoaded', async () => {
   const checkbox = document.getElementById('consentCheckbox');
   const btnContinue = document.getElementById('btnContinue');

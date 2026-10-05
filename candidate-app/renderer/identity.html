@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+IntegrityFlow file overview
+Purpose: Candidate identification form.
+How it works: Defines the name and roll-number fields, selected-exam label, submission control and error banner.
+Connection: identity.js validates and submits the form before moving to self-check.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -205,13 +211,13 @@
 
     <div class="form-group">
       <label for="studentName">Full Name</label>
-      <input type="text" id="studentName" placeholder="e.g. Jane Doe / Muhammad Ali" autofocus autocomplete="name">
+      <input type="text" id="studentName" placeholder="e.g. Jane Doe / Muhammad Ali" autofocus autocomplete="name" required minlength="2" maxlength="100" aria-describedby="errorBanner">
       <div class="form-hint">Official student name matching your university record.</div>
     </div>
 
     <div class="form-group">
       <label for="rollNumber">Roll Number / Registration ID</label>
-      <input type="text" id="rollNumber" placeholder="e.g. FA20-BCS-042 or 2021-CS-101" autocomplete="off">
+      <input type="text" id="rollNumber" placeholder="e.g. FA20-BCS-042 or 2021-CS-101" autocomplete="off" required minlength="2" maxlength="35" aria-describedby="errorBanner">
       <div class="form-hint">Your institution student registration or roll number.</div>
     </div>
 

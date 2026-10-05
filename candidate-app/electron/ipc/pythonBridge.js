@@ -1,3 +1,12 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Communication and delivery helper for Electron.
+ * How it works: Calls the local Python health/process endpoints and uploads violation records and
+ * evidence to the central server. Persists failed or durable-first deliveries and retries the 
+ * offline buffer without overlapping retry runs.
+ * Connection: Uses violationBuffer.js; main.js supplies the discovered Python port and
+ * exam-active state.
+ */
 const axios = require('axios');
 const dotenv = require('dotenv');
 const path = require('path');
@@ -248,7 +257,7 @@ function notifyStatusChange() {
     try {
       const status = violationBuffer.getBufferStatus();
       statusChangeCallback(status);
-    } catch (e) {}
+    } catch (e) { }
   }
 }
 

@@ -1,3 +1,7 @@
+# IntegrityFlow file overview
+# Purpose: Webcam-frame evidence implementation.
+# How it works: Saves the supplied camera frame as a timestamped JPEG and reduces quality toward the configured size target. Falls back to desktop capture when no frame is supplied.
+# Connection: Returns its local path for later upload; capture failures return None.
 import os
 import time
 from datetime import datetime, timezone

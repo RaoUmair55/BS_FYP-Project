@@ -1,3 +1,8 @@
+# IntegrityFlow file overview
+# Purpose: Checks camera frames for possible obstruction or severe exposure problems.
+# How it works: Measures grayscale brightness and image detail and requires an abnormal
+# condition to persist before reporting it.
+# Connection: Called by AIMonitor; returns a result/reason/metrics rather than uploading evidence itself.
 import time
 import numpy as np
 import cv2

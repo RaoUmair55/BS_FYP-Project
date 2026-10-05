@@ -1,3 +1,9 @@
+<!--
+IntegrityFlow file overview
+Purpose: Technical documentation for the candidate application.
+How it works: Explains candidate setup, screens and monitoring behavior for development and presentation preparation.
+Connection: Read alongside the source-file comments and FILE_GUIDE.md; this document is not executed.
+-->
 # Candidate App (Electron Shell)
 
 The Candidate App is the desktop application run by students during an exam. It serves as a secure wrapper that bundles the user interface with our AI monitoring module.

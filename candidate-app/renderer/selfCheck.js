@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Pre-exam device and environment verification.
+ * How it works: Checks camera alignment/calibration, microphone input, reference voice, applications, USB storage and displays. Enables exam entry when checks pass; physical-lab mode bypasses camera and voice checks.
+ * Connection: Works with selfCheck.html and window.api; captures the online candidate voice reference before continuous monitoring begins.
+ */
 const btnCamera = document.getElementById('btn-check-camera');
 const btnMic = document.getElementById('btn-check-mic');
 const btnRecordVoice = document.getElementById('btn-record-voice');

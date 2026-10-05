@@ -1,3 +1,7 @@
+# IntegrityFlow file overview
+# Purpose: Public entry points for visual evidence capture.
+# How it works: Creates the default desktop and webcam capture providers and exposes capture_screenshot and capture_webcam_frame helpers.
+# Connection: Monitoring code can request evidence through this package rather than choosing a capture implementation each time.
 """
 Capture Service Module
 

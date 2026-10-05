@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
+const { nameSchema, emailSchema, passwordSchema } = require('../utils/inputValidation');
 
 const Teacher = require('../models/Teacher');
 const RefreshToken = require('../models/RefreshToken');
@@ -40,24 +41,20 @@ const forgotPasswordLimiter = rateLimit({
 // -------------------------------------------------------------
 
 const signupSchema = z.object({
-    name: z.string().trim().min(1, 'Name is required'),
-    email: z.string().trim().email('Invalid email address').toLowerCase(),
-    password: z.string()
-        .min(8, 'Password must be at least 8 characters long')
-        .regex(/\d/, 'Password must contain at least one number'),
+    name: nameSchema,
+    email: emailSchema,
+    password: passwordSchema,
     role: z.enum(['teacher', 'admin']).optional()
 });
 
 const loginSchema = z.object({
-    email: z.string().trim().email('Invalid email address').toLowerCase(),
+    email: emailSchema,
     password: z.string().min(1, 'Password is required')
 });
 
 const resetPasswordSchema = z.object({
     token: z.string().min(1, 'Reset token is required'),
-    newPassword: z.string()
-        .min(8, 'Password must be at least 8 characters long')
-        .regex(/\d/, 'Password must contain at least one number')
+    newPassword: passwordSchema
 });
 
 // -------------------------------------------------------------

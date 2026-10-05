@@ -1,3 +1,10 @@
+# IntegrityFlow file overview
+# Purpose: Entry point for the local Python monitoring process.
+# How it works: Reads the session/mode/rules from Electron, binds a loopback API port,
+# and starts application and USB monitors. Online exams also start camera/voice monitoring;
+# self-check and lab modes select different subsystems.
+# Connection: Runs server.py through Uvicorn, drains persisted alerts to Electron in
+# a background thread, and stops monitors on shutdown.
 import warnings
 warnings.filterwarnings('ignore')
 import uvicorn

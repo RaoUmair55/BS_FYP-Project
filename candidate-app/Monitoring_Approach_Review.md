@@ -1,3 +1,9 @@
+<!--
+IntegrityFlow file overview
+Purpose: Engineering review of the monitoring approach.
+How it works: Records reasoning about detection/enforcement behavior, limitations and improvements.
+Connection: Use as background for explaining design choices; it is not a monitoring implementation.
+-->
 # Monitoring approach review — 3 October 2026
 
 Original read-only review of candidate monitoring and its delivery/scoring paths. Follow-up implementations are recorded in RELIABILITY.md; the findings below describe the pre-fix snapshot. Risk/incident aggregation was explicitly excluded from the follow-up. No monitoring behavior was changed in this review. The previous camera update's 17 regression checks passed; those checks are not a real-device accuracy or load evaluation.

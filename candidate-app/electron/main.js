@@ -1,3 +1,12 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Main controller of the Electron candidate application.
+ * How it works: Creates the window and controls login, consent, identity, self-check and exam 
+ * navigation. Starts and stops Python, discovers its port, handles renderer IPC requests, 
+ * and applies exam window, clipboard and display restrictions.
+ * Connection: Connects preload.js, the renderer screens and ipc helpers; 
+ * it owns the active session and monitoring lifecycle.
+ */
 let displayCheckInterval = null;
 const { app, BrowserWindow, dialog, ipcMain, screen, clipboard, session } = require('electron');
 const path = require('path');
@@ -49,9 +58,9 @@ function cleanUpPythonProcess() {
     if (process.platform === 'win32' && pid && !pythonProcess.hasExited) {
       try {
         execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
-      } catch (e) {}
+      } catch (e) { }
     } else {
-      try { pythonProcess.kill('SIGTERM'); } catch (e) {}
+      try { pythonProcess.kill('SIGTERM'); } catch (e) { }
     }
     pythonProcess = null;
   }
@@ -379,7 +388,7 @@ function getPhysicalMonitorCount() {
       if (!isNaN(wmiCount) && wmiCount > 0) {
         count = Math.max(count, wmiCount);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   return count;
 }
@@ -475,54 +484,54 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
   isLoggingIn = true;
   try {
 
-  console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
-  setExamActive(false);
-  activeSessionInfo.sessionId = null;
-  activeSessionInfo.consentGiven = false;
-  activeSessionInfo.consentTimestamp = null;
-  activeSessionInfo.examId = examId;
-  if (examType) activeSessionInfo.examType = examType;
-  activeSessionInfo.rules = rules || {};
-  if (studentId) activeSessionInfo.studentId = studentId;
-  if (studentName) activeSessionInfo.studentName = studentName;
-  if (rollNumber) activeSessionInfo.rollNumber = rollNumber;
-  if (allowedApplications && Array.isArray(allowedApplications)) {
-    activeSessionInfo.allowedApplications = allowedApplications;
-  }
-
-  // Clean up any previously running Python child process before spawning a new one
-  cleanUpPythonProcess();
-
-  // 1. Show splash/loading screen immediately while Python spawns and health-checks
-  if (mainWindow) {
-    await mainWindow.loadFile(path.join(__dirname, '../renderer/splash.html'));
-  }
-
-  // 2. Spawn python in configured mode (exam/dev) for self-check
-  const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
-  pythonProcess = spawnPythonProcess(targetMode, true);
-
-  const isPythonReady = await waitForPythonReady(pythonProcess);
-  if (!isPythonReady) {
-    isLoggingIn = false;
-    const startupError = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr;
-    cleanUpPythonProcess();
-    const errorDetail = startupError
-      ? `The AI module failed to start.\n\nDiagnostics / Error:\n${startupError}`
-      : 'The AI module failed to start.\n\nPlease verify that Python is in your system PATH and all dependencies are installed.';
-    dialog.showErrorBox('Initialization Error', errorDetail);
-    if (mainWindow) {
-      await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
+    console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
+    setExamActive(false);
+    activeSessionInfo.sessionId = null;
+    activeSessionInfo.consentGiven = false;
+    activeSessionInfo.consentTimestamp = null;
+    activeSessionInfo.examId = examId;
+    if (examType) activeSessionInfo.examType = examType;
+    activeSessionInfo.rules = rules || {};
+    if (studentId) activeSessionInfo.studentId = studentId;
+    if (studentName) activeSessionInfo.studentName = studentName;
+    if (rollNumber) activeSessionInfo.rollNumber = rollNumber;
+    if (allowedApplications && Array.isArray(allowedApplications)) {
+      activeSessionInfo.allowedApplications = allowedApplications;
     }
-    return { success: false, error: 'AI module failed to start' };
-  }
 
-  // 3. Python is ready -> proceed to consent screen
-  if (mainWindow) {
-    await mainWindow.loadFile(path.join(__dirname, '../renderer/consent.html'));
-  }
-  isLoggingIn = false;
-  return { success: true };
+    // Clean up any previously running Python child process before spawning a new one
+    cleanUpPythonProcess();
+
+    // 1. Show splash/loading screen immediately while Python spawns and health-checks
+    if (mainWindow) {
+      await mainWindow.loadFile(path.join(__dirname, '../renderer/splash.html'));
+    }
+
+    // 2. Spawn python in configured mode (exam/dev) for self-check
+    const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
+    pythonProcess = spawnPythonProcess(targetMode, true);
+
+    const isPythonReady = await waitForPythonReady(pythonProcess);
+    if (!isPythonReady) {
+      isLoggingIn = false;
+      const startupError = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr;
+      cleanUpPythonProcess();
+      const errorDetail = startupError
+        ? `The AI module failed to start.\n\nDiagnostics / Error:\n${startupError}`
+        : 'The AI module failed to start.\n\nPlease verify that Python is in your system PATH and all dependencies are installed.';
+      dialog.showErrorBox('Initialization Error', errorDetail);
+      if (mainWindow) {
+        await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
+      }
+      return { success: false, error: 'AI module failed to start' };
+    }
+
+    // 3. Python is ready -> proceed to consent screen
+    if (mainWindow) {
+      await mainWindow.loadFile(path.join(__dirname, '../renderer/consent.html'));
+    }
+    isLoggingIn = false;
+    return { success: true };
   } catch (err) {
     cleanUpPythonProcess();
     if (mainWindow && !mainWindow.isDestroyed()) await mainWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
@@ -576,55 +585,24 @@ ipcMain.handle('start-exam-mode', async () => {
   isStartingExam = true;
   setExamActive(false);
   try {
-  console.log('[Electron] Transitioning to Exam Mode...');
-  cleanUpPythonProcess();
+    console.log('[Electron] Transitioning to Exam Mode...');
+    cleanUpPythonProcess();
 
-  // Clean up any existing screen listeners before registering fresh ones
-  if (displayAddedListener) {
-    screen.removeListener('display-added', displayAddedListener);
-    displayAddedListener = null;
-  }
-  if (displayRemovedListener) {
-    screen.removeListener('display-removed', displayRemovedListener);
-    displayRemovedListener = null;
-  }
+    // Clean up any existing screen listeners before registering fresh ones
+    if (displayAddedListener) {
+      screen.removeListener('display-added', displayAddedListener);
+      displayAddedListener = null;
+    }
+    if (displayRemovedListener) {
+      screen.removeListener('display-removed', displayRemovedListener);
+      displayRemovedListener = null;
+    }
 
-  // Register display addition listener for continuous monitoring during active exam
-  displayAddedListener = async (event, newDisplay) => {
-    const totalDisplays = screen.getAllDisplays().length;
-    console.log(`[Electron] Display change detected during exam! Total displays: ${totalDisplays}, New display ID: ${newDisplay?.id}`);
+    // Register display addition listener for continuous monitoring during active exam
+    displayAddedListener = async (event, newDisplay) => {
+      const totalDisplays = screen.getAllDisplays().length;
+      console.log(`[Electron] Display change detected during exam! Total displays: ${totalDisplays}, New display ID: ${newDisplay?.id}`);
 
-    const violationPayload = {
-      sessionId: activeSessionInfo.sessionId,
-      type: 'multiple_displays_detected',
-      severity: 4,
-      timestamp: new Date().toISOString(),
-      details: {
-        object_class: 'secondary_display',
-        displayId: newDisplay?.id,
-        totalDisplays: totalDisplays
-      }
-    };
-
-    // Direct call to backend via forwardViolationToServer (originates in Electron)
-    await forwardViolationToServer(violationPayload);
-  };
-  screen.on('display-added', displayAddedListener);
-
-  displayRemovedListener = (event, oldDisplay) => {
-    console.log(`[Electron] Display removed during exam. Total displays remaining: ${screen.getAllDisplays().length}`);
-  };
-  screen.on('display-removed', displayRemovedListener);
-
-  if (displayCheckInterval) {
-    clearInterval(displayCheckInterval);
-    displayCheckInterval = null;
-  }
-  displayCheckInterval = setInterval(async () => {
-    if (!getExamActive()) return;
-    const currentCount = getPhysicalMonitorCount();
-    if (currentCount > 1) {
-      console.log(`[Electron] Multiple physical displays detected during exam via WMI scan! Total: ${currentCount}`);
       const violationPayload = {
         sessionId: activeSessionInfo.sessionId,
         type: 'multiple_displays_detected',
@@ -632,33 +610,64 @@ ipcMain.handle('start-exam-mode', async () => {
         timestamp: new Date().toISOString(),
         details: {
           object_class: 'secondary_display',
-          totalDisplays: currentCount,
-          detectionMethod: 'wmi_hardware_scan'
+          displayId: newDisplay?.id,
+          totalDisplays: totalDisplays
         }
       };
+
+      // Direct call to backend via forwardViolationToServer (originates in Electron)
       await forwardViolationToServer(violationPayload);
-    }
-  }, 4000);
+    };
+    screen.on('display-added', displayAddedListener);
 
-  // Small delay to ensure port is freed
-  const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
-  pythonProcess = spawnPythonProcess(targetMode, false);
-  const isReady = await waitForPythonReady(pythonProcess);
+    displayRemovedListener = (event, oldDisplay) => {
+      console.log(`[Electron] Display removed during exam. Total displays remaining: ${screen.getAllDisplays().length}`);
+    };
+    screen.on('display-removed', displayRemovedListener);
 
-  if (isReady) {
-    if (mainWindow) {
-      clipboard.clear();
-      await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
-      // Officially activate live proctoring & violation capture now that examScreen is active
-      setExamActive(true);
+    if (displayCheckInterval) {
+      clearInterval(displayCheckInterval);
+      displayCheckInterval = null;
     }
-    return { success: true };
-  } else {
-    setExamActive(false);
-    const error = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr || 'AI module failed to start in exam mode. Retry the system check.';
-    cleanUpPythonProcess();
-    return { success: false, error };
-  }
+    displayCheckInterval = setInterval(async () => {
+      if (!getExamActive()) return;
+      const currentCount = getPhysicalMonitorCount();
+      if (currentCount > 1) {
+        console.log(`[Electron] Multiple physical displays detected during exam via WMI scan! Total: ${currentCount}`);
+        const violationPayload = {
+          sessionId: activeSessionInfo.sessionId,
+          type: 'multiple_displays_detected',
+          severity: 4,
+          timestamp: new Date().toISOString(),
+          details: {
+            object_class: 'secondary_display',
+            totalDisplays: currentCount,
+            detectionMethod: 'wmi_hardware_scan'
+          }
+        };
+        await forwardViolationToServer(violationPayload);
+      }
+    }, 4000);
+
+    // Small delay to ensure port is freed
+    const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
+    pythonProcess = spawnPythonProcess(targetMode, false);
+    const isReady = await waitForPythonReady(pythonProcess);
+
+    if (isReady) {
+      if (mainWindow) {
+        clipboard.clear();
+        await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
+        // Officially activate live proctoring & violation capture now that examScreen is active
+        setExamActive(true);
+      }
+      return { success: true };
+    } else {
+      setExamActive(false);
+      const error = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr || 'AI module failed to start in exam mode. Retry the system check.';
+      cleanUpPythonProcess();
+      return { success: false, error };
+    }
   } catch (err) {
     setExamActive(false);
     cleanUpPythonProcess();

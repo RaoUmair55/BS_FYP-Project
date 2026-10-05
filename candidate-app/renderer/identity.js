@@ -1,9 +1,16 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Registers the candidate identity for the selected exam.
+ * How it works: Loads entry and consent information, validates the name and roll number, creates the session through the central server, and passes the result to Electron for self-check.
+ * Connection: Works with identity.html; registration requires recorded monitoring consent.
+ */
 document.addEventListener('DOMContentLoaded', async () => {
   const nameInput = document.getElementById('studentName');
   const rollInput = document.getElementById('rollNumber');
   const btnSubmit = document.getElementById('btnSubmitIdentity');
   const errorBanner = document.getElementById('errorBanner');
   const examCodeText = document.getElementById('examCodeText');
+  let isSubmitting = false;
 
   let activeExamId = 'EXAM-101';
   let serverUrl = 'http://localhost:5000';
@@ -46,6 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function handleSubmit() {
+    if (isSubmitting) return;
     clearError();
     if (consentData?.consentGiven !== true) {
       showError('Monitoring consent is missing. Return to the consent screen and accept the notice before joining.');
@@ -60,8 +68,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       nameInput.focus();
       return;
     }
-    if (studentName.length < 2) {
-      showError('Full name must contain at least 2 characters.');
+    if (studentName.length < 2 || studentName.length > 100
+        || !/^[\p{L}\p{M} .'\u2019-]+$/u.test(studentName)
+        || (studentName.match(/\p{L}/gu) || []).length < 2) {
+      showError('Full name must contain 2-100 characters and at least two letters. Use letters, spaces, apostrophes, periods or hyphens.');
+      nameInput.setAttribute?.('aria-invalid', 'true');
       nameInput.focus();
       return;
     }
@@ -73,12 +84,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     const rollRegex = /^[A-Za-z0-9\-\_\/\. ]{2,35}$/;
-    if (!rollRegex.test(rollNumber)) {
-      showError('Roll number contains invalid characters. Use letters, numbers, hyphens, and slashes.');
+    if (!rollRegex.test(rollNumber) || !/[A-Za-z0-9]/.test(rollNumber)) {
+      showError('Roll number must contain 2-35 characters and a letter or number. Letters, numbers, spaces, hyphens, underscores, periods and slashes are allowed.');
+      rollInput.setAttribute?.('aria-invalid', 'true');
       rollInput.focus();
       return;
     }
 
+    isSubmitting = true;
     btnSubmit.disabled = true;
     btnSubmit.innerHTML = '<span>Creating Session...</span>';
 
@@ -136,6 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         studentId: rollNumber
       });
     } catch (err) {
+      isSubmitting = false;
       console.error('[Identity] Error creating session:', err);
       showError(err.message || 'Failed to create exam session. Please verify backend connection.');
       btnSubmit.disabled = false;
@@ -144,6 +158,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   btnSubmit.addEventListener('click', handleSubmit);
+  [nameInput, rollInput].forEach(input => input.addEventListener('input', () => {
+    input.setAttribute?.('aria-invalid', 'false');
+    clearError();
+  }));
 
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') rollInput.focus();

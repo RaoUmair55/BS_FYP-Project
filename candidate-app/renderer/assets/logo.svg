@@ -1,1 +1,7 @@
+<!--
+IntegrityFlow file overview
+Purpose: Vector IntegrityFlow logo used by candidate pages.
+How it works: Defines the IF monogram, rounded background and brand colors as scalable SVG shapes.
+Connection: A visual asset; it performs no exam processing.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title"><title id="title">IntegrityFlow IF monogram</title><rect width="64" height="64" rx="14" fill="#087d78"/><path d="M14 16h9v32h-9Z" fill="#ffffff"/><path d="M31 16h21v8H39v6h11v8H39v10h-8Z" fill="#bcf2e6"/></svg>

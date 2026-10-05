@@ -1,3 +1,10 @@
+# IntegrityFlow file overview
+# Purpose: Offline comparison of face counters on labelled images.
+# How it works: Runs OpenCV Haar, YuNet and MediaPipe Tasks on supplied
+#  images, compares counts with expected labels, and prints counts and
+#  inference time.
+# Connection: Use collected test images to evaluate behavior; this script
+#  never starts the camera or emits exam alerts.
 """Compare local face counters on labelled images; never starts camera or emits events.
 Example: python evaluate_faces.py --image single.jpg --expected 1 --image two.jpg --expected 2
 """

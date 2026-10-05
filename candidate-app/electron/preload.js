@@ -1,3 +1,10 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Bridge between the candidate screens and Electron main.js.
+ * How it works: Exposes the limited window.api methods used for session information,
+ * checks, consent, starting/finishing exams and monitoring notifications.
+ * Connection: Renderer JavaScript calls these methods instead of accessing Node.js or Electron directly.
+ */
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {

@@ -4,6 +4,7 @@ const path = require('path');
 const Session = require('../models/Session');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const router = express.Router();
+const { nameSchema, rollNumberSchema, examCodeSchema } = require('../utils/inputValidation');
 
 const Exam = require('../models/Exam');
 const { requireAuth } = require('../middleware/authMiddleware');
@@ -87,20 +88,23 @@ router.post('/', async (req, res) => {
     try {
         const { studentName, rollNumber, examId, studentId, consentGiven, consentTimestamp } = req.body;
         
-        if (typeof studentName !== 'string' || studentName.trim().length < 2) {
-            return res.status(400).json({ error: 'Student Name is required.' });
+        if (!nameSchema.safeParse(studentName).success) {
+            return res.status(400).json({ error: 'Student name must contain 2-100 characters and at least two letters; use letters, spaces, apostrophes, periods or hyphens.' });
         }
-        if (typeof rollNumber !== 'string' || !/^[A-Za-z0-9\-_/. ]{2,35}$/.test(rollNumber.trim())) {
-            return res.status(400).json({ error: 'Roll Number is required.' });
+        if (!rollNumberSchema.safeParse(rollNumber).success) {
+            return res.status(400).json({ error: 'Roll number must contain 2-35 characters and a letter or number; use letters, numbers, spaces, hyphens, underscores, periods or slashes.' });
         }
-        if (typeof examId !== 'string' || !/^[A-Za-z0-9-]{3,32}$/.test(examId.trim())) {
-            return res.status(400).json({ error: 'Exam Code is required.' });
+        if (!examCodeSchema.safeParse(examId).success) {
+            return res.status(400).json({ error: 'Exam code must contain 3-32 letters, numbers or hyphens, including a letter or number.' });
         }
         if (consentGiven !== true && consentGiven !== 'true') return res.status(400).json({ error: 'Consent is required' });
 
         const inputCode = examId.trim().toUpperCase();
         const trimmedName = studentName.trim();
         const trimmedRoll = rollNumber.trim();
+        if (studentId != null && !rollNumberSchema.safeParse(studentId).success) {
+            return res.status(400).json({ error: 'Invalid student ID.' });
+        }
         const finalStudentId = (studentId && studentId.trim()) || trimmedRoll;
 
         let examDuration = 60;

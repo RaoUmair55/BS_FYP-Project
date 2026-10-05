@@ -1,3 +1,10 @@
+# IntegrityFlow file overview
+# Purpose: Offline evaluation of speaker comparison on labelled WAV files.
+# How it works: Creates a Resemblyzer vector from a reference recording,
+# compares sample vectors using the configured similarity cutoff,
+# and prints whether predictions match supplied labels.
+# Connection: Used for measured threshold evaluation; 
+# it records nothing and uploads nothing.
 """Score labelled local WAVs before tuning the speaker cutoff; no recording or upload.
 python evaluate_voice.py --reference enrolled.wav --sample self.wav --speaker candidate --sample other.wav --speaker other
 """

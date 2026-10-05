@@ -1,3 +1,12 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Persistent queue for violations waiting to reach the central server.
+ * How it works: Stores records, evidence paths and retry counts using SQLite when available,
+ *  with a disk-backed JSON fallback. Removes a pending record after successful delivery and 
+ * exposes queue status.
+ * Connection: Used by pythonBridge.js to preserve alerts through temporary network failures
+ *  and app restarts.
+ */
 const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -20,10 +29,10 @@ let jsonStorePath = null;
 
 function getStorePath(filename) {
   try {
-    const userDataDir = (app && typeof app.getPath === 'function') 
-      ? app.getPath('userData') 
+    const userDataDir = (app && typeof app.getPath === 'function')
+      ? app.getPath('userData')
       : path.join(__dirname, '..', '..', 'data');
-      
+
     if (!fs.existsSync(userDataDir)) {
       fs.mkdirSync(userDataDir, { recursive: true });
     }

@@ -1,3 +1,9 @@
+# IntegrityFlow file overview
+# Purpose: Deterministic regression checks for monitoring decisions.
+# How it works: Uses synthetic inputs and mocked operations to exercise
+#  head-turn, object, voice, USB, file-rule and related failure handling.
+# Connection: A developer check rather than a live monitoring loop;
+#  it avoids real camera recording and process termination.
 """Deterministic regressions; no camera, microphone, screenshot or process termination."""
 import os
 import tempfile

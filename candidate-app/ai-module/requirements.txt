@@ -1,3 +1,7 @@
+# IntegrityFlow file overview
+# Purpose: Python dependency list for the monitoring subsystem.
+# How it works: Lists camera/image, ONNX inference, local API, process/device, networking and speech/audio packages installed by pip.
+# Connection: Installation configuration only; it does not start any monitors.
 opencv-python>=4.8.0
 onnxruntime>=1.16.0
 fastapi>=0.100.0

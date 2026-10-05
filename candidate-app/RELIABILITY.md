@@ -1,3 +1,9 @@
+<!--
+IntegrityFlow file overview
+Purpose: Candidate-app reliability notes and verification guidance.
+How it works: Documents startup/delivery behavior and checks relevant to recovering from local or network failures.
+Connection: A reference document, not runtime code.
+-->
 # Candidate reliability review
 
 ## Startup and environment

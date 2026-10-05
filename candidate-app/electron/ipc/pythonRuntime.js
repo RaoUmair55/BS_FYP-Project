@@ -1,3 +1,11 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Finds the Python interpreter used to start local monitoring.
+ * How it works: Checks an explicit PYTHON_PATH, then local venv/.venv interpreters,
+ *  then the system python command. Reports a missing configured interpreter.
+ * Connection: Called by Electron main.js and the reliability checks before launching
+ *  ai-module/main.py.
+ */
 const path = require('path');
 const fs = require('fs');
 
@@ -13,7 +21,7 @@ function getPythonExecutable() {
   // Automatically check for local virtual environment folders (venv or .venv)
   const aiDir = path.join(__dirname, '..', '..', 'ai-module');
   const candidateDir = path.join(__dirname, '..', '..');
-  
+
   const venvCandidates = [
     path.join(aiDir, 'venv', 'Scripts', 'python.exe'),
     path.join(aiDir, '.venv', 'Scripts', 'python.exe'),

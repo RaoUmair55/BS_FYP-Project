@@ -1,3 +1,11 @@
+# IntegrityFlow file overview
+# Purpose: Enforces application and file-access rules during an exam.
+# How it works: Uses psutil and Windows information to inspect processes,
+#  combine the base whitelist with examiner-permitted apps, and report/block disallowed activity.
+#  Retains old-file checks while exempting explicit permitted files and targeting an identified
+#  offending process.
+# Connection: Captures desktop evidence and sends violations through the callback supplied by main.py;
+#  self-check avoids continuous enforcement.
 import psutil
 import threading
 import time

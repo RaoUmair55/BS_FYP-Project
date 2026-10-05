@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Shield, User, Mail, Lock, AlertCircle, CheckCircle, ArrowRight, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Auth.css';
+import { NAME_PATTERN, validName, validEmail, validPasswordSize } from '../utils/inputValidation';
 
 export default function Signup({ onNavigate }) {
     const { signup } = useAuth();
@@ -20,14 +21,15 @@ export default function Signup({ onNavigate }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (isSubmitting || signupSuccess) return;
         setError('');
 
-        if (!name.trim()) {
-            setError('Please enter your full name');
+        if (!validName(name)) {
+            setError('Full name must contain 2-100 characters and at least two letters. Use letters, spaces, apostrophes, periods or hyphens.');
             return;
         }
 
-        if (!email.trim() || !email.includes('@')) {
+        if (!validEmail(email)) {
             setError('Please enter a valid email address');
             return;
         }
@@ -41,6 +43,10 @@ export default function Signup({ onNavigate }) {
             setError('Password must contain at least one number');
             return;
         }
+        if (!validPasswordSize(password)) {
+            setError('Password is too long. Use no more than 72 UTF-8 bytes.');
+            return;
+        }
 
         if (password !== confirmPassword) {
             setError('Passwords do not match');
@@ -49,7 +55,7 @@ export default function Signup({ onNavigate }) {
 
         setIsSubmitting(true);
         try {
-            await signup(name.trim(), email.trim().toLowerCase(), password, role);
+            await signup(name.trim(), email.trim().toLowerCase(), password);
             setSignupSuccess(true);
             // After signup, AuthContext has access token & teacher, App routes automatically to dashboard
         } catch (err) {
@@ -71,7 +77,7 @@ export default function Signup({ onNavigate }) {
                 </div>
 
                 {error && (
-                    <div className="auth-error-banner" style={{ marginBottom: 20 }}>
+                    <div className="auth-error-banner" role="alert" style={{ marginBottom: 20 }}>
                         <AlertCircle size={18} style={{ flexShrink: 0 }} />
                         <span>{error}</span>
                     </div>
@@ -94,6 +100,11 @@ export default function Signup({ onNavigate }) {
                             <User size={16} className="auth-input-icon" />
                             <input
                                 id="signup-name"
+                                minLength={2}
+                                maxLength={100}
+                                pattern={NAME_PATTERN}
+                                title="Use 2-100 characters with at least two letters. Letters, spaces, apostrophes, periods and hyphens are allowed."
+                                autoComplete="name"
                                 type="text"
                                 className="auth-input"
                                 placeholder="Professor Jane Doe"
@@ -114,6 +125,7 @@ export default function Signup({ onNavigate }) {
                             <Mail size={16} className="auth-input-icon" />
                             <input
                                 id="signup-email"
+                                maxLength={254}
                                 type="email"
                                 className="auth-input"
                                 placeholder="jane.doe@university.edu"
@@ -135,6 +147,10 @@ export default function Signup({ onNavigate }) {
                             <Lock size={16} className="auth-input-icon" />
                             <input
                                 id="signup-password"
+                                minLength={8}
+                                maxLength={72}
+                                pattern=".*[0-9].*"
+                                title="Use at least 8 characters and one number."
                                 type="password"
                                 className="auth-input"
                                 placeholder="Min. 8 chars with 1 number"
@@ -168,12 +184,14 @@ export default function Signup({ onNavigate }) {
                             <Lock size={16} className="auth-input-icon" />
                             <input
                                 id="signup-confirm-password"
+                                maxLength={72}
                                 type="password"
                                 className="auth-input"
                                 placeholder="Re-type password"
                                 value={confirmPassword}
                                 onChange={(e) => {
                                     setConfirmPassword(e.target.value);
+                                    e.target.setCustomValidity('');
                                     if (error) setError('');
                                 }}
                                 required

@@ -1,3 +1,11 @@
+# IntegrityFlow file overview
+# Purpose: Microphone speech and speaker-reference monitoring.
+# How it works: Uses WebRTC VAD to select speech and Resemblyzer
+# to compare normalized speaker vectors with the candidate reference
+# using cosine similarity. Requires repeated valid mismatches before
+# emitting a second-voice alert and saves the associated audio clip.
+# Connection: Reference enrollment happens during online self-check;
+# results are review signals, not proof of who spoke.
 import os
 import time
 import json

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Shield, Mail, Lock, AlertCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Auth.css';
+import { validEmail } from '../utils/inputValidation';
 
 export default function Login({ onNavigate }) {
     const { login, demoLogin } = useAuth();
@@ -13,10 +14,15 @@ export default function Login({ onNavigate }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (isSubmitting || isDemoSubmitting) return;
         setError('');
 
         if (!email.trim() || !password) {
             setError('Please enter both email and password');
+            return;
+        }
+        if (!validEmail(email)) {
+            setError('Enter a valid email address, for example teacher@university.edu');
             return;
         }
 
@@ -55,7 +61,7 @@ export default function Login({ onNavigate }) {
                 </div>
 
                 {error && (
-                    <div className="auth-error-banner" style={{ marginBottom: 20 }}>
+                    <div className="auth-error-banner" role="alert" style={{ marginBottom: 20 }}>
                         <AlertCircle size={18} style={{ flexShrink: 0 }} />
                         <span>{error}</span>
                     </div>
@@ -68,6 +74,7 @@ export default function Login({ onNavigate }) {
                             <Mail size={16} className="auth-input-icon" />
                             <input
                                 id="login-email"
+                                maxLength={254}
                                 type="email"
                                 className={`auth-input ${error ? 'has-error' : ''}`}
                                 placeholder="teacher@university.edu"

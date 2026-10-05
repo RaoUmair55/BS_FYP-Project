@@ -1,3 +1,11 @@
+# IntegrityFlow file overview
+# Purpose: Checks and monitors removable USB storage.
+# How it works: Inspects attached storage devices and
+# polls for removable-storage activity; reports detection/query problems
+# and emits exam violations through a callback.
+# Connection: Used by server.py for self-check and by main.py for continuous
+# exam monitoring;
+# this is about storage devices, not every USB peripheral.
 import threading
 import time
 import os

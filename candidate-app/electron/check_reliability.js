@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Developer regression checks for candidate-app reliability.
+ * How it works: Exercises startup, occupied ports, Python health identity, local alert acknowledgement and offline/post-exam retries with temporary stores and a test backend. Also runs Python detection regression checks.
+ * Connection: Run manually through npm run check:reliability; this is a verification script, not an exam screen.
+ */
 // Run with: node check_reliability.js. No camera capture or process enforcement.
 const assert = require('node:assert/strict');
 const net = require('node:net');

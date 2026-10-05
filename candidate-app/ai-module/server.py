@@ -1,3 +1,10 @@
+# IntegrityFlow file overview
+# Purpose: Local FastAPI endpoints used by Electron.
+# How it works: Reports subsystem health and exposes application/USB checks,
+# whitelist configuration, process termination, face calibration and
+# voice-reference checks.
+# Connection: main.py attaches the monitor instances;
+# this API is separate from the project central server.
 from fastapi import FastAPI
 import os
 import json

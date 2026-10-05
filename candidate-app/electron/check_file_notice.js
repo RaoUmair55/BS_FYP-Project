@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Developer checks for the pre-existing-file warning.
+ * How it works: Runs the warning function with a mocked page and checks that an already reported access alert is not sent twice, unrelated answer uploads are preserved, and old answer uploads remain blocked.
+ * Connection: Verifies renderer/examScreen.js without launching the Electron app.
+ */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');

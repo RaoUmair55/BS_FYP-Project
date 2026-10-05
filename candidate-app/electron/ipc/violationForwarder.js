@@ -1,3 +1,11 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Local HTTP receiver for alerts produced by Python.
+ * How it works: Listens on a dynamically assigned loopback port.
+ * Rejects new alerts outside an exam but accepts previously persisted event IDs for recovery;
+ * acknowledges only after durable local acceptance.
+ * Connection: Hands alerts to pythonBridge.js and notifies main.js about active-exam events.
+ */
 const express = require('express');
 const dotenv = require('dotenv');
 const path = require('path');
@@ -29,7 +37,7 @@ function startReceiver(onViolationCallback) {
         return res.status(409).json({ status: 'exam_not_active_retry_later' });
       }
       console.log('[ViolationReceiver] Received violation from Python:', violationPayload);
-      
+
       // Notify Electron main process listener if registered
       if (examActive && typeof onLocalViolationCallback === 'function') {
         try {

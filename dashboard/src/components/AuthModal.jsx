@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, X, AlertCircle, CheckCircle2, Circle, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { NAME_PATTERN, validName, validEmail, validPasswordSize } from '../utils/inputValidation';
 
 export default function AuthModal({ isOpen, onClose }) {
     const { login, signup, demoLogin } = useAuth();
@@ -21,13 +22,13 @@ export default function AuthModal({ isOpen, onClose }) {
 
     const validateForm = () => {
         const errors = {};
-        if (isSignUp && !name.trim()) {
-            errors.name = 'Enter your first and last name';
+        if (isSignUp && !validName(name)) {
+            errors.name = 'Use 2-100 characters and at least two letters; letters, spaces, apostrophes, periods and hyphens are allowed.';
         }
 
         if (!email.trim()) {
             errors.email = 'Enter an email address';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        } else if (!validEmail(email)) {
             errors.email = 'Enter a valid email address (e.g. name@university.edu)';
         }
 
@@ -38,6 +39,8 @@ export default function AuthModal({ isOpen, onClose }) {
                 errors.password = 'Password must be at least 8 characters long';
             } else if (!hasNumber) {
                 errors.password = 'Password must contain at least one number (0-9)';
+            } else if (!validPasswordSize(password)) {
+                errors.password = 'Password must be no longer than 72 UTF-8 bytes';
             }
         }
 
@@ -47,6 +50,7 @@ export default function AuthModal({ isOpen, onClose }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (loading) return;
         setError(null);
 
         if (!validateForm()) {
@@ -256,6 +260,11 @@ export default function AuthModal({ isOpen, onClose }) {
                         <div style={{ marginBottom: '16px' }}>
                             <input
                                 id="auth-name-input"
+                                required
+                                minLength={2}
+                                maxLength={100}
+                                pattern={NAME_PATTERN}
+                                title="Use 2-100 characters and at least two letters."
                                 type="text"
                                 placeholder="Full name"
                                 value={name}
@@ -296,6 +305,8 @@ export default function AuthModal({ isOpen, onClose }) {
                     <div style={{ marginBottom: '16px' }}>
                         <input
                             id="auth-email-input"
+                            required
+                            maxLength={254}
                             type="email"
                             placeholder="Email address"
                             value={email}
@@ -336,6 +347,9 @@ export default function AuthModal({ isOpen, onClose }) {
                         <div style={{ position: 'relative' }}>
                             <input
                                 id="auth-password-input"
+                                required
+                                minLength={isSignUp ? 8 : undefined}
+                                maxLength={isSignUp ? 72 : undefined}
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder="Enter your password"
                                 value={password}

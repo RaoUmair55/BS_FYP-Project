@@ -1,3 +1,8 @@
+# IntegrityFlow file overview
+# Purpose: Common interface for visual evidence providers.
+# How it works: Defines the abstract capture method: receive a session and violation type, 
+# then return the saved evidence path or None.
+# Connection: Implemented by the MSS desktop provider and webcam-frame provider.
 from abc import ABC, abstractmethod
 from typing import Optional
 

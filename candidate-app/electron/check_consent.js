@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Developer checks for the consent and identity flow.
+ * How it works: Uses assertions and a mocked renderer environment to verify consent-dependent behavior and the monitoring disclosure.
+ * Connection: Run through npm run check:consent; it does not join a real exam.
+ */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');

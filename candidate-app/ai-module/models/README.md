@@ -1,3 +1,9 @@
+<!--
+IntegrityFlow file overview
+Purpose: Documentation for locally stored face models.
+How it works: Explains model assets and their role in the face-processing subsystem.
+Connection: The nearby ONNX and Tasks files are binary trained models and cannot contain source comments.
+-->
 # Offline face models
 
 The exam uses `face_landmarker.task` with MediaPipe 0.10.35 Tasks VIDEO mode. OpenCV Haar remains a fallback if the package or model cannot initialize; repeated runtime inference failures also select the fallback. No runtime model download is required.

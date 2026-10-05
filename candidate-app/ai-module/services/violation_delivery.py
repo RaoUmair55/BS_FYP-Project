@@ -1,3 +1,9 @@
+# IntegrityFlow file overview
+# Purpose: Durable handoff queue from Python to Electron.
+# How it works: Assigns stable event IDs and saves alerts in a local SQLite spool.
+# Posts one saved alert at a time and deletes it only after Electron acknowledges durable acceptance.
+# Connection: main.py retries this queue so a temporary handoff failure does not immediately discard
+#  an alert.
 """Durable local handoff to Electron; event IDs survive retries and Python restarts."""
 import json
 import os

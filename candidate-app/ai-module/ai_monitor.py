@@ -1,3 +1,12 @@
+# IntegrityFlow file overview
+# Purpose: Camera-based exam monitoring and visual evidence.
+# How it works: Processes webcam frames with OpenCV, uses MediaPipe
+# landmarks when available with OpenCV fallbacks, and runs the 
+# YOLO ONNX model for configured object checks. Applies calibration,
+# confidence and sustained-condition rules to reduce transient alerts.
+# Connection: Reports head/face/person/object signals through the
+# supplied callback and saves evidence; it does not calculate the server 
+# risk score.
 import cv2
 import time
 import json

@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Behavior for the exam-code entry screen.
+ * How it works: Normalizes and validates the code, asks the central server whether the exam accepts candidates, loads its mode/rules/allowed applications, and hands the entry information to Electron.
+ * Connection: Works with login.html; exam-code entry comes before consent and candidate identity.
+ */
 let isSubmitting = false;
 
 async function handleLogin() {
@@ -7,18 +13,26 @@ async function handleLogin() {
   const examId = examIdInput.value.trim().toUpperCase();
   const btn = document.getElementById('loginBtn');
   const errorMsg = document.getElementById('errorMsg');
-  
+
   if (!examId) {
     errorMsg.textContent = 'Please enter an Exam Code.';
     examIdInput.focus();
     return;
   }
-  
+  if (!/^[A-Z0-9-]{4,32}$/.test(examId) || !/[A-Z0-9]/.test(examId)) {
+    errorMsg.textContent = 'Exam code must contain 4-32 letters, numbers or hyphens, including a letter or number (e.g. EXAM-101).';
+    examIdInput.setAttribute('aria-invalid', 'true');
+    examIdInput.focus();
+    return;
+  }
+  examIdInput.value = examId;
+  examIdInput.setAttribute('aria-invalid', 'false');
+
   isSubmitting = true;
   errorMsg.textContent = '';
   btn.disabled = true;
   btn.textContent = 'Validating Exam Code...';
-  
+
   try {
     let serverUrl = 'http://localhost:5000';
     try {
@@ -26,7 +40,7 @@ async function handleLogin() {
       if (sessionInfo && sessionInfo.serverUrl) {
         serverUrl = sessionInfo.serverUrl;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     let allowedApplications = [];
     let examType = 'online';
@@ -59,7 +73,7 @@ async function handleLogin() {
         }
       }
     }
-    
+
     const entryData = { examId, allowedApplications, examType, rules };
     sessionStorage.setItem('sessionInfo', JSON.stringify(entryData));
     localStorage.setItem('sessionInfo', JSON.stringify(entryData));
@@ -87,5 +101,17 @@ document.getElementById('examId').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     handleLogin();
+  }
+});
+document.getElementById('examId').addEventListener('input', (e) => {
+  e.target.setAttribute('aria-invalid', 'false');
+  document.getElementById('errorMsg').textContent = '';
+});
+document.getElementById('examId').addEventListener('blur', (e) => {
+  const code = e.target.value.trim().toUpperCase();
+  e.target.value = code;
+  if (code && (!/^[A-Z0-9-]{3,32}$/.test(code) || !/[A-Z0-9]/.test(code))) {
+    e.target.setAttribute('aria-invalid', 'true');
+    document.getElementById('errorMsg').textContent = 'Use 3-32 letters, numbers or hyphens, for example EXAM-101.';
   }
 });

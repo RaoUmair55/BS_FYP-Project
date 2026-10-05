@@ -1,3 +1,9 @@
+<!--
+IntegrityFlow file overview
+Purpose: Documentation for monitoring configuration.
+How it works: Explains settings stored in the adjacent JSON files.
+Connection: JSON must stay valid; file roles are also described in FILE_GUIDE.md.
+-->
 # Whitelist Configuration
 
 This folder contains `whitelist.json`, which defines the allowed applications that will not be terminated during an active exam session.

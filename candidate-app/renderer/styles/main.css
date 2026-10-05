@@ -1,3 +1,9 @@
+/*
+ * IntegrityFlow file overview
+ * Purpose: Shared visual styling for candidate screens.
+ * How it works: Defines common colors, typography, form controls, cards, status appearance and responsive exam-page layout.
+ * Connection: Loaded by renderer HTML pages; these rules change appearance, not monitoring or exam logic.
+ */
 /* Shared candidate presentation; exam and security behaviour stays in the existing scripts. */
 :root {
   --primary: #087d78; --primary-hover: #056962; --primary-dark: #056962;
@@ -5,6 +11,7 @@
   --text-main: #23383f; --text-muted: #526b76; --border: #d6e1e6;
   --font: 'Segoe UI', Arial, sans-serif;
 }
+input[aria-invalid="true"] { border-color: #b3261e; outline-color: #b3261e; }
 * { box-sizing: border-box; }
 body { font-family: var(--font); background: var(--bg); color: var(--text-main); -webkit-font-smoothing: antialiased; }
 ::selection { background: #bcf2e6; color: #132b37; }

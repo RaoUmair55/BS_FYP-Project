@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { examCodeSchema } = require('../utils/inputValidation');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -229,6 +230,9 @@ router.get('/', requireAuth, async (req, res) => {
 
 // GET /exams/code/:code — Get exam by code
 router.get('/code/:code', async (req, res) => {
+    if (!examCodeSchema.safeParse(req.params.code).success) {
+        return res.status(400).json({ error: 'Exam code must contain 3-32 letters, numbers or hyphens, including a letter or number.' });
+    }
     try {
         const examCode = req.params.code.trim().toUpperCase();
         let exam = await Exam.findOne({ examCode });
