@@ -10,7 +10,7 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import numpy as np
 from ai_monitor import AIMonitor
@@ -21,6 +21,173 @@ import server
 
 
 class DetectionChecks(unittest.TestCase):
+    def test_usb_disk_parent_fallback_never_ejects_a_hub(self):
+        monitor = USBMonitor('usb-parent-check', lambda event: None)
+        cfg = MagicMock()
+        def locate(pointer, *args):
+            pointer._obj.value = 10
+            return 0
+        def parent(pointer, *args):
+            pointer._obj.value = 20
+            return 0
+        driver = ['USBSTOR']
+        def service(node, prop, kind, buffer, size, flags):
+            buffer.value = driver[0]
+            return 0
+        def eject(node, veto, *args):
+            if node == 10:
+                veto._obj.value = 8
+                return 23
+            return 0
+        cfg.CM_Locate_DevNodeW.side_effect = locate
+        cfg.CM_Get_Parent.side_effect = parent
+        cfg.CM_Get_DevNode_Registry_PropertyW.side_effect = service
+        cfg.CM_Request_Device_EjectW.side_effect = eject
+        drive = {'ejectionAllowed': True, 'pnpDeviceId': 'USBSTOR\\TEST', 'driveLetters': []}
+        with patch('usb_monitor.os.name', 'nt'), patch('usb_monitor.ctypes.WinDLL', return_value=cfg, create=True):
+            self.assertEqual(monitor._eject_storage(drive)['status'], 'safe_removal_accepted')
+            self.assertEqual([call.args[0] for call in cfg.CM_Request_Device_EjectW.call_args_list], [10, 20])
+            cfg.CM_Request_Device_EjectW.reset_mock()
+            driver[0] = 'USBHUB3'
+            self.assertEqual(monitor._eject_storage(drive)['status'], 'failed')
+            self.assertEqual([call.args[0] for call in cfg.CM_Request_Device_EjectW.call_args_list], [10])
+
+    def test_voice_background_noise_cannot_reach_speaker_comparison(self):
+        monitor = VoiceMonitor.__new__(VoiceMonitor)
+        monitor.is_self_check = False
+        monitor.sample_rate = 16000
+        monitor.reference_embedding = np.eye(1, 256, 0)[0]
+        monitor.thresholds = {}
+        monitor.mismatch_count = 1
+        encoder = MagicMock()
+        monitor._get_encoder = lambda: encoder
+        vad = MagicMock()
+        vad.is_speech.side_effect = [True] * 3 + [False] * 97
+        audio = np.full(48000, 200, dtype=np.int16).tobytes()
+        with patch('voice_monitor.webrtcvad.Vad', return_value=vad):
+            monitor._verify_speaker_segment(audio, 3)
+        self.assertEqual(monitor.mismatch_count, 0)
+        encoder.embed_utterance.assert_not_called()
+
+    def test_usb_safe_ejection_success_veto_and_protected_disks(self):
+        monitor = USBMonitor('usb-eject-check', lambda event: None)
+        drive = {'pnpDeviceId': 'USBSTOR\\TEST', 'ejectionAllowed': True, 'driveLetters': []}
+        cfg = MagicMock()
+        cfg.CM_Locate_DevNodeW.return_value = 0
+        cfg.CM_Request_Device_EjectW.return_value = 0
+        with patch('usb_monitor.os.name', 'nt'), patch('usb_monitor.ctypes.WinDLL', return_value=cfg, create=True):
+            self.assertEqual(monitor._eject_storage(drive)['status'], 'safe_removal_accepted')
+            cfg.CM_Request_Device_EjectW.assert_called_once()
+            cfg.CM_Request_Device_EjectW.return_value = 23
+            self.assertEqual(monitor._eject_storage(drive)['status'], 'failed')
+            self.assertEqual(monitor._eject_storage(drive)['windowsCode'], 23)
+            cfg.CM_Request_Device_EjectW.reset_mock()
+            monitor.is_self_check = True
+            self.assertEqual(monitor._eject_storage(drive)['status'], 'skipped')
+            monitor.is_self_check = False
+            self.assertEqual(monitor._eject_storage({**drive, 'ejectionAllowed': False})['status'], 'skipped')
+            letter = os.path.splitdrive(os.getcwd())[0]
+            if letter:
+                self.assertEqual(monitor._eject_storage({**drive, 'driveLetters': [letter]})['status'], 'skipped')
+            cfg.CM_Request_Device_EjectW.assert_not_called()
+
+    def test_usb_ejection_failure_still_reports_evidence_and_self_check_is_read_only(self):
+        events = []
+        monitor = USBMonitor('usb-eject-check', events.append)
+        with patch('services.capture.capture_screenshot', return_value='snapshot.jpg'), \
+                patch.object(monitor, '_eject_storage', return_value={'status': 'failed', 'reason': 'busy'}) as eject:
+            monitor._handle_violation({'device': 'USB1'})
+            self.assertEqual(events[0]['details']['ejection']['status'], 'failed')
+            self.assertEqual(events[0]['screenshotPath'], 'snapshot.jpg')
+            monitor.is_self_check = True
+            monitor._handle_violation({'device': 'USB2'})
+            eject.assert_called_once()
+            self.assertEqual(len(events), 1)
+
+    def test_recent_old_file_closes_associated_allowed_app_and_preserves_protected_processes(self):
+        monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
+        monitor.session_id = 'file-close-check'
+        monitor.allowed_apps = {'notepad.exe'}
+        monitor.SAFETY_LIST = set()
+        monitor.protected_pids = {456}
+        monitor.permitted_files = set()
+        monitor.violation_counts = {}
+        events, closed = [], []
+        monitor.on_violation_callback = events.append
+        def process(pid, name):
+            return SimpleNamespace(pid=pid, info={'username': 'student'}, name=lambda: name,
+                terminate=lambda: closed.append(pid), wait=lambda **kw: None)
+        with patch.dict(os.environ, {'USERNAME': 'student'}), \
+                patch('whitelist_enforcer.capture_screenshot', return_value=None), \
+                patch('whitelist_enforcer.psutil.process_iter', return_value=[
+                    process(123, 'notepad.exe'), process(456, 'notepad.exe'), process(789, 'excel.exe')]):
+            monitor._handle_file_violation(None, 'document_viewer', 'old file opened', os.path.abspath('notes.txt'))
+        self.assertEqual(closed, [123])
+        self.assertEqual(events[0]['details']['action'], 'file_closed_require_new')
+        self.assertEqual(events[0]['details']['closedProcessIds'], [123])
+
+    def test_head_turn_survives_slow_frames_but_resets_after_interruption(self):
+        monitor, events = self.camera()
+        monitor.neutral_pose = np.array([0., 0.])
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        for stamp in (100, 100.7, 101.4):
+            with patch('ai_monitor.time.monotonic', return_value=stamp):
+                monitor._observe_head_pose(35, 0, frame)
+        self.assertEqual(len(events), 1, 'slow but continuous frames must confirm a turn')
+        events.clear()
+        for stamp in (105, 108, 111):
+            with patch('ai_monitor.time.monotonic', return_value=stamp):
+                monitor._observe_head_pose(35, 0, frame)
+        self.assertEqual(events, [], 'disconnected observations must not confirm a turn')
+
+    def test_notepad_released_handle_still_reports_and_targets_launch_file(self):
+        monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
+        monitor.session_id = 'notepad-check'
+        monitor.SAFETY_LIST = set()
+        monitor.protected_pids = set()
+        monitor.violation_counts = {}
+        monitor.permitted_files = set()
+        monitor.IGNORE_DIRS = ()
+        monitor.DOC_EXTENSIONS = {'.txt'}
+        monitor.exam_start_time = time.time()
+        events, closed = [], []
+        monitor.on_violation_callback = events.append
+        with tempfile.TemporaryDirectory() as directory:
+            old = os.path.join(directory, 'old - notes.txt')
+            fresh = os.path.join(directory, 'answer.txt')
+            for path in (old, fresh):
+                with open(path, 'w') as file:
+                    file.write('test')
+            os.utime(old, (monitor.exam_start_time - 100, monitor.exam_start_time - 100))
+            title = {123: 'old - notes.txt - Notepad'}
+            monitor._get_window_titles = lambda: title
+            proc = SimpleNamespace(pid=123, name=lambda: 'notepad.exe', open_files=lambda: [],
+                cmdline=lambda: ['notepad.exe', old], cwd=lambda: directory,
+                terminate=lambda: closed.append(123), wait=lambda **kwargs: None)
+            with patch('whitelist_enforcer.capture_screenshot', return_value=None):
+                monitor._inspect_allowed_app(proc, 'notepad.exe')
+                self.assertEqual(closed, [123])
+                self.assertEqual(events[0]['details']['action'], 'file_closed_require_new')
+                self.assertTrue(events[0]['details']['processVerified'])
+                monitor.permitted_files.add(os.path.normcase(os.path.realpath(old)))
+                monitor._inspect_allowed_app(proc, 'notepad.exe')
+                self.assertEqual(len(events), 1, 'explicit permitted file is exempt')
+                monitor.permitted_files.clear()
+                title[123] = 'answer.txt - Notepad'
+                self.assertIsNone(monitor._notepad_launch_file(proc), 'stale launch argument must not identify a different open document')
+                proc.cmdline = lambda: ['notepad.exe', fresh]
+                monitor._inspect_allowed_app(proc, 'notepad.exe')
+                self.assertEqual(len(events), 1, 'new answer remains allowed')
+                # Reopening through File > Open still closes the matching app,
+                # even if the shortcut timestamp was already processed.
+                title[123] = 'old - notes.txt - Notepad'
+                proc.cmdline = lambda: ['notepad.exe']
+                monitor.violation_counts.clear()
+                with patch.object(monitor, '_notepad_recent_file', return_value=old):
+                    monitor._inspect_allowed_app(proc, 'notepad.exe')
+                self.assertEqual(closed, [123, 123])
+                self.assertEqual(events[-1]['details']['action'], 'file_closed_require_new')
+
     def test_biased_neutral_cannot_label_frontal_pose_left(self):
         monitor, events = self.camera()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -388,6 +555,7 @@ class DetectionChecks(unittest.TestCase):
         monitor.mismatch_count = 0
         monitor.last_verified_at = 0
         monitor._get_encoder = lambda: SimpleNamespace(embed_utterance=lambda wav: np.eye(1, 256, 1)[0])
+        monitor._has_clear_speech = lambda audio: True  # This test isolates speaker timing, not VAD.
         monitor._save_audio_clip = lambda audio: "check-evidence.wav"
         events = []
         monitor._emit_violation = lambda **event: events.append(event)

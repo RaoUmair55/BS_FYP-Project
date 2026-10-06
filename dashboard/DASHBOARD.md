@@ -1,5 +1,15 @@
 # IntegrityFlow Dashboard Documentation
 
+## Live alert scope
+
+The Live Monitoring End Exam action uses the selected exam's database ID from the authenticated roster. After confirmation it marks the exam completed, clears the live exam/candidate selection and opens History. While saving, duplicate clicks are disabled; failures keep the dialog open with a retryable error. This action does not use the candidate code lookup, which closes to late entrants after paper release.
+
+Grouped voice alerts preserve the latest uploaded `audioPath`, so playback uses server-hosted evidence rather than the candidate laptop's local filesystem path. New audio uploads also normalize the nested details path to the stored URL.
+
+Live Monitoring includes alerts only from exams whose current status is `active`, within the signed-in teacher's access. A session still marked active cannot keep a completed exam in Live Monitoring. Historical alerts remain available in History.
+
+The Alert Triage panel follows both the selected exam and the selected candidate session, with newest alerts first. Selecting a candidate fetches that session's alerts independently of the shared 50-event socket buffer. Switching selections cancels pending requests; a 15-second refresh supplements immediate socket delivery. Candidates who finish while their exam is still active remain reviewable until the exam ends.
+
 ## Project Context: What Are We Building & How?
 **What we are building:** We are building the examiner dashboard for **IntegrityFlow**, an AI-powered exam proctoring system. This dashboard acts as the central command center for human examiners. It allows teachers to create and manage exam codes, upload question papers, monitor active candidate sessions in real-time, view automated risk scores for each student, review captured evidence of potential violations, triage/review violation alerts with decision controls, and **review historical exam analytics & candidate performance rosters after an exam completes**.
 

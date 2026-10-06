@@ -10,6 +10,7 @@ import threading
 import time
 import os
 import ctypes
+import sys
 from datetime import datetime, timezone
 import psutil
 
@@ -28,7 +29,7 @@ class USBMonitor:
     using logical disk volume inspection.
     
     IMPORTANT DESIGN CONSTRAINT:
-    This detects mounted removable storage volumes ONLY. Generic USB peripherals like
+    This detects physical USB storage disks, including unmounted disks. Generic USB peripherals like
     wired mice, keyboards, webcams, and audio interfaces are Human Interface Devices (HID)
     or media classes that never mount as drive letters and are structurally excluded.
     """
@@ -52,7 +53,18 @@ class USBMonitor:
 
         # UASP disks can report a SCSI interface; Storage CIM BusType 7 identifies USB.
         # Query CIM directly to avoid slow Get-Disk module loading; preserve legacy fallback.
-        ps_script = "$ErrorActionPreference = 'Stop'; $usbNumbers = @(); try { $usbNumbers = @(Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_Disk -OperationTimeoutSec 2 -ErrorAction Stop | Where-Object { $_.BusType -eq 7 } | Select-Object -ExpandProperty Number) } catch {}; $disks = Get-CimInstance Win32_DiskDrive | Where-Object { ($_.InterfaceType -eq 'USB' -or $usbNumbers -contains $_.Index) -and $_.Size -gt 0 }; if ($disks) { $disks | Select-Object DeviceID, Model, Size, Caption | ConvertTo-Json -Compress } else { '[]' }"
+        ps_script = """$ErrorActionPreference = 'Stop';
+        $storage = @(); try { $storage = @(Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_Disk -OperationTimeoutSec 2 -ErrorAction Stop) } catch {};
+        $usbNumbers = @($storage | Where-Object { $_.BusType -eq 7 } | Select-Object -ExpandProperty Number);
+        $disks = @(Get-CimInstance Win32_DiskDrive | Where-Object { ($_.InterfaceType -eq 'USB' -or $usbNumbers -contains $_.Index) -and $_.Size -gt 0 });
+        $result = @($disks | ForEach-Object {
+            $disk = $_; $known = @($storage | Where-Object { $_.Number -eq $disk.Index });
+            $volumesKnown = $true; try { $letters = @(Get-CimAssociatedInstance -InputObject $disk -Association Win32_DiskDriveToDiskPartition | ForEach-Object {
+                Get-CimAssociatedInstance -InputObject $_ -Association Win32_LogicalDiskToPartition | Select-Object -ExpandProperty DeviceID
+            }) } catch { $volumesKnown = $false; $letters = @() };
+            [PSCustomObject]@{ DeviceID=$disk.DeviceID; Model=$disk.Model; Caption=$disk.Caption; PNPDeviceID=$disk.PNPDeviceID;
+                DriveLetters=$letters; EjectionAllowed=($volumesKnown -and $known.Count -eq 1 -and $known[0].IsBoot -eq $false -and $known[0].IsSystem -eq $false) }
+        }); if ($result.Count) { ConvertTo-Json -InputObject $result -Compress } else { '[]' }"""
         try:
             res = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
@@ -78,7 +90,10 @@ class USBMonitor:
                     "device": dev_id,
                     "mountpoint": dev_id,
                     "label": name,
-                    "fstype": "USB Mass Storage"
+                    "fstype": "USB Mass Storage",
+                    "pnpDeviceId": d.get('PNPDeviceID'),
+                    "driveLetters": d.get('DriveLetters') or [],
+                    "ejectionAllowed": d.get('EjectionAllowed') is True
                 })
             return results
         except Exception as e:
@@ -134,6 +149,8 @@ class USBMonitor:
             self.reported_drives.add(key)
 
     def _handle_violation(self, drive_info):
+        if self.is_self_check:
+            return
         device = drive_info.get("device", "Unknown Drive")
         label = drive_info.get("label", "Removable Storage")
         print(f"[USBMonitor] USB removable storage detected during exam: {device} ({label})")
@@ -146,17 +163,21 @@ class USBMonitor:
         except Exception as e:
             print(f"[USBMonitor] Warning: Could not capture screenshot: {e}")
 
+        captured_at = datetime.now(timezone.utc).isoformat()
+        ejection = self._eject_storage(drive_info)
+        print(f'[USBMonitor] Safe-ejection result for {device}: {ejection}')
         payload = {
             "sessionId": self.session_id,
             "type": "usb_device_detected",
             "severity": 4,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": captured_at,
             "details": {
                 "object_class": "removable_storage",
                 "device": device,
                 "mountpoint": drive_info.get("mountpoint", device),
                 "label": label,
-                "fstype": drive_info.get("fstype", "")
+                "fstype": drive_info.get("fstype", ""),
+                "ejection": ejection
             }
         }
 
@@ -168,3 +189,60 @@ class USBMonitor:
                 self.on_violation_callback(payload)
         except Exception as e:
             print(f"[USBMonitor] Error dispatching USB violation: {e}")
+
+    def _eject_storage(self, drive_info):
+        """Ask Windows for safe removal of this disk only; honour vetoes, never force removal."""
+        if self.is_self_check or os.name != 'nt':
+            return {'status': 'skipped', 'reason': 'Ejection runs only during a Windows exam'}
+        if not drive_info.get('ejectionAllowed') or not drive_info.get('pnpDeviceId'):
+            return {'status': 'skipped', 'reason': 'Safe non-system disk identity could not be verified'}
+        protected = {os.path.splitdrive(path)[0].upper() for path in
+                     [__file__, sys.executable, os.getcwd(), os.environ.get('APPDATA', ''),
+                      os.environ.get('LOCALAPPDATA', ''), os.environ.get('WINDIR', '')] if path}
+        letters = drive_info.get('driveLetters') or []
+        if isinstance(letters, str):
+            letters = [letters]
+        if protected.intersection(str(letter).upper().rstrip('\\/') for letter in letters):
+            return {'status': 'skipped', 'reason': 'Disk hosts Windows, the application or local application data'}
+        try:
+            from ctypes import wintypes
+            cfg = ctypes.WinDLL('cfgmgr32')
+            locate = cfg.CM_Locate_DevNodeW
+            locate.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.LPWSTR, wintypes.ULONG]
+            locate.restype = wintypes.ULONG
+            eject = cfg.CM_Request_Device_EjectW
+            eject.argtypes = [wintypes.DWORD, ctypes.POINTER(ctypes.c_int), wintypes.LPWSTR, wintypes.ULONG, wintypes.ULONG]
+            eject.restype = wintypes.ULONG
+            node = wintypes.DWORD()
+            result = locate(ctypes.byref(node), drive_info['pnpDeviceId'], 0)
+            if result:
+                return {'status': 'failed', 'reason': 'Device lookup failed', 'windowsCode': int(result)}
+            veto = ctypes.c_int()
+            name = ctypes.create_unicode_buffer(260)
+            result = eject(node.value, ctypes.byref(veto), name, len(name), 0)
+            # Some USB disks cannot eject their disk child node. Retry only the
+            # direct storage-driver parent, never a hub or composite controller.
+            if result and veto.value == 8:
+                parent = wintypes.DWORD()
+                get_parent = cfg.CM_Get_Parent
+                get_parent.argtypes = [ctypes.POINTER(wintypes.DWORD), wintypes.DWORD, wintypes.ULONG]
+                get_parent.restype = wintypes.ULONG
+                property_fn = cfg.CM_Get_DevNode_Registry_PropertyW
+                property_fn.argtypes = [wintypes.DWORD, wintypes.ULONG, ctypes.POINTER(wintypes.ULONG),
+                                        ctypes.c_void_p, ctypes.POINTER(wintypes.ULONG), wintypes.ULONG]
+                property_fn.restype = wintypes.ULONG
+                service = ctypes.create_unicode_buffer(260)
+                size = wintypes.ULONG(ctypes.sizeof(service))
+                kind = wintypes.ULONG()
+                if (get_parent(ctypes.byref(parent), node.value, 0) == 0 and
+                    property_fn(parent.value, 5, ctypes.byref(kind), service, ctypes.byref(size), 0) == 0 and
+                    service.value.casefold() in ('usbstor', 'uaspstor')):
+                    veto.value = 0
+                    name.value = ''
+                    result = eject(parent.value, ctypes.byref(veto), name, len(name), 0)
+            if result:
+                return {'status': 'failed', 'reason': 'Windows refused safe removal',
+                        'windowsCode': int(result), 'vetoType': veto.value, 'vetoName': name.value}
+            return {'status': 'safe_removal_accepted'}
+        except (OSError, AttributeError, TypeError) as exc:
+            return {'status': 'failed', 'reason': str(exc)}

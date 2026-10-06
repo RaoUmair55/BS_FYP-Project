@@ -105,4 +105,6 @@ npm start
 ```
 
 ## Team
-- Placeholder (Add your team members here)
+- Rao Umair Ahmed
+- Muhammad Usman
+- Abubakar 

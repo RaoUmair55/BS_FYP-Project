@@ -121,6 +121,7 @@ router.post('/violation', uploadFields, async (req, res) => {
             const savedAudio = await storageService.save(audioFile.buffer, uniqueAudioFilename, 'audio_clips');
             uploadedAssets.push(savedAudio.path || savedAudio.url);
             newViolation.audioPath = savedAudio.url;
+            newViolation.details = { ...newViolation.details, audioPath: savedAudio.url };
         }
         // Re-check session window only if file uploads took wall-clock time
         if (uploadedAssets.length > 0) {
@@ -178,6 +179,10 @@ router.get('/violations', requireAuth, async (req, res) => {
     try {
         const query = {};
         const activeOnly = req.query.active === 'true';
+        if (activeOnly) {
+            const { autoExpireFinishedExams } = require('../utils/examLifecycle');
+            await autoExpireFinishedExams(req.app.locals.io);
+        }
         if (req.query.reviewed !== undefined) {
             query.reviewed = req.query.reviewed === 'true';
         }
@@ -189,7 +194,7 @@ router.get('/violations', requireAuth, async (req, res) => {
         let myCodes = null;
         if (!isAdmin) {
             if (!currentTeacherId) return res.json([]);
-            const myExams = await Exam.find({ createdBy: currentTeacherId }).select('examCode examId _id').lean();
+            const myExams = await Exam.find({ createdBy: currentTeacherId, ...(activeOnly ? { status: 'active' } : {}) }).select('examCode examId _id').lean();
             myCodes = [];
             myExams.forEach(e => {
                 if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
@@ -217,8 +222,21 @@ router.get('/violations', requireAuth, async (req, res) => {
 
         let sessionById = null;
         if (activeOnly) {
-            const sessionFilter = { status: 'active' };
-            if (myCodes) sessionFilter.examId = { $in: myCodes };
+            // A session can remain marked active after its exam ended. The exam
+            // lifecycle, rather than that stale session flag, defines Live.
+            if (!myCodes) {
+                const activeExams = await Exam.find({ status: 'active' }).select('examCode examId _id').lean();
+                myCodes = activeExams.flatMap(exam => [exam.examCode, exam.examId, String(exam._id)]
+                    .filter(Boolean).map(code => new RegExp('^' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i')));
+            }
+            if (myCodes.length === 0) return res.json([]);
+            const sessionFilter = { examId: { $in: myCodes } };
+            if (req.query.examId) {
+                if (typeof req.query.examId !== 'string') return res.status(400).json({ error: 'Invalid exam filter' });
+                const code = req.query.examId.trim();
+                if (!myCodes.some(value => value instanceof RegExp ? value.test(code) : String(value).toUpperCase() === code.toUpperCase())) return res.json([]);
+                sessionFilter.examId = new RegExp('^' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i');
+            }
             const activeSessions = await Session.find(sessionFilter).select('_id examId').lean();
             const activeSessionIds = [];
             sessionById = new Map();
@@ -230,6 +248,12 @@ router.get('/violations', requireAuth, async (req, res) => {
                 });
             });
             if (activeSessionIds.length === 0) return res.json([]);
+            if (req.query.sessionId) {
+                if (typeof req.query.sessionId !== 'string') return res.status(400).json({ error: 'Invalid candidate filter' });
+                const selectedId = req.query.sessionId;
+                if (!sessionById.has(selectedId)) return res.json([]);
+                activeSessionIds.splice(0, activeSessionIds.length, selectedId);
+            }
             query.sessionId = { $in: activeSessionIds };
         }
 

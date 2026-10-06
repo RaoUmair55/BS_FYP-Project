@@ -192,11 +192,11 @@ async function processOfflineBuffer() {
 
     // Log clear state transitions for observability & viva demonstration
     if (currentCount > 0 && !wasOffline) {
-      console.log(`[ViolationBuffer] Connectivity lost. ${currentCount} violation(s) waiting in local disk buffer.`);
+      console.log(`[ViolationBuffer] ${currentCount} violation(s) waiting for delivery in the local disk buffer.`);
       wasOffline = true;
       notifyStatusChange();
     } else if (currentCount === 0 && wasOffline) {
-      console.log(`[ViolationBuffer] Connectivity fully restored. All buffered violations have been successfully delivered!`);
+      console.log(`[ViolationBuffer] Delivery queue cleared. No violations remain pending.`);
       wasOffline = false;
       notifyStatusChange();
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import useSocket from '../hooks/useSocket';
+import { selectLiveAlerts } from '../utils/liveAlerts';
 import ExamManager from '../components/ExamManager';
 import ExamSummary from '../components/ExamSummary';
 import StudentList from '../components/StudentList';
@@ -73,7 +74,7 @@ function playAlertChime() {
 }
 
 export default function Dashboard({ theme = 'light', onToggleTheme = () => {} }) {
-    const { connected, violations, riskScores, socket } = useSocket();
+    const { connected, violations: receivedViolations, riskScores, socket } = useSocket();
     const { teacher, showAuthModal, setShowAuthModal, logout, demoLogin, authFetch } = useAuth();
     const [selectedSessionId, setSelectedSessionId] = useState(null);
     const [activeTab, setActiveTab] = useState('monitoring');
@@ -84,6 +85,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
     const [chatSessionId, setChatSessionId] = useState(null);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [activeExams, setActiveExams] = useState([]);
+    const violations = React.useMemo(() => selectLiveAlerts(receivedViolations, activeExams), [receivedViolations, activeExams]);
     const [activeExamsLoaded, setActiveExamsLoaded] = useState(false);
     const [highAlertCount, setHighAlertCount] = useState(0);
 
@@ -92,6 +94,8 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
 
     // End exam confirmation state from live monitoring view
     const [showEndExamConfirm, setShowEndExamConfirm] = useState(false);
+    const [endingExam, setEndingExam] = useState(false);
+    const [endExamError, setEndExamError] = useState('');
 
     useEffect(() => {
         let mounted = true;
@@ -212,25 +216,27 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
     };
 
     const handleEndCurrentExam = async () => {
-        if (!selectedExamFilter) return;
+        if (!selectedExamFilter || endingExam) return;
         try {
-            // Find exam by code
-            const res = await authFetch(`${API_BASE}/exams/code/${selectedExamFilter}`);
-            if (res.ok) {
-                const exam = await res.json();
-                const updateRes = await authFetch(`${API_BASE}/exams/${exam._id}/status`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'completed' })
-                });
-                if (!updateRes.ok) throw new Error('Exam status update failed');
-                setSelectedExamFilter(null);
-                setActiveTab('exams');
-            }
+            setEndingExam(true);
+            setEndExamError('');
+            // Use the authenticated exam roster's database ID, not the candidate code lookup response.
+            const identifier = selectedExamFilter;
+            const exam = activeExams.find(item => [item.examCode, item.examId, item._id].some(value =>
+                String(value || '').toUpperCase() === String(identifier).toUpperCase()));
+            if (!exam?._id) throw new Error('Selected active exam could not be found. Refresh and retry.');
+            await api.patch(`/exams/${encodeURIComponent(exam._id)}/status`, { status: 'completed' });
+            setActiveExams(previous => previous.filter(exam =>
+                ![exam.examCode, exam.examId, exam._id].some(value => String(value || '').toUpperCase() === String(identifier).toUpperCase())));
+            setSelectedExamFilter(null);
+            setSelectedSessionId(null);
+            setShowEndExamConfirm(false);
+            setActiveTab('history');
         } catch (err) {
             console.error('Failed to end exam:', err);
+            setEndExamError(err.response?.data?.error || err.message || 'Could not end the exam. Please retry.');
         } finally {
-            setShowEndExamConfirm(false);
+            setEndingExam(false);
         }
     };
 
@@ -569,7 +575,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 <span className="md-badge status-completed">Monitoring exam: {selectedExamFilter}</span>
                                 <button 
                                     className="md-btn md-btn-outlined md-btn-sm btn-end-exam"
-                                    onClick={() => setShowEndExamConfirm(true)}
+                                    onClick={() => { setEndExamError(''); setShowEndExamConfirm(true); }}
                                     style={{ color: 'var(--risk-high)', borderColor: 'var(--risk-high-bg)' }}
                                 >
                                     <CheckCircle size={14} />
@@ -651,6 +657,8 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                             <AlertFeed 
                                 violations={violations} 
                                 examFilter={selectedExamFilter}
+                                sessionId={selectedSessionId}
+                                activeExams={activeExams}
                                 onSelectViolation={(v) => {
                                     if (v?.sessionId) {
                                         setSelectedSessionId(v.sessionId);
@@ -698,7 +706,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                             <h3 style={{ color: 'var(--risk-high)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <AlertCircle size={20} /> End Current Exam ({selectedExamFilter})?
                             </h3>
-                            <button className="md-icon-btn" onClick={() => setShowEndExamConfirm(false)}>
+                            <button className="md-icon-btn" disabled={endingExam} onClick={() => setShowEndExamConfirm(false)}>
                                 <X size={20} />
                             </button>
                         </div>
@@ -708,12 +716,13 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 Students will no longer be able to join or submit. Active candidate sessions will be moved to completed archives.
                             </p>
                         </div>
+                        {endExamError && <p role="alert" style={{ color: 'var(--risk-high)' }}>{endExamError}</p>}
                         <div className="md-modal-actions">
-                            <button className="md-btn md-btn-text" onClick={() => setShowEndExamConfirm(false)}>
+                            <button className="md-btn md-btn-text" disabled={endingExam} onClick={() => setShowEndExamConfirm(false)}>
                                 Cancel
                             </button>
-                            <button className="md-btn md-btn-danger" onClick={handleEndCurrentExam}>
-                                Confirm End Exam
+                            <button className="md-btn md-btn-danger" disabled={endingExam} onClick={handleEndCurrentExam}>
+                                {endingExam ? 'Ending Exam…' : 'Confirm End Exam'}
                             </button>
                         </div>
                     </div>

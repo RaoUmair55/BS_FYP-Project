@@ -17,10 +17,10 @@ let autoSubmitting = false;
 let autoSubmitExam = null;
 let seenWarningCount = 0;
 let statusInterval = null;
-let monitoringHealthy = true;
+let lastPendingCount = 0;
 let statusPollInFlight = false;
 let submissionInFlight = false;
-let backendConnected = true;
+let backendConnected = null;
 
 let isPaperLoaded = false;
 let isPaperReleased = false;
@@ -365,29 +365,31 @@ function startTimer() {
 }
 
 function updateBufferStatusUI(pendingCount) {
+  lastPendingCount = Math.max(0, Number(pendingCount) || 0);
   if (isSubmitted) return;
   const badge = document.getElementById('monitoringBadge');
   if (!badge) return;
 
-  if (!monitoringHealthy) {
-    badge.className = 'monitoring-badge offline';
-    badge.textContent = 'Monitoring unavailable — notify your examiner';
+  if (backendConnected === null) {
+    badge.className = 'monitoring-badge';
+    badge.textContent = 'Connecting…';
+    badge.title = 'Checking the exam server connection.';
     return;
   }
-  if (pendingCount > 0 || !backendConnected) {
+  if (!backendConnected) {
     badge.className = 'monitoring-badge offline';
     badge.innerHTML = `
       <span class="pulse-dot offline"></span>
-      <span>Offline &mdash; ${pendingCount ? `${pendingCount} event${pendingCount === 1 ? '' : 's'} queued` : 'monitoring locally'}</span>
+      <span>Offline${lastPendingCount ? ` &mdash; ${lastPendingCount} event${lastPendingCount === 1 ? '' : 's'} queued` : ''}</span>
     `;
-    badge.title = 'Network disconnected. Violations are safely queued in local SQLite disk buffer and will auto-sync upon reconnection.';
+    badge.title = 'Server connection unavailable. Buffered events will retry automatically.';
   } else {
     badge.className = 'monitoring-badge';
     badge.innerHTML = `
       <span class="pulse-dot"></span>
-      <span>● Monitoring Active</span>
+      <span>Connected${lastPendingCount ? ` &mdash; syncing ${lastPendingCount} event${lastPendingCount === 1 ? '' : 's'}` : ''}</span>
     `;
-    badge.title = 'Integrity monitoring connected and streaming to backend.';
+    badge.title = 'Connected to the exam server.';
   }
 }
 
@@ -399,8 +401,12 @@ function startSessionStatusPolling() {
     if (statusPollInFlight || isSubmitted) return;
     statusPollInFlight = true;
     try {
-    const health = await window.api.getMonitoringHealth();
-    monitoringHealthy = health.status === 'ok';
+    // Local detector health is diagnostic; it must not override network status
+    // or prevent polling examiner commands when a health check fails.
+    try {
+      const health = await window.api.getMonitoringHealth();
+      if (health.status !== 'ok') console.warn('Monitoring diagnostics:', health);
+    } catch (err) { console.warn('Monitoring health check unavailable:', err); }
     // 1. Poll offline violation buffer state from Electron IPC
     if (window.api && typeof window.api.getBufferStatus === 'function') {
       try {
@@ -412,6 +418,7 @@ function startSessionStatusPolling() {
     try {
       const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`, { signal: AbortSignal.timeout(8000) });
       backendConnected = res.ok;
+      updateBufferStatusUI(lastPendingCount);
       if (!res.ok) return;
       const data = await res.json();
 
@@ -467,12 +474,11 @@ function startSessionStatusPolling() {
       await fetchStudentMessages();
     } catch (e) {
       backendConnected = false;
+      updateBufferStatusUI(lastPendingCount);
       console.warn('Error polling session status:', e);
     }
     } catch (err) {
-      monitoringHealthy = false;
-      updateBufferStatusUI(0);
-      console.warn('Monitoring health check unavailable:', err);
+      console.warn('Session polling unavailable:', err);
     } finally { statusPollInFlight = false; }
   }, 3000);
 }
@@ -809,8 +815,7 @@ async function renderDocx(buffer, container) {
 // Setup Event Listeners
 window.addEventListener('DOMContentLoaded', () => {
   window.api.onPythonCrash(() => {
-    monitoringHealthy = false;
-    updateBufferStatusUI(0);
+    console.warn('Python monitoring process exited; inspect Electron logs for details.');
   });
 
   init();

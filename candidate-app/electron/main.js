@@ -15,7 +15,7 @@ const { randomUUID } = require('crypto');
 const { StringDecoder } = require('string_decoder');
 const { spawn, execSync } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
-const { checkPythonHealth, setPythonPort, getPythonUrl, getLastPythonHealthError, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive } = require('./ipc/pythonBridge');
+const { checkPythonHealth, setPythonPort, getPythonUrl, getLastPythonHealthError, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive } = require('./ipc/pythonBridge');
 const violationBuffer = require('./ipc/violationBuffer');
 const { getPythonExecutable } = require('./ipc/pythonRuntime');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -630,6 +630,7 @@ ipcMain.handle('start-exam-mode', async () => {
       displayCheckInterval = null;
     }
     displayCheckInterval = setInterval(async () => {
+      try {
       if (!getExamActive()) return;
       const currentCount = getPhysicalMonitorCount();
       if (currentCount > 1) {
@@ -646,6 +647,9 @@ ipcMain.handle('start-exam-mode', async () => {
           }
         };
         await forwardViolationToServer(violationPayload);
+      }
+      } catch (error) {
+        console.error('[Electron] Periodic display check failed:', error);
       }
     }, 4000);
 

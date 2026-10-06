@@ -1,5 +1,7 @@
 import AudioEvidence from './AudioEvidence';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import api from '../services/api';
+import { selectLiveAlerts } from '../utils/liveAlerts';
 import { 
     AlertCircle, AlertTriangle, Info, CheckCircle, XCircle, Clock, 
     ExternalLink, MessageSquare, Check, X, ShieldAlert, Sparkles, 
@@ -63,7 +65,28 @@ function timeAgo(dateString) {
     return `${Math.floor(minutes / 60)}h ago`;
 }
 
-export default function AlertFeed({ violations, onSelectViolation, onReviewViolation, examFilter }) {
+export default function AlertFeed({ violations, onSelectViolation, onReviewViolation, examFilter, sessionId, activeExams = [] }) {
+    const [loadedAlerts, setLoadedAlerts] = useState({ scope: '', items: [] });
+    const scope = JSON.stringify([examFilter || '', sessionId || '']);
+    useEffect(() => {
+        const controller = new AbortController();
+        let request = 0;
+        const refresh = async () => {
+            const current = ++request;
+            try {
+                const params = new URLSearchParams({ active: 'true' });
+                if (examFilter) params.set('examId', examFilter);
+                if (sessionId) params.set('sessionId', sessionId);
+                const result = await api.get(`/violations?${params}`, { signal: controller.signal });
+                if (!controller.signal.aborted && current === request) setLoadedAlerts({ scope, items: Array.isArray(result.data) ? result.data : [] });
+            } catch (error) {
+                if (!controller.signal.aborted) console.warn('Could not refresh live alerts:', error);
+            }
+        };
+        refresh();
+        const interval = setInterval(refresh, 15000);
+        return () => { controller.abort(); clearInterval(interval); };
+    }, [examFilter, sessionId, scope]);
     const { authFetch } = useAuth();
     const [filter, setFilter] = useState('all'); // 'all', 'unreviewed', 'reviewed'
     const [enableGrouping, setEnableGrouping] = useState(true);
@@ -103,7 +126,10 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                 });
                 if (res.ok && onReviewViolation) {
                     const data = await res.json();
-                    onReviewViolation(data.violation || item);
+                    const reviewed = data.violation || item;
+                    setLoadedAlerts(previous => ({ ...previous, items: previous.items.map(alert =>
+                        String(alert._id || alert.id) === String(id) ? { ...alert, ...reviewed } : alert) }));
+                    onReviewViolation(reviewed);
                 }
             }));
         } catch (err) {
@@ -124,15 +150,14 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
 
     // Filter violations (exclude dismissed from active live feed)
     const filteredViolations = useMemo(() => {
-        return (violations || []).filter(v => {
-            if (examFilter && String(v.examId || '').toUpperCase() !== String(examFilter).toUpperCase()) return false;
+        return selectLiveAlerts([...(loadedAlerts.scope === scope ? loadedAlerts.items : []), ...(violations || [])], activeExams, examFilter, sessionId).filter(v => {
             const isReviewed = Boolean(v.reviewed);
             const isDismissed = v.decision === 'dismissed';
             if (filter === 'unreviewed') return !isReviewed && !isDismissed;
             if (filter === 'reviewed') return isReviewed;
             return !isDismissed;
         });
-    }, [violations, filter, examFilter]);
+    }, [violations, loadedAlerts, scope, activeExams, filter, examFilter, sessionId]);
 
     // Apply Client-Side 2-Minute Grouping
     const displayItems = useMemo(() => {

@@ -29,7 +29,7 @@ export default function AuthModal({ isOpen, onClose }) {
         if (!email.trim()) {
             errors.email = 'Enter an email address';
         } else if (!validEmail(email)) {
-            errors.email = 'Enter a valid email address (e.g. name@university.edu)';
+            errors.email = 'Enter a valid email address';
         }
 
         if (!password) {

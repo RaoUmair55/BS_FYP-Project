@@ -83,6 +83,7 @@ class AIMonitor:
         self.neutral_pose = None
         self.smoothed_pose = None
         self.pose_updated_at = None
+        self.pose_status = 'Waiting for a forward-facing calibration'
         self.head_direction = None
         self.last_head_alert_at = -10.0
         self.landmark_timestamp_ms = -1
@@ -273,6 +274,7 @@ class AIMonitor:
 
         consecutive_read_failures = 0
         last_processed_at = time.monotonic()
+        last_pose_log_at = last_processed_at
         target_frame_interval = 0.085  # ~11.7 FPS: Optimal real-time responsiveness with minimal CPU load
         try:
             while self.running:
@@ -295,10 +297,16 @@ class AIMonitor:
                 consecutive_read_failures = 0
                 self.camera_ready = True
                 self.last_frame_at = loop_start
-                if loop_start - last_processed_at > 2.0:
+                frame_interval = loop_start - last_processed_at
+                if frame_interval > 2.0:
                     self._reset_temporal_state()
                 last_processed_at = loop_start
                 self.frame_count += 1
+                if loop_start - last_pose_log_at >= 15:
+                    print(f'[AIMonitor] Head tracking ({self.face_backend}): {self.pose_status}; '
+                          f'frame interval={frame_interval:.2f}s; '
+                          f'looking-away rule={self.exam_rules.get("detectLookingAway", True)}')
+                    last_pose_log_at = loop_start
                 
                 if self.face_landmarker or self.mp_face_mesh:
                     try:
@@ -586,6 +594,7 @@ class AIMonitor:
         
         self._record_face_count(len(results.multi_face_landmarks or []), frame)
         if not results.multi_face_landmarks:
+            self.pose_status = 'No face landmarks detected'
             self._reset_head_tracking()
             if self.no_face_start is None:
                 self.no_face_start = time.monotonic()
@@ -600,6 +609,7 @@ class AIMonitor:
         
         # Detector ordering can change: don't estimate a bystander's head direction.
         if len(results.multi_face_landmarks) != 1:
+            self.pose_status = 'Multiple faces: head direction paused'
             self._reset_head_tracking()
             return  # Still count multiple faces, but do not calibrate/penalize a different person.
         face_landmarks = results.multi_face_landmarks[0]
@@ -636,6 +646,7 @@ class AIMonitor:
         face_width = (max(p.x for p in face_landmarks.landmark) - min(p.x for p in face_landmarks.landmark)) * w
         error = float(np.sqrt(np.mean((projected.reshape(-1, 2) - face_2d) ** 2)))
         if not np.all(np.isfinite(angles)) or face_width < 50 or error > face_width * 0.12:
+            self.pose_status = f'Pose geometry rejected (face width={face_width:.0f}px, error={error:.1f}px)'
             self._reset_head_tracking()
             return
         self._observe_head_pose(float(angles[1]), float(angles[0]), frame)
@@ -656,10 +667,12 @@ class AIMonitor:
             return
         if self.neutral_pose is None:
             if abs(yaw) > 20:
+                self.pose_status = f'Calibration waiting for a forward-facing pose (yaw={yaw:.1f})'
                 self.pose_baseline_samples.clear()
                 return  # Require a forward-facing baseline, not a sustained profile.
             self.pose_baseline_samples.append(pose)
             self.pose_baseline_samples = self.pose_baseline_samples[-20:]
+            self.pose_status = f'Calibrating: {len(self.pose_baseline_samples)}/20 stable forward-facing frames'
             if len(self.pose_baseline_samples) == 20:
                 # Work around Euler angles crossing -180/180 near a frontal pose.
                 samples = np.array(self.pose_baseline_samples)
@@ -669,7 +682,10 @@ class AIMonitor:
                     print('[AIMonitor] Neutral head position calibrated. Head-direction monitoring active.')
             return
         relative = (pose - self.neutral_pose + 180) % 360 - 180
-        if self.pose_updated_at is None or now - self.pose_updated_at > 0.5:
+        self.pose_status = f'Calibrated; relative yaw={relative[0]:.1f}, pitch={relative[1]:.1f}'
+        # Slow inference on a busy laptop must not restart a sustained turn on
+        # every frame. Match the camera loop's two-second interruption limit.
+        if self.pose_updated_at is None or now - self.pose_updated_at > 2.0:
             self.smoothed_pose = relative
             self.head_turn_start = None
             self.head_direction = None

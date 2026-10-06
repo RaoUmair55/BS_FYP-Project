@@ -460,6 +460,12 @@ class VoiceMonitor:
             if np.mean(np.abs(audio_np) >= 0.99) > 0.01:
                 self.mismatch_count = 0
                 return  # Clipped speech cannot support a reliable speaker comparison.
+            # The capture VAD can mistake steady background noise for speech.
+            # Independently validate the complete raw segment before preprocessing
+            # normalizes quiet noise and turns it into a misleading voice vector.
+            if not self._has_clear_speech(audio_bytes):
+                self.mismatch_count = 0
+                return
             wav = preprocess_wav(audio_np, source_sr=self.sample_rate)
             
             if len(wav) < self.sample_rate * 1.0:
@@ -528,6 +534,16 @@ class VoiceMonitor:
             self.verification_error = "Speaker verification failed. Notify the examiner and retry the microphone check."
             self.mismatch_count = 0
             print(f"[VoiceMonitor Error] Speaker verification failed: {e}")
+
+    def _has_clear_speech(self, audio_bytes):
+        vad = webrtcvad.Vad(3)
+        frame_bytes = int(self.sample_rate * 0.03) * 2
+        frames = [audio_bytes[i:i + frame_bytes] for i in range(0, len(audio_bytes) - frame_bytes + 1, frame_bytes)]
+        if not frames:
+            return False
+        voiced = sum(vad.is_speech(frame, self.sample_rate) for frame in frames)
+        return (voiced * 0.03 >= self.thresholds.get('vad_sustained_seconds', 1.5) and
+                voiced / len(frames) >= 0.6)
 
     def _emit_violation(self, violation_type: str, severity: int, details: dict, audio_path: Optional[str] = None):
         """Constructs standard schema violation payload and emits to callback."""

@@ -10,6 +10,24 @@ The Candidate App is the desktop application run by students during an exam. It 
 
 ## What This Does
 
+### USB storage enforcement
+
+If Windows rejects ejecting a disk child with an illegal-device-request veto, the monitor retries its direct parent only when Windows identifies that parent as `USBSTOR` or `UASPStor`. USB hubs and other parent drivers are excluded. This fallback was hardware-tested with the inserted E: USB drive: safe removal was accepted and the disk disappeared from the follow-up scan.
+
+### Voice speech-quality gate
+
+Before speaker comparison, a separate aggressive WebRTC VAD checks the raw recording. At least 60% of complete 30ms frames must contain speech, with at least the configured sustained speech duration. Noise-only segments reset consecutive mismatches before audio normalization and embedding. This can miss quiet or heavily interrupted speech, so voice alerts remain review signals and require real-device evaluation. The speaker similarity threshold remains unchanged.
+
+During an active exam, physical USB storage detection captures desktop evidence and requests Windows safe removal of the specific storage device using its PnP instance ID. The alert includes `details.ejection`: safe removal accepted, failed (with Windows/veto details), or skipped. Windows may refuse removal for a busy device; the application never forces dismount or disables a USB controller. Boot/system disks and disks hosting the candidate app, Python runtime or application data are excluded. If disk safety metadata is unavailable, detection still reports the event but ejection is skipped. Self-check only lists devices. A disconnected/reconnected device produces a new event; an unchanged connected device is reported once. Mice, keyboards and webcams are outside the storage-disk query.
+
+### File closing and head-tracking diagnostics
+
+The candidate status badge describes the exam-server connection: Connecting, Connected (with syncing event count when needed), or Offline (with queued event count). Local Python health warnings remain in diagnostic logs and do not override this connection badge or interrupt polling examiner commands. Connected confirms server reachability, rather than certifying every detector's health.
+
+Old-file detection retains its exam-start timestamp rule and explicit permitted-file exemptions. When a permitted tool displays an old file, the monitor captures evidence and terminates the offending application process, including its other documents. Notepad is inspected through file handles, launch arguments and a uniquely resolved Recent shortcut matching its current document title. A new Recent-file observation without a known process closes the candidate-owned allowed editors associated with that document type. Protected and system processes remain exempt. The student may reopen the tool and create a new file; allowing a tool does not exempt its old documents. Failed shortcut lookups are retried, and Windows window-title calls use pointer-safe signatures for 64-bit handles.
+
+Head tracking retains its calibration, geometry, angle and sustained-turn checks. Continuous frames up to two seconds apart can contribute to a turn; larger interruptions restart tracking. Every 15 seconds the camera loop logs its head-tracking backend, calibration/pose state, frame interval and looking-away rule to help distinguish a disabled rule, missing landmarks, calibration failure and a busy device.
+
 This module implements the full end-to-end exam experience, AI monitoring pipeline, **Module 1: Whitelist Enforcement**, **Module 2: AI Monitoring**, **Module 7: File & Typed Text Submissions**, and **Section 10.4 of the Scope Document (Data Ethics & Informed Consent)**:
 1. **Startup**: Electron starts a loopback receiver on an available port and passes that port to Python. Python also binds an available loopback port and announces it to Electron; neither service requires port 8000 or 8766.
 2. **Dynamic Login & Session Initialization**: Candidate logs in with Student ID, Name, and Exam Code. Electron creates the session on the central server.

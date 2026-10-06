@@ -277,12 +277,18 @@ class WhitelistEnforcer:
     def _get_window_titles(self):
         try:
             import ctypes
+            from ctypes import wintypes
             EnumWindows = ctypes.windll.user32.EnumWindows
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+            EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            EnumWindows.argtypes = [EnumWindowsProc, wintypes.LPARAM]
             GetWindowText = ctypes.windll.user32.GetWindowTextW
             GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
             IsWindowVisible = ctypes.windll.user32.IsWindowVisible
             GetWindowThreadProcessId = ctypes.windll.user32.GetWindowThreadProcessId
+            GetWindowText.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+            GetWindowTextLength.argtypes = [wintypes.HWND]
+            IsWindowVisible.argtypes = [wintypes.HWND]
+            GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 
             titles = {}
             def foreach_window(hwnd, lParam):
@@ -291,7 +297,7 @@ class WhitelistEnforcer:
                     if length > 0:
                         buff = ctypes.create_unicode_buffer(length + 1)
                         GetWindowText(hwnd, buff, length + 1)
-                        pid = ctypes.c_ulong()
+                        pid = wintypes.DWORD()
                         GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
                         if pid.value not in titles:
                             titles[pid.value] = buff.value
@@ -648,11 +654,12 @@ class WhitelistEnforcer:
 
                     # Check if this shortcut was created/accessed after the exam session started
                     if st.st_mtime >= (self.exam_start_time - 5.0):
-                        # Immediately record shortcut mtime so it will NEVER trigger again for this access
-                        self.seen_recent_shortcuts[lnk_path] = st.st_mtime
-
                         # Resolve real file directly from shortcut target
                         real_file = self._resolve_lnk_target(lnk_path)
+                        # A failed shortcut lookup must remain retryable.
+                        if not real_file:
+                            continue
+                        self.seen_recent_shortcuts[lnk_path] = st.st_mtime
                         if real_file and os.path.isfile(real_file) and not self._is_permitted_file(real_file):
                             _, ext = os.path.splitext(real_file.lower())
                             if ext in self.DOC_EXTENSIONS:
@@ -700,11 +707,97 @@ class WhitelistEnforcer:
                     except (OSError, PermissionError):
                         pass
 
+            # Notepad commonly reads a document and closes its OS file handle.
+            # A launch path alone may be stale after File > Open, so require the
+            # currently displayed document title to agree before targeting a PID.
+            if name_lower == 'notepad.exe':
+                launched_file = self._notepad_launch_file(proc)
+                if launched_file and self._is_old_exam_document(launched_file):
+                    self._handle_file_violation(proc, name_lower,
+                        f'Pre-existing notes/file opened: {os.path.basename(launched_file)}', file_path=launched_file)
+                    return
+                # Existing shortcuts may not get a new mtime when reopened.
+                # Correlate a unique full-path shortcut with the current title.
+                # Close this allowed application when it displays an old file.
+                recent_file = self._notepad_recent_file(proc)
+                if recent_file and self._is_old_exam_document(recent_file):
+                    self._handle_file_violation(proc, name_lower,
+                        f'Pre-existing notes/file visible in Notepad: {os.path.basename(recent_file)}', file_path=recent_file)
+
         except Exception as e:
             print(f"[WhitelistEnforcer] File inspection unavailable for {name_lower}: {e}")
 
+    def _is_old_exam_document(self, path):
+        if self._is_permitted_file(path) or any(ignored in path.lower() for ignored in self.IGNORE_DIRS):
+            return False
+        try:
+            return os.path.splitext(path.lower())[1] in self.DOC_EXTENSIONS and os.path.getmtime(path) < self.exam_start_time - 15.0
+        except OSError:
+            return False
+
+    def _notepad_document_title(self, proc):
+        title = self._get_window_titles().get(proc.pid, '')
+        return title.rsplit(' - ', 1)[0].lstrip('*').strip()
+
+    def _notepad_launch_file(self, proc):
+        try:
+            if proc.name().lower() != 'notepad.exe':
+                return None
+            title = self._notepad_document_title(proc)
+            if not title:
+                return None
+            matches = []
+            for argument in proc.cmdline()[1:]:
+                path = argument.strip('"')
+                if not os.path.isabs(path):
+                    path = os.path.join(proc.cwd(), path)
+                path = os.path.realpath(path)
+                filename = os.path.basename(path)
+                if os.path.isfile(path) and title.casefold() in (filename.casefold(), os.path.splitext(filename)[0].casefold()):
+                    matches.append(path)
+            return matches[0] if len(matches) == 1 else None
+        except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
+            return None
+
+    def _notepad_recent_file(self, proc):
+        title = self._notepad_document_title(proc)
+        if not title:
+            return None
+        recent_dir = os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Recent")
+        try:
+            matches = set()
+            for shortcut in os.listdir(recent_dir):
+                if not shortcut.lower().endswith('.lnk'):
+                    continue
+                label = shortcut[:-4]
+                if title.casefold() not in (label.casefold(), os.path.splitext(label)[0].casefold()):
+                    continue
+                path = self._resolve_lnk_target(os.path.join(recent_dir, shortcut))
+                if path:
+                    filename = os.path.basename(path)
+                    if title.casefold() in (filename.casefold(), os.path.splitext(filename)[0].casefold()):
+                        matches.add(os.path.realpath(path))
+            return next(iter(matches)) if len(matches) == 1 else None
+        except OSError:
+            return None
+
     def _is_permitted_file(self, path):
         return os.path.normcase(os.path.realpath(path)) in getattr(self, 'permitted_files', set())
+
+    def _file_app_targets(self, path):
+        """Allowed editors associated with a detected old document."""
+        ext = os.path.splitext(path or '')[1].lower()
+        if ext in ('.doc', '.docx', '.rtf'):
+            names = {'winword.exe', 'wordpad.exe'}
+        elif ext in ('.xls', '.xlsx', '.csv'):
+            names = {'excel.exe'}
+        elif ext in ('.ppt', '.pptx'):
+            names = {'powerpnt.exe'}
+        elif ext == '.pdf':
+            names = {'acrord32.exe', 'acrobat.exe', 'msedge.exe'}
+        else:
+            names = {'notepad.exe', 'notepad++.exe', 'code.exe'}
+        return names & getattr(self, 'allowed_apps', set())
 
     def _handle_file_violation(self, proc, name_lower, reason, file_path=None):
         if file_path and self._is_permitted_file(file_path):
@@ -720,26 +813,46 @@ class WhitelistEnforcer:
         except Exception as e:
             print(f"[WhitelistEnforcer] Warning: Could not capture screenshot: {e}")
 
-        # Only a current file handle proves which process owns this observation.
-        # Recent shortcuts remain reviewable evidence; never terminate every app by name.
+        # Exam policy: close the offending allowed application, including its
+        # other documents. A Recent observation closes only associated allowed
+        # editor names, never unrelated tools or protected/system processes.
         terminated = False
         verified = False
-        if proc and file_path and proc.pid not in getattr(self, 'protected_pids', set()) and name_lower not in self.SAFETY_LIST:
+        terminated_pids = []
+        targets = [proc] if proc else []
+        names = self._file_app_targets(file_path) if not proc else set()
+        if names:
+            current_user = os.environ.get('USERNAME', '').lower()
+            for candidate in psutil.process_iter(['pid', 'name', 'username']):
+                try:
+                    owner = candidate.info.get('username') or candidate.username()
+                    owner = (owner or '').lower()
+                    if candidate.name().lower() in names and owner and (not current_user or owner.split('\\')[-1] == current_user):
+                        if not any(account in owner for account in ('nt authority', 'local service', 'network service', 'system')):
+                            targets.append(candidate)
+                except psutil.Error:
+                    continue
+        for target in targets:
             try:
-                expected = os.path.normcase(os.path.realpath(file_path))
-                verified = proc.name().lower() == name_lower and any(
-                    os.path.normcase(os.path.realpath(file.path)) == expected for file in proc.open_files())
-                if verified:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=1.5)
-                    except psutil.TimeoutExpired:
-                        proc.kill()
-                    terminated = True
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                target_name = target.name().lower()
+                if target.pid in getattr(self, 'protected_pids', set()) or target_name in self.SAFETY_LIST:
+                    continue
+                if proc and target_name != name_lower:
+                    continue
+                target.terminate()
+                try:
+                    target.wait(timeout=1.5)
+                except psutil.TimeoutExpired:
+                    target.kill()
+                    target.wait(timeout=1.5)
+                terminated_pids.append(target.pid)
+                terminated = True
+                verified = bool(proc)
+                print(f'[WhitelistEnforcer] Closed {target_name} (PID {target.pid}) after old-file detection: {clean_file_name}')
+            except psutil.NoSuchProcess:
                 pass
-            except Exception as exc:
-                print(f'[WhitelistEnforcer] Targeted file enforcement unavailable: {exc}')
+            except (psutil.AccessDenied, psutil.TimeoutExpired) as exc:
+                print(f'[WhitelistEnforcer] Could not close old-file application: {exc}')
 
         # Debounce alert payload during immediate process teardown (10s window)
         # If the candidate reopens the file after 10s, a new violation alert will fire
@@ -758,8 +871,9 @@ class WhitelistEnforcer:
                 "fileName": clean_file_name,
                 "filePath": file_path or "",
                 "action": "file_closed_require_new" if terminated else "file_access_review_required",
-                "processId": proc.pid if proc and verified else None,
-                "processVerified": verified
+                "processId": terminated_pids[0] if terminated_pids else None,
+                "processVerified": verified,
+                "closedProcessIds": terminated_pids
             }
         }
         if screenshot_path:

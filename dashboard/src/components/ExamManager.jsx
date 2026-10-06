@@ -79,7 +79,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             exe = `${exe}.exe`;
         }
         const name = customAppName.trim() || customAppExe.trim();
-        
+
         if (allowedApps.some(a => a.executable.toLowerCase() === exe)) {
             return;
         }
@@ -273,7 +273,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             {/* Material Design Tab Filter */}
             {!historyOnly && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
                 <div className="exam-tabs-bar" style={{ margin: 0 }}>
-                    <button 
+                    <button
                         className={`exam-tab-btn ${activeTab === 'active' ? 'active' : ''}`}
                         onClick={() => setActiveTab('active')}
                     >
@@ -281,7 +281,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         <span>Active</span>
                         <span className="tab-count-pill">{activeExams.length}</span>
                     </button>
-                    <button 
+                    <button
                         className={`exam-tab-btn ${activeTab === 'draft' ? 'active' : ''}`}
                         onClick={() => setActiveTab('draft')}
                     >
@@ -331,7 +331,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                     <h3>{historyOnly ? 'No Exam History Yet' : activeTab === 'active' ? 'No Active Exams' : 'No Draft Exams'}</h3>
                     <p>
                         {historyOnly ? 'Completed exams and their summaries will appear here.' : activeTab === 'active'
-                            ? 'Click "Create Exam" above to set up your first exam code and question paper.' 
+                            ? 'Click "Create Exam" above to set up your first exam code and question paper.'
                             : 'Draft exams will appear here until they are activated.'}
                     </p>
                     {!historyOnly && activeTab === 'active' && (
@@ -348,8 +348,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         const isCompleted = exam.status === 'completed';
 
                         return (
-                            <div 
-                                key={exam._id} 
+                            <div
+                                key={exam._id}
                                 className={`md-card exam-card ${isCompleted ? 'completed-card' : ''}`}
                             >
                                 <div className="exam-card-top">
@@ -393,7 +393,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                                 ✓ Unlocked
                                             </span>
                                         )}
-                                        <button 
+                                        <button
                                             className="md-icon-btn btn-delete-icon"
                                             onClick={() => setDeleteExamModalData({ id: exam._id, title: exam.title, code: exam.examCode })}
                                             title="Delete Exam"
@@ -454,8 +454,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                                 <div className="exam-card-actions">
                                     {exam.status === 'draft' && (
-                                        <button 
-                                            className="md-btn md-btn-outlined md-btn-sm" 
+                                        <button
+                                            className="md-btn md-btn-outlined md-btn-sm"
                                             onClick={() => handleUpdateStatus(exam._id, 'active')}
                                         >
                                             <Play size={14} />
@@ -466,11 +466,11 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                     {isLive && (
                                         <>
                                             {exam.paperPath && !exam.paperReleased && (
-                                                <button 
-                                                    className="md-btn md-btn-sm" 
-                                                    style={{ 
-                                                        background: 'var(--primary-bg)', 
-                                                        color: 'var(--text-on-color)', 
+                                                <button
+                                                    className="md-btn md-btn-sm"
+                                                    style={{
+                                                        background: 'var(--primary-bg)',
+                                                        color: 'var(--text-on-color)',
                                                         fontWeight: 600,
                                                         border: 'none',
                                                         display: 'flex',
@@ -484,15 +484,15 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                                     <span>{releasingMap[exam.examCode || exam._id] ? 'Releasing...' : '🚀 Release Paper & Start Exam'}</span>
                                                 </button>
                                             )}
-                                            <button 
-                                                className="md-btn md-btn-outlined md-btn-sm btn-end-exam" 
+                                            <button
+                                                className="md-btn md-btn-outlined md-btn-sm btn-end-exam"
                                                 onClick={() => setEndExamModalData({ id: exam._id, title: exam.title })}
                                             >
                                                 <CheckCircle size={14} />
                                                 <span>End Exam</span>
                                             </button>
-                                            <button 
-                                                className="md-btn md-btn-primary md-btn-sm" 
+                                            <button
+                                                className="md-btn md-btn-primary md-btn-sm"
                                                 onClick={() => onSelectExamForMonitoring && onSelectExamForMonitoring(exam)}
                                             >
                                                 <Eye size={14} />
@@ -502,8 +502,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                     )}
 
                                     {isCompleted && (
-                                        <button 
-                                            className="md-btn md-btn-primary md-btn-sm" 
+                                        <button
+                                            className="md-btn md-btn-primary md-btn-sm"
                                             onClick={() => onSelectExamSummary && onSelectExamSummary(exam._id)}
                                             style={{ width: '100%' }}
                                         >
@@ -531,7 +531,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                             </button>
                         </div>
                         <div style={{ padding: '16px 0', color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.5' }}>
-                            Are you sure you want to end <strong>"{endExamModalData.title}"</strong>? 
+                            Are you sure you want to end <strong>"{endExamModalData.title}"</strong>?
                             <p style={{ marginTop: '8px', color: 'var(--text-primary)', fontWeight: '500' }}>
                                 Students will no longer be able to join or submit answers. All active candidate sessions will be finalized into historical archives.
                             </p>
@@ -540,8 +540,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                             <button className="md-btn md-btn-text" onClick={() => setEndExamModalData(null)}>
                                 Cancel
                             </button>
-                            <button 
-                                className="md-btn md-btn-danger" 
+                            <button
+                                className="md-btn md-btn-danger"
                                 onClick={() => handleUpdateStatus(endExamModalData.id, 'completed')}
                             >
                                 Confirm End Exam
@@ -573,8 +573,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                             <button className="md-btn md-btn-text" onClick={() => setDeleteExamModalData(null)}>
                                 Cancel
                             </button>
-                            <button 
-                                className="md-btn md-btn-danger" 
+                            <button
+                                className="md-btn md-btn-danger"
                                 onClick={() => handleDeleteExam(deleteExamModalData.id)}
                             >
                                 Confirm Delete
@@ -605,22 +605,22 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         <form onSubmit={handleCreateExam}>
                             <div className="md-form-group">
                                 <label>Exam Title *</label>
-                                <input 
-                                    type="text" 
-                                    className="md-input" 
-                                    placeholder="e.g. Computer Science CS101 Midterm Exam" 
+                                <input
+                                    type="text"
+                                    className="md-input"
+                                    placeholder="e.g. Computer Science CS101 Midterm Exam"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
-                                    required 
+                                    required
                                 />
                             </div>
 
                             <div className="md-form-group">
                                 <label>Custom Exam Code (Optional)</label>
-                                <input 
-                                    type="text" 
-                                    className="md-input" 
-                                    placeholder="e.g. CS101-A (leave empty to auto-generate)" 
+                                <input
+                                    type="text"
+                                    className="md-input"
+                                    placeholder="e.g. CS101-A (leave empty to auto-generate)"
                                     value={customCode}
                                     onChange={(e) => setCustomCode(e.target.value)}
                                 />
@@ -629,9 +629,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                             <div className="md-form-group">
                                 <label>Initial Status</label>
-                                <select 
-                                    className="md-select" 
-                                    value={status} 
+                                <select
+                                    className="md-select"
+                                    value={status}
                                     onChange={(e) => setStatus(e.target.value)}
                                 >
                                     <option value="active">Active (Ready for Candidates)</option>
@@ -683,16 +683,16 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                             <div className="md-form-group">
                                 <label>Exam Duration (Minutes)</label>
-                                <select 
-                                    className="md-select" 
-                                    value={durationMinutes} 
+                                <select
+                                    className="md-select"
+                                    value={durationMinutes}
                                     onChange={(e) => setDurationMinutes(Number(e.target.value))}
                                 >
                                     <option value={30}>30 Minutes</option>
                                     <option value={60}>60 Minutes (1 Hour)</option>
                                     <option value={90}>90 Minutes (1.5 Hours)</option>
                                     <option value={120}>120 Minutes (2 Hours)</option>
-                                    <option value={0}>Untimed / Unlimited</option>
+                                    {/* <option value={0}>Untimed / Unlimited</option> */}
                                 </select>
                             </div>
 
@@ -704,37 +704,37 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '13px' }}>
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            checked={detectCellPhone} 
-                                            onChange={(e) => setDetectCellPhone(e.target.checked)} 
+                                        <input
+                                            type="checkbox"
+                                            checked={detectCellPhone}
+                                            onChange={(e) => setDetectCellPhone(e.target.checked)}
                                         />
                                         <span>📱 Mobile Phone AI Detection</span>
                                     </label>
 
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            checked={detectMultiplePersons} 
-                                            onChange={(e) => setDetectMultiplePersons(e.target.checked)} 
+                                        <input
+                                            type="checkbox"
+                                            checked={detectMultiplePersons}
+                                            onChange={(e) => setDetectMultiplePersons(e.target.checked)}
                                         />
                                         <span>👥 Multiple Persons Detection</span>
                                     </label>
 
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            checked={enforceAppWhitelist} 
-                                            onChange={(e) => setEnforceAppWhitelist(e.target.checked)} 
+                                        <input
+                                            type="checkbox"
+                                            checked={enforceAppWhitelist}
+                                            onChange={(e) => setEnforceAppWhitelist(e.target.checked)}
                                         />
                                         <span>🖥️ App Whitelist Enforcement</span>
                                     </label>
 
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
-                                        <input 
-                                            type="checkbox" 
-                                            checked={detectLookingAway} 
-                                            onChange={(e) => setDetectLookingAway(e.target.checked)} 
+                                        <input
+                                            type="checkbox"
+                                            checked={detectLookingAway}
+                                            onChange={(e) => setDetectLookingAway(e.target.checked)}
                                         />
                                         <span>👀 Gaze / Looking Away Alerts</span>
                                     </label>
@@ -744,9 +744,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                     <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-main)', display: 'block', marginBottom: '4px' }}>
                                         ⚠️ High-Risk Alert Threshold for Teacher Review
                                     </label>
-                                    <select 
-                                        className="md-select" 
-                                        value={autoTerminateRiskScore} 
+                                    <select
+                                        className="md-select"
+                                        value={autoTerminateRiskScore}
                                         onChange={(e) => setAutoTerminateRiskScore(Number(e.target.value))}
                                         style={{ fontSize: '13px', padding: '6px 10px' }}
                                     >
@@ -778,7 +778,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                 <label htmlFor="permitted-files" className="md-help-text">Approved existing files (optional; one exact candidate-PC path per line)</label>
                                 <textarea id="permitted-files" className="md-input" rows={2}
                                     value={permittedFiles} onChange={event => setPermittedFiles(event.target.value)}
-                                    placeholder={'C:\\ExamMaterials\\template.docx'} style={{ marginBottom: '8px', width: '100%' }} />
+                                    placeholder={'C:\\ExamMaterials\\template.docx'} style={{ marginBottom: '8px', width: '95%' }} />
                                 <p className="md-help-text" style={{ margin: '0 0 12px' }}>Other existing documents remain restricted. Approving a file does not permit its application; select that tool below.</p>
                                 {/* Preset Tiles */}
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', marginBottom: '12px' }}>
@@ -810,11 +810,11 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                                         {preset.executable}
                                                     </div>
                                                 </div>
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={isSelected} 
-                                                    onChange={() => {}} 
-                                                    style={{ cursor: 'pointer', accentColor: '#1a73e8' }} 
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => { }}
+                                                    style={{ cursor: 'pointer', accentColor: '#1a73e8' }}
                                                 />
                                             </div>
                                         );
@@ -827,25 +827,25 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         ➕ Add Custom Application / Tool
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <input 
-                                            type="text" 
-                                            className="md-input" 
+                                        <input
+                                            type="text"
+                                            className="md-input"
                                             placeholder="Software Name (e.g. Packet Tracer)"
                                             value={customAppName}
                                             onChange={(e) => setCustomAppName(e.target.value)}
                                             style={{ fontSize: '12px', padding: '6px 10px' }}
                                         />
-                                        <input 
-                                            type="text" 
-                                            className="md-input" 
+                                        <input
+                                            type="text"
+                                            className="md-input"
                                             placeholder="Executable (e.g. packettracer.exe)"
                                             value={customAppExe}
                                             onChange={(e) => setCustomAppExe(e.target.value)}
                                             style={{ fontSize: '12px', padding: '6px 10px' }}
                                         />
-                                        <button 
-                                            type="button" 
-                                            className="md-btn md-btn-outlined md-btn-sm" 
+                                        <button
+                                            type="button"
+                                            className="md-btn md-btn-outlined md-btn-sm"
                                             onClick={handleAddCustomApp}
                                             style={{ whiteSpace: 'nowrap' }}
                                         >
@@ -859,16 +859,16 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             {allowedApps
                                                 .filter(a => !SOFTWARE_PRESETS.some(p => p.executable.toLowerCase() === a.executable.toLowerCase()))
                                                 .map(app => (
-                                                    <span 
-                                                        key={app.executable} 
-                                                        className="md-badge" 
+                                                    <span
+                                                        key={app.executable}
+                                                        className="md-badge"
                                                         style={{ background: 'var(--primary-soft)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
                                                     >
                                                         <span>{app.name} ({app.executable})</span>
-                                                        <X 
-                                                            size={12} 
-                                                            style={{ cursor: 'pointer' }} 
-                                                            onClick={() => handleRemoveAllowedApp(app.executable)} 
+                                                        <X
+                                                            size={12}
+                                                            style={{ cursor: 'pointer' }}
+                                                            onClick={() => handleRemoveAllowedApp(app.executable)}
                                                         />
                                                     </span>
                                                 ))}
@@ -879,10 +879,10 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                             <div className="md-form-group">
                                 <label>Upload Question Paper (PDF / DOCX)</label>
-                                <input 
-                                    type="file" 
-                                    className="md-file-input" 
-                                    accept=".pdf,.docx,.doc" 
+                                <input
+                                    type="file"
+                                    className="md-file-input"
+                                    accept=".pdf,.docx,.doc"
                                     onChange={(e) => setPaperFile(e.target.files[0] || null)}
                                 />
                             </div>

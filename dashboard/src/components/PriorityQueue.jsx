@@ -152,6 +152,7 @@ export function groupViolationsList(violations = [], timeWindowMs = 2 * 60 * 100
                 if (v.details) matchingGroup.details = v.details;
                 if (v.screenshotPath) matchingGroup.screenshotPath = v.screenshotPath;
                 if (v.evidenceUrl) matchingGroup.evidenceUrl = v.evidenceUrl;
+                matchingGroup.audioPath = v.audioPath || null;
             }
             // If any item is unreviewed, mark the group as needing review
             if (!v.reviewed) {
@@ -171,6 +172,7 @@ export function groupViolationsList(violations = [], timeWindowMs = 2 * 60 * 100
                 timestamp: v.timestamp,
                 details: v.details,
                 screenshotPath: v.screenshotPath,
+                audioPath: v.audioPath,
                 evidenceUrl: v.evidenceUrl,
                 reviewed: v.reviewed,
                 decision: v.decision || 'pending',
