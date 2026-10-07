@@ -21,7 +21,8 @@ def health_check():
     self_check = os.environ.get('IS_SELF_CHECK', 'false').lower() in ('true', '1')
     if not lab:
         voice = globals().get('voice_monitor')
-        if voice is None or voice.vad is None or voice.encoder is None:
+        voice_enabled = not (os.environ.get('APP_MODE') == 'dev' and os.environ.get('VOICE_MONITORING_ENABLED') == 'false')
+        if voice_enabled and (voice is None or voice.vad is None or voice.encoder is None):
             errors.append('Voice model not ready. Check the Python dependencies and voice model installation.')
         if voice is not None and getattr(voice, "verification_error", None):
             errors.append(voice.verification_error)

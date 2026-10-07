@@ -1,3 +1,4 @@
+const requireEmailVerification = require('../utils/emailVerification');
 const { Server } = require('socket.io');
 const { verifyAccessToken } = require('../utils/tokens');
 const Teacher = require('../models/Teacher');
@@ -20,6 +21,7 @@ function initSocket(server) {
             const decoded = verifyAccessToken(socket.handshake.auth?.token);
             const teacher = await Teacher.findById(decoded.teacherId);
             if (!teacher) return next(new Error('Authentication required'));
+            if (requireEmailVerification.needsVerification(teacher)) return next(new Error('Email verification required'));
             socket.teacher = { id: teacher._id.toString(), role: teacher.role };
             next();
         } catch (err) { next(new Error('Authentication required')); }

@@ -1,13 +1,7 @@
 const EtherealMailProvider = require('./EtherealMailProvider');
+const SMTPMailProvider = require('./SMTPMailProvider');
 
-// -----------------------------------------------------------------------------
-// Active Mail Provider
-// -----------------------------------------------------------------------------
-// To swap to a production mail provider (e.g. SendGrid, Resend, AWS SES):
-// 1. Create SendGridMailProvider.js or ResendMailProvider.js implementing MailProvider.js
-// 2. Change the instantiated instance below:
-//    const mailService = new SendGridMailProvider({ apiKey: process.env.SENDGRID_API_KEY });
-// -----------------------------------------------------------------------------
-const mailService = new EtherealMailProvider();
-
-module.exports = mailService;
+// SMTP delivers to real inboxes; without SMTP_HOST use development previews.
+const useSMTP = Boolean(process.env.SMTP_HOST?.trim());
+console.log(useSMTP ? '[MAIL] SMTP delivery enabled' : '[MAIL] Ethereal preview mode: SMTP_HOST is not configured; emails will not reach inboxes');
+module.exports = useSMTP ? new SMTPMailProvider() : new EtherealMailProvider();

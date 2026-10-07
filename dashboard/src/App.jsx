@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import VerifyEmail from './pages/VerifyEmail';
 import { Shield, Moon, Sun } from 'lucide-react';
 import './App.css';
 import './pages/Auth.css';
@@ -14,6 +15,7 @@ function getInitialPage() {
     const params = new URLSearchParams(window.location.search);
     const queryPage = params.get('page');
 
+    if (path === 'verify-email') return 'verify-email';
     if (queryPage) return queryPage.toLowerCase();
     if (path === 'signup') return 'signup';
     if (path === 'forgot-password') return 'forgot-password';
@@ -89,9 +91,12 @@ function MainRouter() {
     }
 
     // 2. Unauthenticated: Only Login, Signup, ForgotPassword, and ResetPassword are reachable
-    if (!currentTeacher) {
+    if (!currentTeacher || currentPage === 'verify-email') {
         let authPage;
         switch (currentPage) {
+            case 'verify-email':
+                authPage = <VerifyEmail onNavigate={navigateTo} />;
+                break;
             case 'signup':
                 authPage = <Signup onNavigate={navigateTo} />;
                 break;

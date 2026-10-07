@@ -21,6 +21,13 @@ import server
 
 
 class DetectionChecks(unittest.TestCase):
+    def test_dev_voice_disabled_does_not_disable_normal_exam_health_checks(self):
+        with patch.dict(os.environ, {'APP_MODE': 'dev', 'VOICE_MONITORING_ENABLED': 'false', 'IS_SELF_CHECK': 'true', 'EXAM_TYPE': 'online'}), \
+                patch.object(server, 'voice_monitor', None, create=True), \
+                patch.object(server, 'startup_errors', [], create=True):
+            self.assertFalse(any('Voice model' in error for error in server.health_check()['errors']))
+            os.environ['APP_MODE'] = 'exam'
+            self.assertTrue(any('Voice model' in error for error in server.health_check()['errors']))
     def test_usb_disk_parent_fallback_never_ejects_a_hub(self):
         monitor = USBMonitor('usb-parent-check', lambda event: None)
         cfg = MagicMock()

@@ -10,6 +10,10 @@ The Candidate App is the desktop application run by students during an exam. It 
 
 ## What This Does
 
+### Development presentation voice toggle
+
+With `APP_MODE=dev`, online Self-Check shows a Voice monitoring toggle, enabled by default. Off skips microphone/reference-voice readiness requirements and hides those controls. Begin Exam passes the selection to Electron; Electron permits this override only in development mode, and Python skips voice model/stream startup while keeping the camera and environment monitors enabled. New login resets the default to on. Physical-lab behavior is unchanged. Finish any ongoing audio check before switching the toggle. Normal exam mode always ignores this override.
+
 ### USB storage enforcement
 
 If Windows rejects ejecting a disk child with an illegal-device-request veto, the monitor retries its direct parent only when Windows identifies that parent as `USBSTOR` or `UASPStor`. USB hubs and other parent drivers are excluded. This fallback was hardware-tested with the inserted E: USB drive: safe removal was accepted and the disk disappeared from the follow-up scan.

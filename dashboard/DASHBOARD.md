@@ -307,3 +307,8 @@ The examiner dashboard features a responsive layout ensuring full functionality 
 ## Approved existing reference files
 
 When creating an exam, the permitted-software section accepts one exact absolute Windows path per line for teacher-approved existing references/templates on candidate PCs. Empty means existing-file restrictions stay in effect. These are stored as `rules.permittedFiles` and can be inspected in the exam card's expandable file list. No wildcard/directory exemptions are accepted, and the tool itself must also be permitted. New answers must still be created/saved during the exam before upload.
+
+
+### Signup email verification
+
+Signup normalizes email and checks the Teacher collection; the unique MongoDB email index rejects concurrent duplicates. Set `REQUIRE_EMAIL_VERIFICATION=true` in `server/.env` and restart to require verification before login, refresh, authenticated APIs, evidence access and sockets. All unverified accounts, including existing teachers and administrators, must verify first. There is no legacy-account exemption; only `emailVerified=true` permits access when the flag is enabled. `false` preserves immediate signup/login. `/verify-email` confirms links (valid for one hour) or resends them. Configure `EMAIL_TOKEN_SECRET`, `DASHBOARD_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` for real delivery. Without `SMTP_HOST`, Ethereal creates test previews in server logs, not inbox mail. Failed delivery keeps the account available for resend without issuing login tokens.

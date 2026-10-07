@@ -13,6 +13,7 @@ export default function Signup({ onNavigate }) {
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [signupSuccess, setSignupSuccess] = useState(false);
+    const [verificationMessage, setVerificationMessage] = useState('');
 
     // Client-side validation checks
     const hasMinLength = password.length >= 8;
@@ -55,7 +56,8 @@ export default function Signup({ onNavigate }) {
 
         setIsSubmitting(true);
         try {
-            await signup(name.trim(), email.trim().toLowerCase(), password);
+            const result = await signup(name.trim(), email.trim().toLowerCase(), password);
+            if (result.verificationRequired) setVerificationMessage(result.message);
             setSignupSuccess(true);
             // After signup, AuthContext has access token & teacher, App routes automatically to dashboard
         } catch (err) {
@@ -88,7 +90,8 @@ export default function Signup({ onNavigate }) {
                         <CheckCircle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
                         <div>
                             <strong>Account Created!</strong>
-                            <p style={{ margin: '4px 0 0 0', fontSize: 12 }}>Redirecting to your Examiner Dashboard...</p>
+                            <p style={{ margin: '4px 0 0 0', fontSize: 12 }}>{verificationMessage || 'Redirecting to your Examiner Dashboard...'}</p>
+                            {verificationMessage && <button type="button" className="auth-link" onClick={() => onNavigate('verify-email')}>Resend verification email</button>}
                         </div>
                     </div>
                 )}

@@ -112,6 +112,7 @@ export default function Login({ onNavigate }) {
                     </div>
 
                     <div className="auth-actions-row">
+                        <button type="button" className="auth-link" onClick={() => onNavigate('verify-email')}>Verify email / resend</button>
                         <button
                             type="button"
                             className="auth-link"

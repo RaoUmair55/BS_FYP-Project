@@ -1,3 +1,5 @@
+const requireEmailVerification = require('../utils/emailVerification');
+const sendVerificationEmail = require('../utils/sendVerificationEmail');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -116,6 +118,7 @@ router.post('/signup', async (req, res) => {
             passwordHash,
             role: 'teacher',
             emailVerified: false,
+            emailVerificationRequired: true,
             failedLoginAttempts: 0
         });
 
@@ -129,7 +132,15 @@ router.post('/signup', async (req, res) => {
             ipAddress
         });
 
-        // Generate tokens immediately (Part B documents enforcing verification later)
+        if (requireEmailVerification()) {
+            let verificationEmailSent = false;
+            try { await sendVerificationEmail(savedTeacher); verificationEmailSent = true; }
+            catch (error) { console.error('Signup verification delivery failed:', error.message); }
+            return res.status(201).json({ verificationRequired: true, verificationEmailSent,
+                message: verificationEmailSent ? 'Account created. Verify your email before signing in.' : 'Account created, but email delivery failed. Please resend the verification email.' });
+        }
+
+        // Verification disabled: retain the existing immediate-login flow.
         const accessToken = generateAccessToken(savedTeacher);
         const { token: rawRefreshToken, tokenHash } = generateRefreshToken();
         const expiresAt = new Date(Date.now() + REFRESH_COOKIE_MAX_AGE);
@@ -155,6 +166,7 @@ router.post('/signup', async (req, res) => {
             }
         });
     } catch (err) {
+        if (err.code === 11000) return res.status(409).json({ error: 'Email is already registered' });
         console.error('Signup error:', err);
         return res.status(500).json({ error: 'Registration failed', details: err.message });
     }
@@ -224,6 +236,8 @@ router.post('/login', loginLimiter, async (req, res) => {
             return res.status(401).json({ error: genericErrorMessage });
         }
 
+        if (requireEmailVerification.needsVerification(teacher)) return res.status(403).json({ error: 'Verify your email before signing in.', code: 'EMAIL_VERIFICATION_REQUIRED' });
+
         // On successful login: reset failed attempts & lockout
         teacher.failedLoginAttempts = 0;
         teacher.lockedUntil = null;
@@ -290,6 +304,11 @@ router.post('/refresh', async (req, res) => {
         if (!teacher) {
             res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
             return res.status(401).json({ error: 'Teacher not found' });
+        }
+
+        if (requireEmailVerification.needsVerification(teacher)) {
+            res.clearCookie(REFRESH_COOKIE_NAME, getClearCookieOptions());
+            return res.status(403).json({ error: 'Verify your email before signing in.', code: 'EMAIL_VERIFICATION_REQUIRED' });
         }
 
         // Rotate Refresh Token: Revoke old token

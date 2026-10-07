@@ -8,6 +8,7 @@
  * it owns the active session and monitoring lifecycle.
  */
 let displayCheckInterval = null;
+let devVoiceEnabled = true;
 const { app, BrowserWindow, dialog, ipcMain, screen, clipboard, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -150,6 +151,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     EXAM_SESSION_ID: activeSessionInfo.sessionId,
     EXAM_TYPE: activeSessionInfo.examType || 'online',
     APP_MODE: mode,
+    VOICE_MONITORING_ENABLED: mode === 'dev' && !devVoiceEnabled ? 'false' : 'true',
     IS_SELF_CHECK: isSelfCheck ? 'true' : 'false',
     ALLOWED_APPLICATIONS: JSON.stringify(activeSessionInfo.allowedApplications || []),
     EXAM_RULES: JSON.stringify(activeSessionInfo.rules || {})
@@ -470,7 +472,7 @@ ipcMain.handle('finish-exam', () => {
 
 // Return session info to renderer
 ipcMain.handle('get-session-info', () => {
-  return activeSessionInfo;
+  return { ...activeSessionInfo, isDevMode: (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' };
 });
 
 let isLoggingIn = false;
@@ -482,6 +484,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
     return { success: false, error: 'Login in progress' };
   }
   isLoggingIn = true;
+  devVoiceEnabled = true;
   try {
 
     console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
@@ -580,9 +583,10 @@ ipcMain.handle('decline-consent', async () => {
 
 // Start Exam Mode
 let isStartingExam = false;
-ipcMain.handle('start-exam-mode', async () => {
+ipcMain.handle('start-exam-mode', async (event, options = {}) => {
   if (isStartingExam) return { success: false, error: 'Exam startup is already in progress.' };
   isStartingExam = true;
+  devVoiceEnabled = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? options?.voiceEnabled !== false : true;
   setExamActive(false);
   try {
     console.log('[Electron] Transitioning to Exam Mode...');

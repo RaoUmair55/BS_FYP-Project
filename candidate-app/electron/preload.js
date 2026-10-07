@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   proceedToIdentity: (consentData) => ipcRenderer.invoke('proceed-to-identity', consentData),
   proceedToSelfCheck: (identityData) => ipcRenderer.invoke('proceed-to-self-check', identityData),
   declineConsent: async () => ipcRenderer.invoke('decline-consent'),
-  startExamMode: async () => ipcRenderer.invoke('start-exam-mode'),
+  startExamMode: async (options) => ipcRenderer.invoke('start-exam-mode', options),
   getSessionInfo: async () => ipcRenderer.invoke('get-session-info'),
   checkUsbDrives: async () => ipcRenderer.invoke('check-usb-drives'),
   getDisplayCount: async () => ipcRenderer.invoke('get-display-count'),

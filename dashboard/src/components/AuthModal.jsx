@@ -63,7 +63,8 @@ export default function AuthModal({ isOpen, onClose }) {
             if (!isSignUp) {
                 await login(email.trim(), password);
             } else {
-                await signup(name.trim(), email.trim(), password);
+                const result = await signup(name.trim(), email.trim(), password);
+                if (result.verificationRequired) setError(result.message);
             }
         } catch (err) {
             const msg = err.message || 'Authentication failed. Please check your credentials.';

@@ -438,3 +438,8 @@ FAILURE BREAKDOWN: No request failures recorded (100% Success).
 ## Permitted-file policy
 
 `POST /exams` optionally accepts `rules.permittedFiles`: an array of at most 50 exact absolute Windows paths, each at most 1024 characters, without null bytes or wildcards. Invalid input returns 400. The default is `[]`; paths are persisted and included in the candidate `/exams/code/:code` rules response. This configures candidate-PC reference-file exemptions without disabling old-file detection or application whitelisting. Server risk scoring and review semantics are unchanged.
+
+
+### Signup email verification
+
+Signup normalizes email and checks the Teacher collection; the unique MongoDB email index rejects concurrent duplicates. Set `REQUIRE_EMAIL_VERIFICATION=true` in `server/.env` and restart to require verification before login, refresh, authenticated APIs, evidence access and sockets. All unverified accounts, including existing teachers and administrators, must verify first. There is no legacy-account exemption; only `emailVerified=true` permits access when the flag is enabled. `false` preserves immediate signup/login. `/verify-email` confirms links (valid for one hour) or resends them. Configure `EMAIL_TOKEN_SECRET`, `DASHBOARD_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` for real delivery. Without `SMTP_HOST`, Ethereal creates test previews in server logs, not inbox mail. Failed delivery keeps the account available for resend without issuing login tokens.

@@ -26,6 +26,11 @@ const teacherSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    // Legacy accounts remain usable without falsely marking their email verified.
+    emailVerificationRequired: {
+        type: Boolean,
+        default: false
+    },
     failedLoginAttempts: {
         type: Number,
         default: 0

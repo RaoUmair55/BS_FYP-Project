@@ -154,6 +154,7 @@ export function AuthProvider({ children }) {
             throw new Error(errorMessage);
         }
 
+        if (data.verificationRequired) return data;
         updateAccessToken(data.accessToken);
         setCurrentTeacher(data.teacher);
         return data.teacher;

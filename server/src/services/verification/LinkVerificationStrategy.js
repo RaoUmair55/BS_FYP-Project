@@ -46,7 +46,7 @@ class LinkVerificationStrategy extends VerificationStrategy {
                 return { valid: false, reason: 'Token does not match the specified user account.' };
             }
 
-            return { valid: true };
+            return { valid: true, teacherId: decoded.teacherId };
         } catch (err) {
             if (err.name === 'TokenExpiredError') {
                 return { valid: false, reason: 'Verification link has expired. Please request a new one.' };

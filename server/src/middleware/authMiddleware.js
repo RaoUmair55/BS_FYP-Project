@@ -1,3 +1,4 @@
+const requireEmailVerification = require('../utils/emailVerification');
 const { verifyAccessToken } = require('../utils/tokens');
 const Teacher = require('../models/Teacher');
 
@@ -28,6 +29,7 @@ async function requireAuth(req, res, next) {
 
         const teacher = await Teacher.findById(decoded.teacherId);
         if (!teacher) return res.status(401).json({ error: 'Account no longer exists' });
+        if (requireEmailVerification.needsVerification(teacher)) return res.status(403).json({ error: 'Email verification required', code: 'EMAIL_VERIFICATION_REQUIRED' });
         req.teacher = {
             teacherId: teacher._id.toString(),
             email: teacher.email,

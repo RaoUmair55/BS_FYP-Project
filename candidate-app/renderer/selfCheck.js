@@ -19,6 +19,8 @@ let voicePassed = false;
 let appsPassed = false;
 let usbPassed = false;
 let displayPassed = false;
+let devVoiceEnabled = true;
+let canSkipVoice = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -32,6 +34,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (e) {}
     }
     const isLab = sessionInfo && sessionInfo.examType === 'physical_lab';
+    canSkipVoice = sessionInfo?.isDevMode === true && !isLab;
+    if (canSkipVoice) {
+      const control = document.createElement('div');
+      control.className = 'check-item';
+      control.innerHTML = '<label style="display:flex;align-items:center;gap:12px"><input id="dev-voice-toggle" type="checkbox" checked> Voice monitoring (development presentation)</label><p>Turn off to skip microphone and speaker comparison. Camera and environment checks stay enabled.</p>';
+      document.getElementById('check-mic').before(control);
+      control.querySelector('input').addEventListener('change', (event) => {
+        if (voiceCheckBusy || audioCheckBusy) {
+          event.target.checked = devVoiceEnabled;
+          alert('Finish the current audio check before changing voice monitoring.');
+          return;
+        }
+        devVoiceEnabled = event.target.checked;
+        ['check-mic', 'check-voice'].forEach(id => { document.getElementById(id).style.display = devVoiceEnabled ? '' : 'none'; });
+        updateBeginButton();
+      });
+    }
     const badge = document.getElementById('candidateInfoBadge');
     if (badge && sessionInfo) {
       const name = sessionInfo.studentName || sessionInfo.studentId || 'Candidate';
@@ -82,7 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function updateBeginButton() {
-  btnBegin.disabled = !(cameraPassed && micPassed && voicePassed && appsPassed && usbPassed && displayPassed);
+  btnBegin.disabled = !(cameraPassed && (canSkipVoice && !devVoiceEnabled || micPassed && voicePassed) && appsPassed && usbPassed && displayPassed);
 }
 
 async function uploadCameraVerificationSnapshot(video) {
@@ -482,7 +501,10 @@ if (btnCaptureCalibration) {
   });
 }
 
+let audioCheckBusy = false;
+let voiceCheckBusy = false;
 btnMic.addEventListener('click', async () => {
+  audioCheckBusy = true;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const audioContext = new AudioContext();
@@ -508,6 +530,7 @@ btnMic.addEventListener('click', async () => {
       if (average > 10 && !hasDetectedSound) {
         hasDetectedSound = true;
         micPassed = true;
+        audioCheckBusy = false;
         setStatus('check-mic', 'pass');
         updateBeginButton();
         btnMic.disabled = true;
@@ -523,6 +546,7 @@ btnMic.addEventListener('click', async () => {
     };
     updateMeter();
   } catch (err) {
+    audioCheckBusy = false;
     setStatus('check-mic', 'fail', 'Microphone access denied or not found.');
   }
 });
@@ -639,6 +663,7 @@ async function recordVoiceSample(durationSeconds = 8) {
 }
 
 async function handleVoiceRecord() {
+  voiceCheckBusy = true;
   const statusBox = document.getElementById('voice-recording-status');
   if (btnRecordVoice) {
     btnRecordVoice.disabled = true;
@@ -696,6 +721,8 @@ async function handleVoiceRecord() {
     }
     if (statusBox) statusBox.style.display = 'none';
     updateBeginButton();
+  } finally {
+    voiceCheckBusy = false;
   }
 }
 
@@ -892,7 +919,7 @@ btnBegin.addEventListener('click', async () => {
             activeCameraStream.getTracks().forEach(track => track.stop());
             activeCameraStream = null;
         }
-        const result = await window.api.startExamMode();
+        const result = await window.api.startExamMode({ voiceEnabled: !canSkipVoice || devVoiceEnabled });
         if (!result.success) {
             alert('Failed to start exam mode: ' + result.error);
             btnBegin.disabled = false;

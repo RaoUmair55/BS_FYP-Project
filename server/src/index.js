@@ -1,3 +1,4 @@
+const requireEmailVerification = require('./utils/emailVerification');
 const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
@@ -5,7 +6,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const connectDB = require('./config/db');
 const { initSocket } = require('./sockets/violationSocket');
@@ -39,6 +40,7 @@ app.use('/uploads', async (req, res, next) => {
         const decoded = verifyAccessToken(token);
         const teacher = await Teacher.findById(decoded.teacherId);
         if (!teacher) return res.status(401).json({ error: 'Authentication required' });
+        if (requireEmailVerification.needsVerification(teacher)) return res.status(403).json({ error: 'Email verification required', code: 'EMAIL_VERIFICATION_REQUIRED' });
         req.teacher = { teacherId: teacher._id.toString(), role: teacher.role };
         const folder = req.path.split('/')[1];
         const storedUrl = `/uploads${req.path}`;
@@ -85,6 +87,7 @@ connectDB().then(() => {
 
 // Mount Routes
 app.use('/auth', require('./routes/auth'));
+app.use('/verification', require('./routes/verification'));
 app.use('/', require('./routes/violations'));
 app.use('/sessions', require('./routes/sessions'));
 app.use('/exam', require('./routes/examPaper'));

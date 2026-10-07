@@ -33,7 +33,8 @@ class EtherealMailProvider extends MailProvider {
             })();
         }
 
-        return this.initPromise;
+        try { return await this.initPromise; }
+        catch (err) { this.initPromise = null; throw err; }
     }
 
     /**

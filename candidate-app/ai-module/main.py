@@ -117,13 +117,19 @@ if __name__ == "__main__":
             server.voice_monitor = None
             print("[AI Module] 🏫 Physical Lab Exam Mode active. Webcam AIMonitor and VoiceMonitor are bypassed.")
         else:
-            from voice_monitor import VoiceMonitor
-            voice_monitor = VoiceMonitor(
-                session_id=exam_session_id,
-                on_violation_callback=send_violation_to_electron,
-                is_self_check=is_self_check
-            )
-            server.voice_monitor = voice_monitor
+            voice_enabled = not (app_mode == 'dev' and os.environ.get('VOICE_MONITORING_ENABLED') == 'false')
+            voice_monitor = None
+            if voice_enabled:
+                from voice_monitor import VoiceMonitor
+                voice_monitor = VoiceMonitor(
+                    session_id=exam_session_id,
+                    on_violation_callback=send_violation_to_electron,
+                    is_self_check=is_self_check
+                )
+                server.voice_monitor = voice_monitor
+            else:
+                server.voice_monitor = None
+                print('[AI Module] Development presentation: voice monitoring disabled; camera remains active.')
 
             if not is_self_check:
                 try:
@@ -139,7 +145,8 @@ if __name__ == "__main__":
                     print(f"[AI Module Warning] Could not start AIMonitor: {e}")
 
                 try:
-                    voice_monitor.start()
+                    if voice_monitor is not None:
+                        voice_monitor.start()
                 except Exception as e:
                     server.startup_errors.append(f"Voice monitor could not start: {e}")
                     print(f"[AI Module Warning] Could not start VoiceMonitor: {e}")
