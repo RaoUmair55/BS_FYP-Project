@@ -765,7 +765,7 @@ class AIMonitor:
             self.second_person_start = now
 
     def _check_objects(self, frame):
-        """Require repeated target detections; handle both installed YOLO output formats."""
+        """Alert on a clear phone immediately; confirm weaker objects across frames."""
         now = time.monotonic()
         height, width = frame.shape[:2]
         scale = min(640 / width, 640 / height)
@@ -825,13 +825,13 @@ class AIMonitor:
                 union = (box[2]-box[0]) * (box[3]-box[1]) + (old_box[2]-old_box[0]) * (old_box[3]-old_box[1]) - intersect
                 if union > 0 and intersect / union >= 0.2:
                     count = previous['count'] + 1
-            # Confirm a clear phone quickly, but never from a single prediction.
+            # A clear phone (60% confidence) alerts on its first inference.
             strong_count = 0
             if class_id == 67 and confidence >= 0.6:
                 strong_count = (previous.get('strong_count', 0) if count > 1 else 0) + 1
             self.object_candidates[class_id] = {'box': box, 'at': now, 'count': count,
                                                 'strong_count': strong_count}
-            if count < self.thresholds.get('object_detection_consecutive_frames', 3) and strong_count < 2:
+            if count < self.thresholds.get('object_detection_consecutive_frames', 3) and strong_count < 1:
                 continue
             if now - self.last_object_alerts.get(class_id, -10) < 2:
                 continue

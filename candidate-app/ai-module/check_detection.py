@@ -289,7 +289,7 @@ class DetectionChecks(unittest.TestCase):
         monitor._reset_temporal_state()
         with patch('ai_monitor.time.monotonic', side_effect=[110, 110.3, 110.6]):
             for x in (20, 250, 450):
-                tensor = np.array([[[x, 110, x+100, 210, .9, 67]]], dtype=np.float32)
+                tensor = np.array([[[x, 110, x+100, 210, .9, 73]]], dtype=np.float32)
                 monitor._check_objects(frame)
         self.assertEqual(events, [])
 
@@ -435,7 +435,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(events[0][0][0], 'head_turn_away')
         self.assertEqual(events[0][1]['details']['direction'], 'left')
 
-    def test_phone_needs_repeated_hits_and_respects_disabled_rule(self):
+    def test_phone_alerts_first_hit_and_respects_disabled_rule(self):
         monitor, events = self.camera()
         tensor = np.array([[[20, 30, 120, 180, 0.9, 67]]], dtype=np.float32)
         monitor.ort_session = SimpleNamespace(get_inputs=lambda: [SimpleNamespace(name='images')],
@@ -443,7 +443,7 @@ class DetectionChecks(unittest.TestCase):
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         with patch('ai_monitor.time.monotonic', side_effect=[100, 100.3, 100.6]):
             monitor._check_objects(frame)
-            self.assertEqual(events, [])
+            self.assertEqual(len(events), 1)
             monitor._check_objects(frame)
             self.assertEqual(len(events), 1)
             monitor._check_objects(frame)
@@ -475,10 +475,10 @@ class DetectionChecks(unittest.TestCase):
             monitor._check_objects(frame)
             tensor = np.array([[[20, 110, 120, 210, .9, 67]]], dtype=np.float32)
             monitor._check_objects(frame)
-            self.assertEqual(events, [])
+            self.assertEqual(len(events), 1)
             tensor[0, 0, 4] = .4
             monitor._check_objects(frame)
-            self.assertEqual(events, [])
+            self.assertEqual(len(events), 1)
 
     def test_real_model_accepts_blank_frame_without_phone_alert(self):
         monitor, events = self.camera()

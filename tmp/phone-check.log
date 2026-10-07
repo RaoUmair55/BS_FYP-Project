@@ -1,0 +1,41 @@
+C:\Users\Rao Umair\AppData\Roaming\Python\Python314\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+W0000 00:00:1791402050.635211    3144 face_landmarker_graph.cc:180] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1791402050.648114    9328 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791402050.666541    9328 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+E0000 00:00:1791402051.080170   10268 portable_clearcut_uploader.cc:90] Failed to send to clearcut: INTERNAL: ResponseInfo[id: 1, type: 0, code: 2, description: "Status_ConnectFailed: 12029", headers: ]
+=== Source Location Trace: ===
+wireless/android/play/playlog/cplusplus/ion_http_client.cc:44
+.W0000 00:00:1791402051.092740   11952 face_landmarker_graph.cc:180] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
+W0000 00:00:1791402051.103706   12380 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791402051.125265   10564 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+E0000 00:00:1791402051.542673   15264 portable_clearcut_uploader.cc:90] Failed to send to clearcut: INTERNAL: ResponseInfo[id: 2, type: 0, code: 2, description: "Status_ConnectFailed: 2148074245", headers: ]
+=== Source Location Trace: ===
+wireless/android/play/playlog/cplusplus/ion_http_client.cc:44
+.W0000 00:00:1791402051.552819   15436 face_landmarker_graph.cc:180] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
+W0000 00:00:1791402051.563383   11428 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1791402051.581828   11428 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+E0000 00:00:1791402051.970388    6824 portable_clearcut_uploader.cc:90] Failed to send to clearcut: INTERNAL: ResponseInfo[id: 3, type: 0, code: 2, description: "Status_ConnectFailed: 2148074245", headers: ]
+=== Source Location Trace: ===
+wireless/android/play/playlog/cplusplus/ion_http_client.cc:44
+.
+----------------------------------------------------------------------
+Ran 3 tests in 1.387s
+
+OK
+[AIMonitor] OpenCV Frontal & Profile Face detectors loaded successfully.
+[AIMonitor] ONNX YOLO object detector loaded successfully (yolo26n.onnx) [CPU-Bounded: 2 Threads].
+[AIMonitor] Face backend: mediapipe_tasks. Face tracking measures head direction, not eye gaze.
+[AIMonitor] AI camera monitoring initialized successfully.
+[AIMonitor] At exam start, sit facing the screen for about two seconds to calibrate head direction.
+[AIMonitor] OpenCV Frontal & Profile Face detectors loaded successfully.
+[AIMonitor] ONNX YOLO object detector loaded successfully (yolo26n.onnx) [CPU-Bounded: 2 Threads].
+[AIMonitor] Face backend: mediapipe_tasks. Face tracking measures head direction, not eye gaze.
+[AIMonitor] AI camera monitoring initialized successfully.
+[AIMonitor] At exam start, sit facing the screen for about two seconds to calibrate head direction.
+[AIMonitor] OpenCV Frontal & Profile Face detectors loaded successfully.
+[AIMonitor] ONNX YOLO object detector loaded successfully (yolo26n.onnx) [CPU-Bounded: 2 Threads].
+[AIMonitor] Face backend: mediapipe_tasks. Face tracking measures head direction, not eye gaze.
+[AIMonitor] AI camera monitoring initialized successfully.
+[AIMonitor] At exam start, sit facing the screen for about two seconds to calibrate head direction.
