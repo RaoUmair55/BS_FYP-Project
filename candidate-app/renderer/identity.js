@@ -4,7 +4,7 @@
  * How it works: Loads entry and consent information, validates the name and roll number, creates the session through the central server, and passes the result to Electron for self-check.
  * Connection: Works with identity.html; registration requires recorded monitoring consent.
  */
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOMContentLoaded event and updates the associated screen or process state. */ async () => {
   const nameInput = document.getElementById('studentName');
   const rollInput = document.getElementById('rollNumber');
   const btnSubmit = document.getElementById('btnSubmitIdentity');
@@ -42,16 +42,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   examCodeText.textContent = `Exam: ${activeExamId}`;
 
+  // Function purpose: Shows a validation or request failure on the current screen.
   function showError(msg) {
     errorBanner.textContent = msg;
     errorBanner.style.display = 'block';
   }
 
+  // Function purpose: Clears the current screen error message.
   function clearError() {
     errorBanner.textContent = '';
     errorBanner.style.display = 'none';
   }
 
+  // Function purpose: Validates candidate identity input and submits it before proceeding.
   async function handleSubmit() {
     if (isSubmitting) return;
     clearError();
@@ -117,7 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
+        const errData = await response.json().catch(/* Function purpose: Handles a rejected asynchronous operation and reports or recovers from its failure. */ () => ({}));
         throw new Error(errData.error || `Server error (${response.status})`);
       }
 
@@ -158,16 +161,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   btnSubmit.addEventListener('click', handleSubmit);
-  [nameInput, rollInput].forEach(input => input.addEventListener('input', () => {
+  [nameInput, rollInput].forEach(/* Function purpose: Runs input.addEventListener as part of this callback’s processing. */ input => input.addEventListener('input', /* Function purpose: Handles the input event and updates the associated screen or process state. */ () => {
     input.setAttribute?.('aria-invalid', 'false');
     clearError();
   }));
 
-  nameInput.addEventListener('keydown', (e) => {
+  nameInput.addEventListener('keydown', /* Function purpose: Handles the keydown event and updates the associated screen or process state. */ (e) => {
     if (e.key === 'Enter') rollInput.focus();
   });
 
-  rollInput.addEventListener('keydown', (e) => {
+  rollInput.addEventListener('keydown', /* Function purpose: Handles the keydown event and updates the associated screen or process state. */ (e) => {
     if (e.key === 'Enter') handleSubmit();
   });
 });

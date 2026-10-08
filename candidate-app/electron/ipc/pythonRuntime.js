@@ -9,6 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 
+// Function purpose: Finds a usable Python interpreter, preferring the configured path and local virtual environments.
 function getPythonExecutable() {
   if (process.env.PYTHON_PATH) {
     const configured = process.env.PYTHON_PATH;

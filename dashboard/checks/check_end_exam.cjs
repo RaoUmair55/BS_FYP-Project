@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, 'src/pages/Dashboard.jsx'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'src/pages/Dashboard.jsx'), 'utf8');
 const start = source.indexOf('    const handleEndCurrentExam =');
 const body = source.slice(start, source.indexOf('\n    return (', start));
 async function check(fail) {

@@ -16,6 +16,7 @@ import cv2
 import mediapipe as mp
 
 
+# Function purpose: Parses this evaluation script’s inputs and runs its measurement workflow.
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', action='append', required=True)

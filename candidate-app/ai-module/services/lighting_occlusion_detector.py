@@ -17,6 +17,7 @@ class CameraOcclusionDetector:
     - Zero-Latency Compute: Uses NumPy array reduction for microsecond evaluation (< 0.5ms).
     """
 
+    # Function purpose: Initializes this component’s configuration, state and dependencies.
     def __init__(self, dark_threshold=22.0, min_variance_threshold=6.0, sustained_seconds=1.2):
         """
         :param dark_threshold: Average grayscale pixel intensity (0-255) below which frame is considered dark.
@@ -30,6 +31,7 @@ class CameraOcclusionDetector:
         self.last_occlusion_reason = ""
         self.last_metrics = {}
 
+    # Function purpose: Analyzes a grayscale frame for severe illumination drop or solid lens covering.
     def analyze_frame(self, gray_frame: np.ndarray) -> tuple[bool, str, dict]:
         """
         Analyzes a grayscale frame for severe illumination drop or solid lens covering.
@@ -84,6 +86,7 @@ class CameraOcclusionDetector:
             self.last_occlusion_reason = ""
             return False, "", self.last_metrics
 
+    # Function purpose: Resets the detector's internal temporal timers.
     def reset(self):
         """Resets the detector's internal temporal timers."""
         self.occlusion_start_time = None

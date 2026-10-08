@@ -1,10 +1,10 @@
 // Exercise the real live-alert endpoint without database or network writes.
 const assert = require('node:assert/strict');
-const Exam = require('./src/models/Exam');
-const Session = require('./src/models/Session');
-const Violation = require('./src/models/Violation');
-const lifecycle = require('./src/utils/examLifecycle');
-const router = require('./src/routes/violations');
+const Exam = require('../src/models/Exam');
+const Session = require('../src/models/Session');
+const Violation = require('../src/models/Violation');
+const lifecycle = require('../src/utils/examLifecycle');
+const router = require('../src/routes/violations');
 const originals = [Exam.find, Session.find, Violation.find, lifecycle.autoExpireFinishedExams];
 const exams = [
     { _id: 'exam1', examCode: 'EXAM-LIVE', status: 'active', createdBy: 'teacher-a' },
@@ -42,7 +42,7 @@ async function run() {
         assert.deepEqual(await get({ active: 'true', sessionId: 'old-student' }), []);
         assert.deepEqual((await get({ active: 'true' }, 'admin')).map(a => a.sessionId), ['other-student', 'student2', 'student1']);
         assert.ok((await get({})).some(a => a.sessionId === 'old-student'), 'History must remain available');
-        const { selectLiveAlerts } = await import('../dashboard/src/utils/liveAlerts.js');
+        const { selectLiveAlerts } = await import('../../dashboard/src/utils/liveAlerts.js');
         const items = alerts.map(alert => ({ ...alert, examId: sessions.find(s => s._id === alert.sessionId).examId }));
         assert.deepEqual(selectLiveAlerts(items, exams, 'EXAM-LIVE', 'student1').map(a => a.sessionId), ['student1']);
         assert.deepEqual(selectLiveAlerts(items, exams).map(a => a.sessionId), ['other-student', 'student2', 'student1']);

@@ -18,6 +18,22 @@ const sessionSchema = new mongoose.Schema({
         enum: ["pending", "verified", "flagged", "none"], 
         default: "none" 
     },
+    photoScheduleCreated: { type: Boolean, default: false },
+    cameraPhotos: [{
+        url: { type: String, required: true },
+        capturedAt: { type: Date, default: Date.now },
+        source: { type: String, enum: ['initial', 'requested', 'scheduled'], default: 'initial' },
+        requestId: { type: String, default: null },
+        status: { type: String, enum: ['pending', 'verified'], default: 'pending' },
+        reviewedAt: { type: Date, default: null }
+    }],
+    cameraPhotoRequests: [{
+        id: { type: String, required: true },
+        source: { type: String, enum: ['requested', 'scheduled'], required: true },
+        dueAt: { type: Date, required: true },
+        note: { type: String, default: '' },
+        completedAt: { type: Date, default: null }
+    }],
     cameraVerificationNote: { type: String, default: null },
     terminationReason: { type: String, default: null },
     consentGiven: { type: Boolean, default: false },

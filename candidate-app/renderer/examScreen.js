@@ -25,6 +25,7 @@ let backendConnected = null;
 let isPaperLoaded = false;
 let isPaperReleased = false;
 
+// Function purpose: Locks or unlocks the answer workspace according to the exam state.
 function setWorkspaceLock(locked) {
   const answerText = document.getElementById('answerText');
   const fileInput = document.getElementById('fileInput');
@@ -99,6 +100,7 @@ function setWorkspaceLock(locked) {
   }
 }
 
+// Function purpose: Adds candidate and session information to the exam watermark.
 function renderWatermark() {
   const overlay = document.getElementById('watermarkOverlay');
   if (!overlay || !sessionInfo) return;
@@ -119,6 +121,7 @@ function renderWatermark() {
   overlay.style.display = 'flex';
 }
 
+// Function purpose: Fetches the released exam paper and selects its document renderer.
 async function loadExamPaper() {
   const loadingEl = document.getElementById('loadingMessage');
   const paperViewer = document.getElementById('paperViewer');
@@ -244,6 +247,7 @@ async function loadExamPaper() {
   }
 }
 
+// Function purpose: Initializes this screen, loads its session data and connects its controls.
 async function init() {
   try {
     sessionInfo = await window.api.getSessionInfo();
@@ -309,6 +313,7 @@ async function init() {
   }
 }
 
+// Function purpose: Starts the countdown using the server-provided exam deadline.
 function startTimer() {
   const timerDisplay = document.getElementById('timerDisplay');
   if (!timerDisplay) return;
@@ -321,6 +326,7 @@ function startTimer() {
     return;
   }
   
+  // Function purpose: Updates the remaining-time display and handles exam expiry.
   const updateCountdown = () => {
     if (isSubmitted) return;
     const now = Date.now() + serverTimeOffset;
@@ -364,6 +370,7 @@ function startTimer() {
   timerInterval = setInterval(updateCountdown, 1000);
 }
 
+// Function purpose: Displays the current connection and pending-violation delivery status.
 function updateBufferStatusUI(pendingCount) {
   lastPendingCount = Math.max(0, Number(pendingCount) || 0);
   if (isSubmitted) return;
@@ -393,11 +400,12 @@ function updateBufferStatusUI(pendingCount) {
   }
 }
 
+// Function purpose: Polls session status for paper release, examiner messages and exam termination.
 function startSessionStatusPolling() {
   if (!sessionInfo || !sessionInfo.sessionId) return;
   if (statusInterval) clearInterval(statusInterval);
 
-  statusInterval = setInterval(async () => {
+  statusInterval = setInterval(/* Function purpose: Runs the periodic check or screen update at the configured interval. */ async () => {
     if (statusPollInFlight || isSubmitted) return;
     statusPollInFlight = true;
     try {
@@ -465,8 +473,25 @@ function startSessionStatusPolling() {
         showExaminerWarningToast(latestWarning.message);
       }
 
+      if (data.cameraPhotoRequest && data.status === 'active' && !isSubmitted) {
+        if (data.cameraPhotoRequest.source === 'requested' && !isReverifyingCamera) {
+          pendingPhotoRequest = data.cameraPhotoRequest;
+          showCameraReverificationModal(data.cameraPhotoRequest.note);
+        } else if (data.cameraPhotoRequest.source === 'scheduled' && !isReverifyingCamera && !identitySnapshotBusy) {
+          identitySnapshotBusy = true;
+          try {
+            const snapshot = await window.api.captureIdentityPhoto();
+            if (!snapshot.success) throw new Error(snapshot.error);
+            const response = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/camera-verification`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoBase64: snapshot.photoBase64, requestId: data.cameraPhotoRequest.id }) });
+            if (!response.ok) throw new Error('Identity checkpoint upload failed');
+          } catch (error) { console.warn('Identity checkpoint will retry:', error.message); }
+          finally { identitySnapshotBusy = false; }
+        }
+      }
+
+      if (data.status !== 'active' || isSubmitted) { clearInterval(photoPreviewTimer); photoPreviewTimer = null; isReverifyingCamera = false; const modal = document.getElementById('reverifyCameraModal'); if (modal) modal.style.display = 'none'; }
       // Check if examiner flagged camera verification (issue with initial photo)
-      if ((data.cameraVerificationStatus === 'rejected' || data.cameraVerificationStatus === 'flagged' || data.cameraVerificationStatus === 're_verify') && !isReverifyingCamera) {
+      if ((data.cameraVerificationStatus === 'rejected' || data.cameraVerificationStatus === 'flagged' || data.cameraVerificationStatus === 're_verify') && data.status === 'active' && !isSubmitted && !isReverifyingCamera) {
         showCameraReverificationModal(data.cameraVerificationNote);
       }
 
@@ -483,9 +508,12 @@ function startSessionStatusPolling() {
   }, 3000);
 }
 
+let pendingPhotoRequest = null;
+let identitySnapshotBusy = false;
 let isReverifyingCamera = false;
-let reverifyStream = null;
+let photoPreviewTimer = null;
 
+// Function purpose: Shows the examiner-requested camera retake dialog using the existing monitoring camera.
 async function showCameraReverificationModal(note) {
   const modal = document.getElementById('reverifyCameraModal');
   const video = document.getElementById('reverify-video');
@@ -495,44 +523,55 @@ async function showCameraReverificationModal(note) {
   if (!modal || isReverifyingCamera) return;
   isReverifyingCamera = true;
 
+  if (noteText && !note) noteText.textContent = 'Please face the camera and capture a clear identity photo.';
   if (noteText && note) {
     noteText.innerHTML = `<strong>Examiner Note:</strong> "${escapeHtml(note)}"<br><span style="font-size:12px; margin-top:4px; display:block;">Please adjust your camera angle/lighting and capture a new verification photo.</span>`;
   }
 
   modal.style.display = 'flex';
 
-  try {
-    reverifyStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } } });
-    if (video) video.srcObject = reverifyStream;
-  } catch (err) {
-    console.error('Failed to open reverification camera:', err);
-  }
+  const preview = document.getElementById('reverify-photo-preview') || document.createElement('img');
+  preview.id = 'reverify-photo-preview'; preview.alt = 'Current camera view for your identity photo';
+  preview.style.cssText = 'width:100%;max-height:280px;object-fit:contain;border-radius:8px';
+  if (video) { video.style.display = 'none'; video.insertAdjacentElement('afterend', preview); }
+  let previewBusy = false;
+  // Function purpose: Refreshes the camera preview with a recent frame from the Python backend.
+  const refreshPreview = async () => {
+    if (previewBusy || !isReverifyingCamera) return;
+    previewBusy = true;
+    try {
+      const snapshot = await window.api.captureIdentityPhoto();
+      if (!snapshot.success) throw new Error(snapshot.error);
+      preview.src = snapshot.photoBase64;
+      if (noteText) noteText.textContent = note ? `Examiner note: ${note}` : 'Please face the camera and capture a clear identity photo.';
+    } catch (error) { if (noteText) noteText.textContent = 'Camera preview unavailable. Try capturing again or inform your examiner.'; }
+    finally { previewBusy = false; }
+  };
+  await refreshPreview();
+  clearInterval(photoPreviewTimer);
+  photoPreviewTimer = setInterval(refreshPreview, 1000);
+  if (snapBtn) { snapBtn.disabled = false; snapBtn.textContent = 'Capture new photo'; }
 
   if (snapBtn) {
-    snapBtn.onclick = async () => {
+    snapBtn.onclick = /* Function purpose: Handles interaction with snapBtn.onclick. */ async () => {
       if (!video) return;
       snapBtn.disabled = true;
       snapBtn.textContent = 'Submitting New Photo...';
 
       try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const photoBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        const snapshot = await window.api.captureIdentityPhoto();
+        if (!snapshot.success) throw new Error(snapshot.error || 'Camera is unavailable');
+        const photoBase64 = snapshot.photoBase64;
 
         const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/camera-verification`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ photoBase64 })
+          body: JSON.stringify({ photoBase64, requestId: pendingPhotoRequest?.id })
         });
 
-        if (reverifyStream) {
-          reverifyStream.getTracks().forEach(t => t.stop());
-          reverifyStream = null;
-        }
-
+        if (!res.ok) throw new Error((await res.json()).error || 'Photo upload failed');
+        pendingPhotoRequest = null;
+        clearInterval(photoPreviewTimer); photoPreviewTimer = null;
         modal.style.display = 'none';
         isReverifyingCamera = false;
         showPhotoSubmittedToast();
@@ -545,6 +584,7 @@ async function showCameraReverificationModal(note) {
   }
 }
 
+// Function purpose: Confirms that the requested camera snapshot was uploaded.
 function showPhotoSubmittedToast() {
   let toast = document.getElementById('photoSubmittedToast');
   if (!toast) {
@@ -560,11 +600,12 @@ function showPhotoSubmittedToast() {
   }
   toast.innerHTML = `✓ Verification photo updated & sent to examiner.`;
   toast.style.display = 'flex';
-  setTimeout(() => {
+  setTimeout(/* Function purpose: Runs the delayed follow-up after the configured timeout. */ () => {
     if (toast) toast.style.display = 'none';
   }, 5000);
 }
 
+// Function purpose: Notifies the candidate that the examiner extended the exam deadline.
 function showExaminerTimeExtensionToast(addedMinutes) {
   let toast = document.getElementById('timeExtensionToast');
   if (!toast) {
@@ -588,11 +629,12 @@ function showExaminerTimeExtensionToast(addedMinutes) {
     </button>
   `;
   toast.style.display = 'flex';
-  setTimeout(() => {
+  setTimeout(/* Function purpose: Runs the delayed follow-up after the configured timeout. */ () => {
     if (toast) toast.style.display = 'none';
   }, 8000);
 }
 
+// Function purpose: Displays a warning sent by the examiner.
 function showExaminerWarningToast(msg) {
   let toast = document.getElementById('examinerWarningToast');
   if (!toast) {
@@ -620,6 +662,7 @@ function showExaminerWarningToast(msg) {
 let lastPreExistingModalTime = 0;
 let lastBlockedFileName = '';
 
+// Function purpose: Explains why a pre-existing file was blocked during the exam.
 function showPreExistingFileModal(data) {
   const now = Date.now();
   const fileName = data?.fileName || 'Existing Document';
@@ -723,7 +766,7 @@ function showPreExistingFileModal(data) {
 
   const btn = document.getElementById('btnAcknowledgeFileClosed');
   if (btn) {
-    btn.onclick = () => {
+    btn.onclick = /* Function purpose: Handles interaction with btn.onclick. */ () => {
       modal.style.display = 'none';
       if (window.api && typeof window.api.clearClipboard === 'function') {
         window.api.clearClipboard();
@@ -732,6 +775,7 @@ function showPreExistingFileModal(data) {
   }
 }
 
+// Function purpose: Stops exam interaction when the server reports that the session has ended.
 function handleSessionTerminated(reason) {
   window.api.finishExam().catch(console.error);
   if (statusInterval) clearInterval(statusInterval);
@@ -763,6 +807,7 @@ function handleSessionTerminated(reason) {
   `;
 }
 
+// Function purpose: Restores the candidate answer draft from local storage.
 function restoreDraft() {
   const answerText = document.getElementById('answerText');
   const saveStatus = document.getElementById('saveStatus');
@@ -777,6 +822,7 @@ function restoreDraft() {
   }
 }
 
+// Function purpose: Saves the current answer locally so it can be recovered after a disruption.
 function saveDraft() {
   const answerText = document.getElementById('answerText');
   const saveStatus = document.getElementById('saveStatus');
@@ -790,6 +836,7 @@ function saveDraft() {
   updateWordCount();
 }
 
+// Function purpose: Counts the words in the current answer and updates the display.
 function updateWordCount() {
   const answerText = document.getElementById('answerText');
   const wordCountEl = document.getElementById('wordCount');
@@ -801,28 +848,30 @@ function updateWordCount() {
   return words;
 }
 
+// Function purpose: Renders the exam PDF into the paper viewer.
 async function renderPdf(buffer, container) {
   const blob = new Blob([buffer], { type: 'application/pdf' });
   const blobUrl = URL.createObjectURL(blob);
   container.innerHTML = `<iframe src="${blobUrl}" style="width:100%; height:100%; border:none;" title="Exam Paper PDF"></iframe>`;
 }
 
+// Function purpose: Converts the exam Word document into content for the paper viewer.
 async function renderDocx(buffer, container) {
   const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
   container.innerHTML = `<div class="docx-container">${result.value}</div>`;
 }
 
 // Setup Event Listeners
-window.addEventListener('DOMContentLoaded', () => {
-  window.api.onPythonCrash(() => {
+window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOMContentLoaded event and updates the associated screen or process state. */ () => {
+  window.api.onPythonCrash(/* Function purpose: Runs console.warn as part of this callback’s processing. */ () => {
     console.warn('Python monitoring process exited; inspect Electron logs for details.');
   });
 
   init();
 
   // Enforce clipboard & copy/cut/paste lockdown during exam
-  ['copy', 'cut', 'paste', 'contextmenu'].forEach(evt => {
-    document.addEventListener(evt, (e) => {
+  ['copy', 'cut', 'paste', 'contextmenu'].forEach(/* Function purpose: Runs document.addEventListener as part of this callback’s processing. */ evt => {
+    document.addEventListener(evt, /* Function purpose: Runs e.preventDefault as part of this callback’s processing. */ (e) => {
       e.preventDefault();
       if (window.api && window.api.clearClipboard) {
         window.api.clearClipboard();
@@ -830,7 +879,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }, true);
   });
 
-  window.addEventListener('keydown', (e) => {
+  window.addEventListener('keydown', /* Function purpose: Handles the keydown event and updates the associated screen or process state. */ (e) => {
     const isCtrlOrCmd = e.ctrlKey || e.metaKey;
     const key = e.key ? e.key.toLowerCase() : '';
     if ((isCtrlOrCmd && ['c', 'v', 'x', 'insert'].includes(key)) || (e.shiftKey && key === 'insert')) {
@@ -841,7 +890,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, true);
 
-  window.addEventListener('focus', () => {
+  window.addEventListener('focus', /* Function purpose: Handles the focus event and updates the associated screen or process state. */ () => {
     if (window.api && window.api.clearClipboard) {
       window.api.clearClipboard();
     }
@@ -854,14 +903,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const tabFileContent = document.getElementById('tabFileContent');
 
   if (tabTextBtn && tabFileBtn) {
-    tabTextBtn.addEventListener('click', () => {
+    tabTextBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
       tabTextBtn.classList.add('active');
       tabFileBtn.classList.remove('active');
       tabTextContent.classList.add('active');
       tabFileContent.classList.remove('active');
     });
 
-    tabFileBtn.addEventListener('click', () => {
+    tabFileBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
       tabFileBtn.classList.add('active');
       tabTextBtn.classList.remove('active');
       tabFileContent.classList.add('active');
@@ -872,7 +921,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Auto-save on typing
   const answerText = document.getElementById('answerText');
   if (answerText) {
-    answerText.addEventListener('input', () => {
+    answerText.addEventListener('input', /* Function purpose: Handles the input event and updates the associated screen or process state. */ () => {
       saveDraft();
     });
   }
@@ -886,18 +935,18 @@ window.addEventListener('DOMContentLoaded', () => {
   const removeFileBtn = document.getElementById('removeFileBtn');
 
   if (dropzone && fileInput) {
-    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => fileInput.click());
     
-    dropzone.addEventListener('dragover', (e) => {
+    dropzone.addEventListener('dragover', /* Function purpose: Handles the dragover event and updates the associated screen or process state. */ (e) => {
       e.preventDefault();
       dropzone.style.borderColor = '#2563eb';
     });
     
-    dropzone.addEventListener('dragleave', () => {
+    dropzone.addEventListener('dragleave', /* Function purpose: Handles the dragleave event and updates the associated screen or process state. */ () => {
       dropzone.style.borderColor = '#cbd5e1';
     });
 
-    dropzone.addEventListener('drop', (e) => {
+    dropzone.addEventListener('drop', /* Function purpose: Handles the drop event and updates the associated screen or process state. */ (e) => {
       e.preventDefault();
       dropzone.style.borderColor = '#cbd5e1';
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -905,14 +954,14 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    fileInput.addEventListener('change', (e) => {
+    fileInput.addEventListener('change', /* Function purpose: Handles the change event and updates the associated screen or process state. */ (e) => {
       if (e.target.files && e.target.files.length > 0) {
         handleFileSelect(e.target.files[0]);
       }
     });
 
     if (removeFileBtn) {
-      removeFileBtn.addEventListener('click', () => {
+      removeFileBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
         selectedFile = null;
         fileInput.value = '';
         fileCard.style.display = 'none';
@@ -921,6 +970,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Function purpose: Checks a selected submission file and updates the attachment display.
   function handleFileSelect(file) {
     if (!file) return;
 
@@ -962,7 +1012,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const retryBtn = document.getElementById('retryBtn');
 
   if (submitExamBtn) {
-    submitExamBtn.addEventListener('click', () => {
+    submitExamBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
       // Re-validate attached file before displaying submit summary modal
       if (selectedFile) {
         const examStartTimeMs = (sessionInfo && sessionInfo.startTime) 
@@ -998,25 +1048,26 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   if (cancelSubmitBtn) {
-    cancelSubmitBtn.addEventListener('click', () => {
+    cancelSubmitBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
       confirmModal.style.display = 'none';
     });
   }
 
   if (confirmSubmitBtn) {
-    confirmSubmitBtn.addEventListener('click', async () => {
+    confirmSubmitBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
       confirmModal.style.display = 'none';
       await performSubmission();
     });
   }
 
   if (retryBtn) {
-    retryBtn.addEventListener('click', async () => {
+    retryBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
       errorAlert.style.display = 'none';
       await performSubmission();
     });
   }
 
+  // Function purpose: Triggers submission when the exam timer expires.
   async function handleAutoSubmit() {
     const autoModal = document.getElementById('autoSubmitModal');
     if (autoModal) autoModal.style.display = 'flex';
@@ -1026,6 +1077,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   autoSubmitExam = handleAutoSubmit;
 
+  // Function purpose: Collects the answer and attachment, sends them to the server and handles the result.
   async function performSubmission(isAutoSubmit = false) {
     if (!sessionInfo || isSubmitted || submissionInFlight) return;
     submissionInFlight = true;
@@ -1065,7 +1117,7 @@ window.addEventListener('DOMContentLoaded', () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
+        const errData = await response.json().catch(/* Function purpose: Handles a rejected asynchronous operation and reports or recovers from its failure. */ () => ({}));
         throw new Error(errData.error || `HTTP ${response.status}`);
       }
 
@@ -1107,7 +1159,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Test violation button handler
   const testBtn = document.getElementById('testViolationBtn');
   if (testBtn) {
-    testBtn.addEventListener('click', async () => {
+    testBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
       const info = await window.api.getSessionInfo();
       const payload = {
         sessionId: info ? info.sessionId : "unknown",
@@ -1118,20 +1170,20 @@ window.addEventListener('DOMContentLoaded', () => {
       };
       window.api.sendTestViolation(payload);
       testBtn.textContent = 'Sent!';
-      setTimeout(() => { testBtn.textContent = 'Test Alert'; }, 1500);
+      setTimeout(/* Function purpose: Runs the delayed follow-up after the configured timeout. */ () => { testBtn.textContent = 'Test Alert'; }, 1500);
     });
   }
 
   // Real-time offline buffer status events from Electron IPC
   if (window.api && typeof window.api.onBufferStatusChanged === 'function') {
-    window.api.onBufferStatusChanged((status) => {
+    window.api.onBufferStatusChanged(/* Function purpose: Runs updateBufferStatusUI as part of this callback’s processing. */ (status) => {
       updateBufferStatusUI(status ? status.pendingCount : 0);
     });
   }
 
   // Pre-existing file blocked modal listener
   if (window.api && typeof window.api.onPreExistingFileBlocked === 'function') {
-    window.api.onPreExistingFileBlocked((data) => {
+    window.api.onPreExistingFileBlocked(/* Function purpose: Runs console.log as part of this callback’s processing. */ (data) => {
       console.log('[CandidateApp] Received pre-existing file blocked event:', data);
       showPreExistingFileModal(data);
     });
@@ -1149,6 +1201,7 @@ let studentChatMessagesList = [];
 let unreadMessageCount = 0;
 let seenChatMsgIds = new Set();
 
+// Function purpose: Connects the candidate chat controls and message polling.
 function setupStudentChat() {
   const chatBtn = document.getElementById('floatingChatBtn');
   const chatDrawer = document.getElementById('studentChatDrawer');
@@ -1157,7 +1210,7 @@ function setupStudentChat() {
   const chatInput = document.getElementById('studentChatInput');
 
   if (chatBtn && chatDrawer) {
-    chatBtn.addEventListener('click', () => {
+    chatBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
       isChatDrawerOpen = !isChatDrawerOpen;
       chatDrawer.style.display = isChatDrawerOpen ? 'flex' : 'none';
       if (isChatDrawerOpen) {
@@ -1171,14 +1224,14 @@ function setupStudentChat() {
   }
 
   if (closeBtn && chatDrawer) {
-    closeBtn.addEventListener('click', () => {
+    closeBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
       isChatDrawerOpen = false;
       chatDrawer.style.display = 'none';
     });
   }
 
   if (chatForm && chatInput) {
-    chatForm.addEventListener('submit', async (e) => {
+    chatForm.addEventListener('submit', /* Function purpose: Handles the submit event and updates the associated screen or process state. */ async (e) => {
       e.preventDefault();
       const text = chatInput.value.trim();
       if (!text) return;
@@ -1188,6 +1241,7 @@ function setupStudentChat() {
   }
 }
 
+// Function purpose: Updates the number of unread examiner messages.
 function updateChatUnreadBadge() {
   const badge = document.getElementById('chatUnreadBadge');
   if (!badge) return;
@@ -1199,6 +1253,7 @@ function updateChatUnreadBadge() {
   }
 }
 
+// Function purpose: Fetches examiner messages for the current candidate session.
 async function fetchStudentMessages() {
   if (!sessionInfo || !sessionInfo.sessionId || !sessionInfo.serverUrl) return;
 
@@ -1236,6 +1291,7 @@ async function fetchStudentMessages() {
   }
 }
 
+// Function purpose: Displays chat messages in the conversation panel.
 function renderStudentMessages() {
   const container = document.getElementById('studentChatMessages');
   if (!container) return;
@@ -1251,7 +1307,7 @@ function renderStudentMessages() {
     return;
   }
 
-  const itemsHtml = studentChatMessagesList.map(msg => {
+  const itemsHtml = studentChatMessagesList.map(/* Function purpose: Transforms each entry into the value needed by this operation. */ msg => {
     const isMine = msg.sender === 'candidate' || msg.sender === 'student';
     const isBroadcast = msg.isBroadcast;
     const timeStr = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1280,6 +1336,7 @@ function renderStudentMessages() {
   container.scrollTop = container.scrollHeight;
 }
 
+// Function purpose: Validates and sends the candidate message to the examiner.
 async function sendStudentChatMessage(text) {
   if (!sessionInfo || !sessionInfo.sessionId || !sessionInfo.serverUrl) return;
 
@@ -1318,6 +1375,7 @@ async function sendStudentChatMessage(text) {
   }
 }
 
+// Function purpose: Notifies the candidate of a new examiner chat message.
 function showExaminerChatToast(msg) {
   let toast = document.getElementById('examinerChatToast');
   if (!toast) {
@@ -1331,7 +1389,7 @@ function showExaminerChatToast(msg) {
       display: flex; flex-direction: column; gap: 6px;
       cursor: pointer; animation: slideUp 0.3s ease;
     `;
-    toast.onclick = () => {
+    toast.onclick = /* Function purpose: Handles interaction with toast.onclick. */ () => {
       const chatBtn = document.getElementById('floatingChatBtn');
       if (chatBtn) chatBtn.click();
       toast.style.display = 'none';
@@ -1352,11 +1410,12 @@ function showExaminerChatToast(msg) {
     </div>
   `;
   toast.style.display = 'flex';
-  setTimeout(() => {
+  setTimeout(/* Function purpose: Runs the delayed follow-up after the configured timeout. */ () => {
     if (toast) toast.style.display = 'none';
   }, 7000);
 }
 
+// Function purpose: Escapes text before inserting it into HTML to prevent markup injection.
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");

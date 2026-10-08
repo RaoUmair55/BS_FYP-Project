@@ -4,7 +4,7 @@
  * How it works: Requires the checkbox before continuing, passes an acceptance timestamp to Electron, displays failures, and confirms a decline before exiting.
  * Connection: Works with consent.html and moves an accepting candidate to the identity screen.
  */
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOMContentLoaded event and updates the associated screen or process state. */ async () => {
   const checkbox = document.getElementById('consentCheckbox');
   const btnContinue = document.getElementById('btnContinue');
   const btnDecline = document.getElementById('btnDecline');
@@ -15,12 +15,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnConfirmDecline = document.getElementById('btnConfirmDecline');
 
   // Toggle Continue button enabled state
-  checkbox.addEventListener('change', () => {
+  checkbox.addEventListener('change', /* Function purpose: Handles the change event and updates the associated screen or process state. */ () => {
     btnContinue.disabled = !checkbox.checked;
   });
 
   // Handle Continue & Consent Acceptance
-  btnContinue.addEventListener('click', async () => {
+  btnContinue.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
     if (!checkbox.checked) return;
 
     btnContinue.disabled = true;
@@ -43,17 +43,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Handle Decline Button Click (Show Modal)
-  btnDecline.addEventListener('click', () => {
+  btnDecline.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
     declineModal.style.display = 'flex';
   });
 
   // Cancel Decline Modal
-  btnCancelDecline.addEventListener('click', () => {
+  btnCancelDecline.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
     declineModal.style.display = 'none';
   });
 
   // Confirm Decline (Gracefully Exit Application)
-  btnConfirmDecline.addEventListener('click', async () => {
+  btnConfirmDecline.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
     await window.api.declineConsent();
   });
 });

@@ -24,6 +24,7 @@ from services.violation_delivery import enqueue, deliver_one
 
 _delivery_ready = threading.Event()
 
+# Function purpose: Retries queued Python monitoring events until Electron acknowledges delivery.
 def _deliver_violations():
     while True:
         try:
@@ -37,6 +38,7 @@ def _deliver_violations():
         _delivery_ready.clear()
 
 
+# Function purpose: Queues a monitoring event for reliable delivery to the local Electron receiver.
 def send_violation_to_electron(payload):
     if os.environ.get("IS_SELF_CHECK", "false").lower() in ("true", "1"):
         return
@@ -48,6 +50,7 @@ def send_violation_to_electron(payload):
         print(f'[AI Module Error] Alert persistence failed: {exc}', flush=True)
 
 
+# Function purpose: Reports process and overall CPU usage every 30 seconds.
 def monitor_cpu_budget():
     """Reports process and overall CPU usage every 30 seconds."""
     proc = psutil.Process()
@@ -86,6 +89,7 @@ if __name__ == "__main__":
     cpu_thread = threading.Thread(target=monitor_cpu_budget, daemon=True)
     cpu_thread.start()
 
+    # Function purpose: Initializes the backend’s monitoring tasks when the local API starts.
     @server.app.on_event("startup")
     def on_startup():
         print("[AI Module] Initializing subsystem monitors...")
@@ -155,6 +159,7 @@ if __name__ == "__main__":
 
         print("[AI Module] Subsystems ready.")
 
+    # Function purpose: Stops monitoring tasks and releases resources when the local API shuts down.
     @server.app.on_event("shutdown")
     def on_shutdown():
         print("[AI Module] Shutting down monitors...")

@@ -7,6 +7,8 @@ const router = express.Router();
 const { nameSchema, rollNumberSchema, examCodeSchema } = require('../utils/inputValidation');
 
 const Exam = require('../models/Exam');
+const { randomUUID } = require('node:crypto');
+const { createPhotoSchedule, nextPhotoRequest } = require('../utils/cameraPhotos');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { requireOwnedSession } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
@@ -178,28 +180,31 @@ router.post('/', async (req, res) => {
 // POST /sessions/:sessionId/camera-verification — Upload initial camera verification photo
 router.post('/:sessionId/camera-verification', async (req, res) => {
     try {
-        const { photoBase64 } = req.body;
-        if (!photoBase64) {
-            return res.status(400).json({ error: 'photoBase64 is required' });
-        }
-
-        const filename = `${req.params.sessionId}_camera_check_${Date.now()}.jpg`;
+        const { photoBase64, requestId } = req.body;
+        if (requestId != null && (typeof requestId !== 'string' || requestId.length > 100)) return res.status(400).json({ error: 'Invalid photo request ID' });
+        if (typeof photoBase64 !== 'string' || photoBase64.length > 2_000_000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photoBase64)) return res.status(400).json({ error: 'A JPEG photo under 1.5 MB is required' });
+        const session = await Session.findById(req.params.sessionId);
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        const exam = await Exam.findOne({ $or: [{ examCode: session.examId }, { examId: session.examId }] });
+        if (!exam || exam.status !== 'active' || session.status !== 'active' || (exam.endTime && new Date(exam.endTime) <= new Date())) return res.status(409).json({ error: 'Exam session is no longer active' });
+        if (exam.examType === 'physical_lab') return res.status(400).json({ error: 'Camera checks are disabled for physical-lab exams' });
+        const request = requestId && session.cameraPhotoRequests.find(r => r.id === requestId);
+        if (requestId && !request) return res.status(400).json({ error: 'Unknown photo request' });
+        if (request?.completedAt) return res.json({ message: 'Photo already received', session });
+        if (request && new Date(request.dueAt) > new Date()) return res.status(409).json({ error: 'Photo request is not due yet' });
+        if (session.cameraPhotos.length >= 50) return res.status(409).json({ error: 'Photo history limit reached' });
+        const filename = `${session._id}_camera_check_${randomUUID()}.jpg`;
         const saved = await storageService.save(photoBase64, filename, 'verification');
         const photoUrl = saved.url;
-
-        const session = await Session.findByIdAndUpdate(
-            req.params.sessionId,
-            {
-                cameraVerificationPhoto: photoUrl,
-                cameraVerificationStatus: 'pending'
-            },
-            { new: true }
-        );
-
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
-        }
-
+        const photos = [];
+        if (!session.cameraPhotos.length && session.cameraVerificationPhoto) photos.push({ url: session.cameraVerificationPhoto, source: 'initial', capturedAt: session.startTime, status: session.cameraVerificationStatus === 'verified' ? 'verified' : 'pending' });
+        photos.push({ url: photoUrl, capturedAt: new Date(), source: request?.source || 'initial', requestId: requestId || null });
+        const set = { cameraVerificationPhoto: photoUrl, cameraVerificationStatus: 'pending', cameraVerificationNote: null };
+        if (request) set['cameraPhotoRequests.$[request].completedAt'] = new Date();
+        const updated = await Session.findOneAndUpdate({ _id: session._id, ...(requestId ? { cameraPhotoRequests: { $elemMatch: { id: requestId, completedAt: null } } } : {}) },
+            { $set: set, $push: { cameraPhotos: { $each: photos } } },
+            { new: true, ...(request ? { arrayFilters: [{ 'request.id': requestId }] } : {}) });
+        if (!updated) { await storageService.delete(photoUrl); return res.status(409).json({ error: 'Photo was already received. Refresh session state.' }); }
         const io = req.app.locals.io;
         if (io) {
             await broadcastToExam(io, session.examId, 'cameraVerificationUpdated', {
@@ -209,17 +214,36 @@ router.post('/:sessionId/camera-verification', async (req, res) => {
             });
         }
 
-        res.json({ message: 'Camera verification photo uploaded successfully', session });
+        res.json({ message: 'Camera verification photo uploaded successfully', session: updated });
     } catch (err) {
         console.error('Error saving camera verification photo:', err);
         res.status(500).json({ error: 'Failed to save camera verification photo' });
     }
 });
 
+// A routine photo request never creates a violation or changes risk scores.
+router.post('/:sessionId/request-camera-photo', requireAuth, requireOwnedSession, async (req, res) => {
+    try {
+        const note = req.body.note ?? '';
+        if (typeof note !== 'string' || note.length > 500) return res.status(400).json({ error: 'Photo note must be under 500 characters' });
+        const session = await Session.findById(req.params.sessionId);
+        const exam = session && await Exam.findOne({ $or: [{ examCode: session.examId }, { examId: session.examId }] });
+        if (!exam || exam.status !== 'active' || session.status !== 'active' || (exam.endTime && new Date(exam.endTime) <= new Date())) return res.status(409).json({ error: 'Exam session is no longer active' });
+        if (exam.examType === 'physical_lab') return res.status(400).json({ error: 'Camera checks are disabled for physical-lab exams' });
+        if (session.cameraPhotos.length >= 50) return res.status(409).json({ error: 'Photo history limit reached' });
+        const request = { id: randomUUID(), source: 'requested', dueAt: new Date(), note: note.trim() };
+        const updated = await Session.findOneAndUpdate({ _id: session._id, cameraPhotoRequests: { $not: { $elemMatch: { source: 'requested', completedAt: null } } } }, { $push: { cameraPhotoRequests: request } }, { new: true });
+        if (!updated) return res.status(409).json({ error: 'A photo request is already pending' });
+        await require('../utils/auditLogger').logTeacherAction(req, { action: 'CAMERA_PHOTO_REQUESTED', targetType: 'session', targetId: session._id, targetSummary: 'Requested a new identity photo', details: { requestId: request.id, note: request.note } });
+        res.json({ message: 'Photo requested', session: updated });
+    } catch (err) { console.error('Photo request failed:', err); res.status(500).json({ error: 'Unable to request a photo' }); }
+});
+
 // PATCH /sessions/:sessionId/camera-verification — Teacher triage (verified vs flagged)
 router.patch('/:sessionId/camera-verification', requireAuth, requireOwnedSession, async (req, res) => {
     try {
-        const { status, note } = req.body;
+        const { status, note, photoUrl, historyPhotoId } = req.body;
+        if (note != null && (typeof note !== 'string' || note.length > 500)) return res.status(400).json({ error: 'Camera note must be under 500 characters' });
         if (!['verified', 'flagged'].includes(status)) {
             return res.status(400).json({ error: 'Status must be verified or flagged' });
         }
@@ -229,9 +253,32 @@ router.patch('/:sessionId/camera-verification', requireAuth, requireOwnedSession
             return res.status(404).json({ error: 'Session not found' });
         }
 
-        session.cameraVerificationStatus = status;
-        if (note) session.cameraVerificationNote = note;
-        await session.save();
+        if (status === 'verified') {
+            if (!session.cameraVerificationPhoto) return res.status(400).json({ error: 'No photo to verify' });
+            if (historyPhotoId) {
+                const photo = session.cameraPhotos.find(item => String(item._id) === historyPhotoId);
+                if (!photo || photo.url !== photoUrl) return res.status(404).json({ error: 'Photo not found in this session' });
+                if (photo.url !== session.cameraVerificationPhoto) {
+                    const updated = await Session.findOneAndUpdate({ _id: session._id, 'cameraPhotos._id': photo._id }, { $set: { 'cameraPhotos.$[photo].status': 'verified', 'cameraPhotos.$[photo].reviewedAt': new Date() } }, { new: true, arrayFilters: [{ 'photo._id': photo._id }] });
+                    if (!updated) return res.status(404).json({ error: 'Photo no longer exists' });
+                    await require('../utils/auditLogger').logTeacherAction(req, { action: 'VERIFICATION_REVIEWED', targetType: 'session', targetId: session._id, targetSummary: 'Historical identity photo verified', details: { photoId: historyPhotoId } });
+                    return res.json({ message: 'Historical identity photo verified', session: updated });
+                }
+            }
+            if (photoUrl && photoUrl !== session.cameraVerificationPhoto) return res.status(409).json({ error: 'A newer photo has arrived. Review it before confirming.' });
+            const set = { cameraVerificationStatus: 'verified', cameraVerificationNote: null };
+            const hasHistory = session.cameraPhotos.some(photo => photo.url === session.cameraVerificationPhoto);
+            if (hasHistory) { set['cameraPhotos.$[photo].status'] = 'verified'; set['cameraPhotos.$[photo].reviewedAt'] = new Date(); }
+            const updated = await Session.findOneAndUpdate({ _id: session._id, cameraVerificationPhoto: session.cameraVerificationPhoto }, { $set: set }, { new: true, ...(hasHistory ? { arrayFilters: [{ 'photo.url': session.cameraVerificationPhoto }] } : {}) });
+            if (!updated) return res.status(409).json({ error: 'A newer photo has arrived. Refresh and review it.' });
+            session.cameraVerificationStatus = updated.cameraVerificationStatus;
+            session.cameraPhotos = updated.cameraPhotos;
+            session.cameraVerificationNote = null;
+        } else {
+            session.cameraVerificationStatus = status;
+            if (note) session.cameraVerificationNote = note;
+            await session.save();
+        }
 
         const io = req.app.locals.io;
 
@@ -325,6 +372,12 @@ router.get('/:sessionId/status', async (req, res) => {
             }
         }
 
+        if (exam?.examType !== 'physical_lab' && exam?.status === 'active' && session.status === 'active' && exam.startedAt && !session.photoScheduleCreated && session.consentGiven) {
+            const requests = createPhotoSchedule(Date.now(), new Date(examEndTime).getTime());
+            const updated = await Session.findOneAndUpdate({ _id: session._id, photoScheduleCreated: { $ne: true } }, { $set: { photoScheduleCreated: true }, $push: { cameraPhotoRequests: { $each: requests } } }, { new: true });
+            if (updated) session.cameraPhotoRequests = updated.cameraPhotoRequests;
+            else session.cameraPhotoRequests = (await Session.findById(session._id)).cameraPhotoRequests;
+        }
         res.json({
             sessionId: session._id,
             studentId: session.studentId,
@@ -342,6 +395,7 @@ router.get('/:sessionId/status', async (req, res) => {
             autoSubmitted: session.autoSubmitted || false,
             terminationReason: session.terminationReason,
             warnings: session.warnings || [],
+            cameraPhotoRequest: exam?.examType !== 'physical_lab' && exam?.status === 'active' && session.status === 'active' ? nextPhotoRequest(session.cameraPhotoRequests, Date.now()) : null,
             cameraVerificationStatus: session.cameraVerificationStatus,
             cameraVerificationPhoto: session.cameraVerificationPhoto,
             cameraVerificationNote: session.cameraVerificationNote

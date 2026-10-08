@@ -24,7 +24,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 // --- Added for development: Handle EPIPE / Broken pipe errors ---
 // This prevents the Electron app from crashing if the parent process (like Antigravity IDE)
 // closes and standard output/error pipes are broken before this process exits.
-process.on('uncaughtException', function (err) {
+process.on('uncaughtException', /* Function purpose: Handles the uncaughtException event and updates the associated screen or process state. */ function (err) {
   if (err.code === 'EPIPE') {
     // Ignore EPIPE: broken pipe on stdout/stderr
     return;
@@ -51,6 +51,7 @@ let activeSessionInfo = {
   serverUrl: process.env.SERVER_URL || 'http://localhost:5000'
 };
 
+// Function purpose: Stops Python monitoring and clears its process state during shutdown.
 function cleanUpPythonProcess() {
   if (pythonProcess) {
     console.log('[Electron] Cleaning up existing Python process...');
@@ -68,6 +69,7 @@ function cleanUpPythonProcess() {
   setPythonPort(null);
 }
 
+// Function purpose: Creates the Electron window and loads the candidate login screen.
 async function createWindow() {
   const iconPath = process.platform === 'win32'
     ? path.join(__dirname, 'assets', 'icon.ico')
@@ -85,11 +87,11 @@ async function createWindow() {
     }
   });
 
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
+  mainWindow.webContents.on('render-process-gone', /* Function purpose: Handles the render-process-gone event and updates the associated screen or process state. */ (event, details) => {
     console.error('[Electron] Renderer process crashed/gone:', details);
   });
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+  mainWindow.webContents.on('did-fail-load', /* Function purpose: Handles the did-fail-load event and updates the associated screen or process state. */ (event, errorCode, errorDescription, validatedURL) => {
     console.error('[Electron] did-fail-load:', errorCode, errorDescription, validatedURL);
   });
 
@@ -98,6 +100,7 @@ async function createWindow() {
   await mainWindow.loadFile(targetUrl);
 }
 
+// Function purpose: Polls the Python health endpoint until startup succeeds or the wait expires.
 async function waitForPythonReady(proc) {
   console.log('[Electron] Waiting for Python backend to be ready...');
   const maxAttempts = 200;
@@ -113,7 +116,7 @@ async function waitForPythonReady(proc) {
       console.log(`[Electron] Python backend is ready on attempt ${i + 1}!`);
       return true;
     }
-    await new Promise(resolve => setTimeout(resolve, 600)); // Poll every 600ms
+    await new Promise(/* Function purpose: Runs setTimeout as part of this callback’s processing. */ resolve => setTimeout(resolve, 600)); // Poll every 600ms
   }
 
   return false;
@@ -121,6 +124,7 @@ async function waitForPythonReady(proc) {
 
 let lastPythonStderr = '';
 
+// Function purpose: Starts the Python backend with the session configuration and local communication ports.
 function spawnPythonProcess(mode, isSelfCheck = false) {
   cleanUpPythonProcess();
 
@@ -173,7 +177,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     return null;
   }
 
-  proc.on('error', (err) => {
+  proc.on('error', /* Function purpose: Handles the error event and updates the associated screen or process state. */ (err) => {
     proc.hasExited = true;
     lastPythonStderr = `${err.message}. Interpreter: ${pythonExe}. Check PYTHON_PATH and the local virtual environment.`;
     console.error(`[Electron] Python spawn process error:`, err);
@@ -181,7 +185,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
 
   const decoder = new StringDecoder('utf8');
   let pendingOutput = '';
-  proc.stdout.on('data', (data) => {
+  proc.stdout.on('data', /* Function purpose: Handles the data event and updates the associated screen or process state. */ (data) => {
     pendingOutput += decoder.write(data);
     const lines = pendingOutput.split(/\r?\n/);
     pendingOutput = lines.pop();
@@ -192,13 +196,13 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     }
   });
 
-  proc.stderr.on('data', (data) => {
+  proc.stderr.on('data', /* Function purpose: Handles the data event and updates the associated screen or process state. */ (data) => {
     const msg = data.toString().trim();
     if (!proc.killedIntentional) lastPythonStderr = (lastPythonStderr + '\n' + msg).trim().slice(-8192);
     console.log(`[Python Log] ${msg}`);
   });
 
-  proc.on('exit', (code, signal) => {
+  proc.on('exit', /* Function purpose: Handles the exit event and updates the associated screen or process state. */ (code, signal) => {
     proc.hasExited = true;
     proc.exitCode = code;
     console.log(`[Electron] Python process exited with code ${code} and signal ${signal}`);
@@ -210,7 +214,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
   return proc;
 }
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', /* Function purpose: Handles the unhandledRejection event and updates the associated screen or process state. */ (reason, promise) => {
   console.error('[Electron] Unhandled Rejection:', reason);
 });
 
@@ -220,19 +224,19 @@ if (!gotTheLock) {
   console.log('[Electron] Another instance is already running. Quitting duplicate instance...');
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', /* Function purpose: Handles the second-instance event and updates the associated screen or process state. */ () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
   });
 
-  app.whenReady().then(async () => {
+  app.whenReady().then(/* Function purpose: Runs console.log as part of this callback’s processing. */ async () => {
     try {
       console.log('[Electron] app.whenReady entered');
 
       // Grant media, camera, and microphone permissions explicitly for local file:// and renderer
-      session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+      session.defaultSession.setPermissionRequestHandler(/* Function purpose: Runs if as part of this callback’s processing. */ (webContents, permission, callback) => {
         const allowed = ['media', 'camera', 'microphone', 'audioCapture', 'videoCapture', 'display-capture', 'notifications'];
         if (allowed.includes(permission)) {
           return callback(true);
@@ -240,13 +244,13 @@ if (!gotTheLock) {
         return callback(true);
       });
 
-      session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+      session.defaultSession.setPermissionCheckHandler(/* Function purpose: Returns the callback result or updates the state used by the enclosing operation. */ (webContents, permission) => {
         return true;
       });
 
       cleanUpPythonProcess();
       try {
-        receiverPort = await startReceiver((violationPayload) => {
+        receiverPort = await startReceiver(/* Function purpose: Runs if as part of this callback’s processing. */ (violationPayload) => {
           if (violationPayload?.sessionId !== activeSessionInfo.sessionId) return;
           if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
             const reason = violationPayload?.details?.reason || '';
@@ -276,14 +280,14 @@ if (!gotTheLock) {
       console.log('[Electron] createWindow() completed.');
 
       // STARTUP ORDER 3: Start disk buffer background retry loop for offline resilience
-      startBufferRetryLoop(12000, (status) => {
+      startBufferRetryLoop(12000, /* Function purpose: Runs if as part of this callback’s processing. */ (status) => {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
           mainWindow.webContents.send('buffer-status-changed', status);
         }
       });
       console.log('[Electron] startBufferRetryLoop() initialized.');
 
-      app.on('activate', () => {
+      app.on('activate', /* Function purpose: Handles the activate event and updates the associated screen or process state. */ () => {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindow();
         }
@@ -296,13 +300,13 @@ if (!gotTheLock) {
   });
 }
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', /* Function purpose: Handles the window-all-closed event and updates the associated screen or process state. */ () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', /* Function purpose: Handles the before-quit event and updates the associated screen or process state. */ () => {
   console.log('[Electron] Cleaning up processes before quit...');
   setExamActive(false);
   stopBufferRetryLoop();
@@ -318,25 +322,25 @@ app.on('before-quit', () => {
   stopReceiver();
 });
 
-process.on('exit', () => {
+process.on('exit', /* Function purpose: Handles the exit event and updates the associated screen or process state. */ () => {
   cleanUpPythonProcess();
 });
-process.on('SIGINT', () => {
+process.on('SIGINT', /* Function purpose: Handles the SIGINT event and updates the associated screen or process state. */ () => {
   cleanUpPythonProcess();
   process.exit(0);
 });
-process.on('SIGTERM', () => {
+process.on('SIGTERM', /* Function purpose: Handles the SIGTERM event and updates the associated screen or process state. */ () => {
   cleanUpPythonProcess();
   process.exit(0);
 });
 
 // Returns current count of pending offline buffered violations
-ipcMain.handle('get-buffer-status', () => {
+ipcMain.handle('get-buffer-status', /* Function purpose: Returns pending offline-alert counts to the candidate screen. */ () => {
   return violationBuffer.getBufferStatus();
 });
 
 // Listen for test violations from renderer
-ipcMain.on('test-violation', async (event, payload) => {
+ipcMain.on('test-violation', /* Function purpose: Forwards a development test event through the real violation pipeline. */ async (event, payload) => {
   console.log('[Electron] Received test-violation from renderer:', payload);
   if (!payload.screenshotPath && mainWindow && !mainWindow.isDestroyed()) {
     try {
@@ -354,7 +358,7 @@ ipcMain.on('test-violation', async (event, payload) => {
 });
 
 // Check apps via Python
-ipcMain.handle('check-apps', async () => {
+ipcMain.handle('check-apps', /* Function purpose: Asks Python which running applications violate the exam whitelist. */ async () => {
   try {
     const response = await fetch(`${getPythonUrl()}/check-apps`, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return { error: 'App check unavailable' };
@@ -366,7 +370,7 @@ ipcMain.handle('check-apps', async () => {
 });
 
 // Check USB removable storage drives via Python
-ipcMain.handle('check-usb-drives', async () => {
+ipcMain.handle('check-usb-drives', /* Function purpose: Asks Python for removable drives during the candidate self-check. */ async () => {
   try {
     const response = await fetch(`${getPythonUrl()}/check-usb`, { signal: AbortSignal.timeout(7000) });
     if (!response.ok) return { error: 'USB check unavailable' };
@@ -377,6 +381,7 @@ ipcMain.handle('check-usb-drives', async () => {
   }
 });
 
+// Function purpose: Counts connected physical displays for the single-display exam restriction.
 function getPhysicalMonitorCount() {
   const electronDisplays = screen.getAllDisplays();
   let count = electronDisplays.length;
@@ -396,13 +401,13 @@ function getPhysicalMonitorCount() {
 }
 
 // Get display count and information via Electron screen module & WMI hardware query
-ipcMain.handle('get-display-count', () => {
+ipcMain.handle('get-display-count', /* Function purpose: Counts physical monitors and reports whether the single-display requirement is met. */ () => {
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();
   const totalCount = getPhysicalMonitorCount();
   return {
     count: totalCount,
-    displays: displays.map(d => ({
+    displays: displays.map(/* Function purpose: Transforms each entry into the value needed by this operation. */ d => ({
       id: d.id,
       bounds: d.bounds,
       isPrimary: d.id === primaryDisplay.id
@@ -411,12 +416,12 @@ ipcMain.handle('get-display-count', () => {
 });
 
 // Kill App
-ipcMain.handle('kill-app', async (event, name) => {
+ipcMain.handle('kill-app', /* Function purpose: Asks the enforcement backend to close the named application. */ async (event, name) => {
   return await killApp(name);
 });
 
 // Set Reference Voice profile via Python
-ipcMain.handle('set-reference-voice', async (event, audioBase64) => {
+ipcMain.handle('set-reference-voice', /* Function purpose: Sends the recorded enrollment audio to Python for speaker-reference validation. */ async (event, audioBase64) => {
   try {
     const response = await fetch(`${getPythonUrl()}/set-reference-voice`, {
       method: 'POST',
@@ -438,7 +443,7 @@ ipcMain.handle('set-reference-voice', async (event, audioBase64) => {
 });
 
 // Check Voice profile calibration status
-ipcMain.handle('check-voice', async () => {
+ipcMain.handle('check-voice', /* Function purpose: Checks whether voice enrollment and monitoring are ready. */ async () => {
   try {
     const response = await fetch(`${getPythonUrl()}/check-voice`, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return { calibrated: false };
@@ -448,7 +453,7 @@ ipcMain.handle('check-voice', async () => {
   }
 });
 
-ipcMain.handle('detect-face', async (_event, image) => {
+ipcMain.handle('detect-face', /* Function purpose: Sends a self-check camera image to Python for face-position guidance. */ async (_event, image) => {
   const response = await fetch(`${getPythonUrl()}/detect-face`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image }), signal: AbortSignal.timeout(3000)
@@ -457,28 +462,37 @@ ipcMain.handle('detect-face', async (_event, image) => {
   return response.json();
 });
 
-ipcMain.handle('monitoring-health', async () => {
+ipcMain.handle('capture-identity-photo', /* Function purpose: Retrieves a recent camera frame without opening another webcam stream. */ async () => {
+  if (!activeSessionInfo || activeSessionInfo.examType === 'physical_lab') return { success: false, error: 'Camera checks are unavailable for this session' };
+  try {
+    const response = await fetch(`${getPythonUrl()}/identity-photo`, { signal: AbortSignal.timeout(3000) });
+    if (!response.ok) throw new Error('Camera service unavailable');
+    return await response.json();
+  } catch (error) { return { success: false, error: error.message }; }
+});
+
+ipcMain.handle('monitoring-health', /* Function purpose: Retrieves the Python monitoring health for the candidate connection indicator. */ async () => {
   try {
     const response = await fetch(`${getPythonUrl()}/health`, { signal: AbortSignal.timeout(3000) });
     return await response.json();
   } catch (err) { return { status: 'unavailable', errors: [err.message] }; }
 });
 
-ipcMain.handle('finish-exam', () => {
+ipcMain.handle('finish-exam', /* Function purpose: Marks monitoring inactive and shuts down the exam monitoring process. */ () => {
   setExamActive(false);
   cleanUpPythonProcess();
   return { success: true };
 });
 
 // Return session info to renderer
-ipcMain.handle('get-session-info', () => {
+ipcMain.handle('get-session-info', /* Function purpose: Returns the active candidate session configuration to the renderer. */ () => {
   return { ...activeSessionInfo, isDevMode: (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' };
 });
 
 let isLoggingIn = false;
 
 // Handle Login / Exam Code Entry
-ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumber, allowedApplications, examType, rules }) => {
+ipcMain.handle('login', /* Function purpose: Stores validated candidate entry data and begins the exam-specific setup flow. */ async (event, { examId, studentId, studentName, rollNumber, allowedApplications, examType, rules }) => {
   if (isLoggingIn) {
     console.log('[Electron] Login already in progress, ignoring duplicate invoke');
     return { success: false, error: 'Login in progress' };
@@ -543,7 +557,7 @@ ipcMain.handle('login', async (event, { examId, studentId, studentName, rollNumb
 });
 
 // Handle Transition from Consent Screen to Identity Screen
-ipcMain.handle('proceed-to-identity', async (event, consentData) => {
+ipcMain.handle('proceed-to-identity', /* Function purpose: Requires explicit consent before opening the identity-entry screen. */ async (event, consentData) => {
   if (consentData?.consentGiven !== true) throw new Error('Please review and accept the monitoring notice before continuing.');
   console.log('[Electron] Consent granted. Proceeding to Identity Capture...');
   if (consentData) {
@@ -557,7 +571,7 @@ ipcMain.handle('proceed-to-identity', async (event, consentData) => {
 });
 
 // Handle Transition from Identity Screen to Self-Check
-ipcMain.handle('proceed-to-self-check', async (event, identityData) => {
+ipcMain.handle('proceed-to-self-check', /* Function purpose: Stores identity information and opens the pre-exam self-check screen. */ async (event, identityData) => {
   console.log('[Electron] Identity captured. Proceeding to Self-Check...', identityData);
   if (identityData) {
     activeSessionInfo.sessionId = identityData.sessionId;
@@ -573,7 +587,7 @@ ipcMain.handle('proceed-to-self-check', async (event, identityData) => {
 });
 
 // Handle Decline from Consent Screen
-ipcMain.handle('decline-consent', async () => {
+ipcMain.handle('decline-consent', /* Function purpose: Stops setup and returns to login when the candidate declines monitoring consent. */ async () => {
   console.log('[Electron] Candidate declined monitoring consent. Gracefully quitting...');
   cleanUpPythonProcess();
   stopReceiver();
@@ -583,7 +597,7 @@ ipcMain.handle('decline-consent', async () => {
 
 // Start Exam Mode
 let isStartingExam = false;
-ipcMain.handle('start-exam-mode', async (event, options = {}) => {
+ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring and applies window, display and clipboard restrictions. */ async (event, options = {}) => {
   if (isStartingExam) return { success: false, error: 'Exam startup is already in progress.' };
   isStartingExam = true;
   devVoiceEnabled = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? options?.voiceEnabled !== false : true;
@@ -603,7 +617,7 @@ ipcMain.handle('start-exam-mode', async (event, options = {}) => {
     }
 
     // Register display addition listener for continuous monitoring during active exam
-    displayAddedListener = async (event, newDisplay) => {
+    displayAddedListener = /* Function purpose: Handles interaction with displayAddedListener. */ async (event, newDisplay) => {
       const totalDisplays = screen.getAllDisplays().length;
       console.log(`[Electron] Display change detected during exam! Total displays: ${totalDisplays}, New display ID: ${newDisplay?.id}`);
 
@@ -624,7 +638,7 @@ ipcMain.handle('start-exam-mode', async (event, options = {}) => {
     };
     screen.on('display-added', displayAddedListener);
 
-    displayRemovedListener = (event, oldDisplay) => {
+    displayRemovedListener = /* Function purpose: Handles interaction with displayRemovedListener. */ (event, oldDisplay) => {
       console.log(`[Electron] Display removed during exam. Total displays remaining: ${screen.getAllDisplays().length}`);
     };
     screen.on('display-removed', displayRemovedListener);
@@ -633,6 +647,7 @@ ipcMain.handle('start-exam-mode', async (event, options = {}) => {
       clearInterval(displayCheckInterval);
       displayCheckInterval = null;
     }
+    // Function purpose: Checks active exams for additional physical displays every four seconds.
     displayCheckInterval = setInterval(async () => {
       try {
       if (!getExamActive()) return;
@@ -683,7 +698,7 @@ ipcMain.handle('start-exam-mode', async (event, options = {}) => {
   } finally { isStartingExam = false; }
 });
 
-ipcMain.handle('clear-clipboard', () => {
+ipcMain.handle('clear-clipboard', /* Function purpose: Clears clipboard contents to prevent carrying external text into the exam. */ () => {
   clipboard.clear();
   return true;
 });

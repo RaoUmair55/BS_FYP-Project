@@ -13,11 +13,13 @@ from pathlib import Path
 import requests
 
 
+# Function purpose: Finds the durable Python violation queue on disk.
 def spool_path():
     directory = os.environ.get('AI_SPOOL_DIR') or str(Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'IntegrityFlow' / 'python-alerts')
     return Path(directory) / 'pending.sqlite3'
 
 
+# Function purpose: Opens and prepares the local database used for reliable event delivery.
 def _connect(path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -26,6 +28,7 @@ def _connect(path):
     return connection
 
 
+# Function purpose: Persists a monitoring event locally before attempting delivery.
 def enqueue(payload, path=None):
     payload.setdefault('eventId', str(uuid.uuid4()))
     connection = _connect(path or spool_path())
@@ -37,6 +40,7 @@ def enqueue(payload, path=None):
         connection.close()
 
 
+# Function purpose: Remove only after Electron acknowledges durable acceptance; errors retain the row.
 def deliver_one(url, path=None):
     """Remove only after Electron acknowledges durable acceptance; errors retain the row."""
     connection = _connect(path or spool_path())

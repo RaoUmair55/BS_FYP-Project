@@ -16,19 +16,21 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 let server;
 let onLocalViolationCallback = null;
 
+// Function purpose: Registers the handler that receives monitoring events from Python.
 function setViolationListener(cb) {
   onLocalViolationCallback = cb;
 }
 
+// Function purpose: Starts the local HTTP receiver for Python monitoring events.
 function startReceiver(onViolationCallback) {
   if (onViolationCallback) {
     onLocalViolationCallback = onViolationCallback;
   }
-  return new Promise((resolve, reject) => {
+  return new Promise(/* Function purpose: Runs express as part of this callback’s processing. */ (resolve, reject) => {
     const app = express();
     app.use(express.json());
 
-    app.post('/violation', async (req, res) => {
+    app.post('/violation', /* Function purpose: Handles the /violation event and updates the associated screen or process state. */ async (req, res) => {
       const violationPayload = req.body;
       const examActive = getExamActive();
       const persistedReplay = typeof violationPayload?.eventId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(violationPayload.eventId);
@@ -51,19 +53,20 @@ function startReceiver(onViolationCallback) {
       res.status(saved ? 202 : 503).json({ status: saved ? 'accepted' : 'failed' });
     });
 
-    server = app.listen(0, '127.0.0.1', () => {
+    server = app.listen(0, '127.0.0.1', /* Function purpose: Handles the 127.0.0.1 event and updates the associated screen or process state. */ () => {
       const port = server.address().port;
       console.log(`[ViolationReceiver] Listening for Python violations on port ${port}`);
       resolve(port);
     });
 
-    server.on('error', (err) => {
+    server.on('error', /* Function purpose: Handles the error event and updates the associated screen or process state. */ (err) => {
       console.error('[ViolationReceiver] Failed to start receiver:', err);
       reject(err);
     });
   });
 }
 
+// Function purpose: Stops the local monitoring-event receiver.
 function stopReceiver() {
   if (server) {
     server.close();

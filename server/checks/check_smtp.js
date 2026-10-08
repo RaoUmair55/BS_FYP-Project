@@ -4,7 +4,7 @@ let options, sent;
 nodemailer.createTransport = config => {options=config;return {sendMail:async message => {sent=message;return {accepted:[message.to],messageId:'test'};}};};
 process.env.SMTP_HOST='smtp.example.test';process.env.SMTP_PORT='587';process.env.SMTP_SECURE='false';
 process.env.SMTP_USER='sender@example.test';process.env.SMTP_PASSWORD='test-only';process.env.MAIL_FROM='sender@example.test';
-const SMTP = require('./src/services/mail/SMTPMailProvider');
+const SMTP = require('../src/services/mail/SMTPMailProvider');
 (async()=>{
  const mail=new SMTP();
  assert.equal(options.port,587);assert.equal(options.secure,false);assert.equal(options.requireTLS,true);

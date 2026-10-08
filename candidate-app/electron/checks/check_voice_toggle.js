@@ -1,8 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(path.join(__dirname, '../renderer/selfCheck.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', '../renderer/selfCheck.js'), 'utf8');
 const body = source.match(/function updateBeginButton\(\) \{([\s\S]*?)\n\}/)[1];
+// Function purpose: Provides the allowed test helper or stub used by this regression check.
 function allowed(dev, voice, camera = true) {
     const btn = {};
     new Function('btnBegin', 'cameraPassed', 'canSkipVoice', 'devVoiceEnabled', 'micPassed', 'voicePassed', 'appsPassed', 'usbPassed', 'displayPassed', body)(btn, camera, dev, voice, false, false, true, true, true);

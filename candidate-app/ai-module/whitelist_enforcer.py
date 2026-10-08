@@ -18,6 +18,7 @@ class WhitelistEnforcer:
     """
     Enforces a whitelist of allowed applications using psutil.
     """
+    # Function purpose: Initializes this component’s configuration, state and dependencies.
     def __init__(self, session_id, on_violation_callback, mode="exam", is_self_check=False, allowed_apps=None):
         self.session_id = session_id
         self.on_violation_callback = on_violation_callback
@@ -211,6 +212,7 @@ class WhitelistEnforcer:
         except Exception:
             pass
 
+    # Function purpose: Normalizes the exam’s permitted application configuration.
     def _parse_allowed_apps(self, raw_allowed):
         if not raw_allowed:
             return
@@ -266,6 +268,7 @@ class WhitelistEnforcer:
         except Exception as e:
             print(f"[WhitelistEnforcer] Error parsing allowed applications: {e}")
 
+    # Function purpose: Dynamically update permitted apps during exam handshake.
     def set_allowed_apps(self, allowed_apps):
         """
         Dynamically update permitted apps during exam handshake.
@@ -274,6 +277,7 @@ class WhitelistEnforcer:
         self._parse_allowed_apps(allowed_apps)
         self.load_whitelist()
 
+    # Function purpose: Collects visible window titles for application and open-document checks.
     def _get_window_titles(self):
         try:
             import ctypes
@@ -291,6 +295,7 @@ class WhitelistEnforcer:
             GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 
             titles = {}
+            # Function purpose: Collects window information during Windows window enumeration.
             def foreach_window(hwnd, lParam):
                 if IsWindowVisible(hwnd):
                     length = GetWindowTextLength(hwnd)
@@ -307,6 +312,7 @@ class WhitelistEnforcer:
         except Exception:
             return {}
 
+    # Function purpose: Loads the process whitelist used by application enforcement.
     def load_whitelist(self):
         config_path = os.path.join(os.path.dirname(__file__), 'config', 'whitelist.json')
         try:
@@ -343,6 +349,7 @@ class WhitelistEnforcer:
         else:
             print(f"[WhitelistEnforcer] Running in {self.mode.upper()} mode — EXAM_BLOCKED not enforced, {len(self.whitelist)} processes whitelisted")
 
+    # Function purpose: Starts this monitor’s background processing without blocking the caller.
     def start(self):
         self.load_whitelist()
         self.running = True
@@ -350,12 +357,14 @@ class WhitelistEnforcer:
         self.monitor_thread.start()
         print("[WhitelistEnforcer] Started enforcement loop.")
 
+    # Function purpose: Stops this monitor and releases its active resources.
     def stop(self):
         self.running = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout=3.0)
         print("[WhitelistEnforcer] Stopped enforcement loop.")
 
+    # Function purpose: Repeatedly checks the monitored resource until this component is stopped.
     def _monitor_loop(self):
         current_user = os.environ.get('USERNAME', '').lower()
         while self.running:
@@ -444,6 +453,7 @@ class WhitelistEnforcer:
 
             time.sleep(2.5)
 
+    # Function purpose: Handles a detected policy violation and passes its evidence to the alert pipeline.
     def _handle_violation(self, proc, name_lower):
         pid = proc.pid
         print(f"[WhitelistEnforcer] Unauthorized process detected: {name_lower} (PID: {pid})")
@@ -508,6 +518,7 @@ class WhitelistEnforcer:
         except Exception as e:
             print(f"[WhitelistEnforcer] Error sending violation callback: {e}")
 
+    # Function purpose: One-off check to list currently running non-whitelisted apps.
     def check_running_apps(self):
         """
         One-off check to list currently running non-whitelisted apps.
@@ -611,6 +622,7 @@ class WhitelistEnforcer:
                 
         return unauthorized_apps
                 
+    # Function purpose: Resolve the actual Windows shortcut target, including Unicode paths.
     def _resolve_lnk_target(self, lnk_path):
         """Resolve the actual Windows shortcut target, including Unicode paths."""
         if os.name != 'nt':
@@ -630,6 +642,7 @@ class WhitelistEnforcer:
             pass
         return None
 
+    # Function purpose: Monitors Windows Recent directory for any files opened during the active exam session.
     def _check_recent_opened_files(self):
         """
         Monitors Windows Recent directory for any files opened during the active exam session.
@@ -676,6 +689,7 @@ class WhitelistEnforcer:
         except Exception as e:
             pass
 
+    # Function purpose: Checks documents opened by allowed editors for prohibited pre-existing files.
     def _inspect_allowed_app(self, proc, name_lower):
         """
         Guards permitted external apps (e.g. Word, VS Code, Notepad) from opening
@@ -727,6 +741,7 @@ class WhitelistEnforcer:
         except Exception as e:
             print(f"[WhitelistEnforcer] File inspection unavailable for {name_lower}: {e}")
 
+    # Function purpose: Checks whether a document predates the exam and is not explicitly permitted.
     def _is_old_exam_document(self, path):
         if self._is_permitted_file(path) or any(ignored in path.lower() for ignored in self.IGNORE_DIRS):
             return False
@@ -735,10 +750,12 @@ class WhitelistEnforcer:
         except OSError:
             return False
 
+    # Function purpose: Extracts the document identity from the Notepad window title.
     def _notepad_document_title(self, proc):
         title = self._get_window_titles().get(proc.pid, '')
         return title.rsplit(' - ', 1)[0].lstrip('*').strip()
 
+    # Function purpose: Finds the document passed to Notepad when its process was launched.
     def _notepad_launch_file(self, proc):
         try:
             if proc.name().lower() != 'notepad.exe':
@@ -759,6 +776,7 @@ class WhitelistEnforcer:
         except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             return None
 
+    # Function purpose: Uses recent-document information to identify a file opened in Notepad.
     def _notepad_recent_file(self, proc):
         title = self._notepad_document_title(proc)
         if not title:
@@ -781,9 +799,11 @@ class WhitelistEnforcer:
         except OSError:
             return None
 
+    # Function purpose: Checks whether the exact file path is explicitly permitted by the exam policy.
     def _is_permitted_file(self, path):
         return os.path.normcase(os.path.realpath(path)) in getattr(self, 'permitted_files', set())
 
+    # Function purpose: Allowed editors associated with a detected old document.
     def _file_app_targets(self, path):
         """Allowed editors associated with a detected old document."""
         ext = os.path.splitext(path or '')[1].lower()
@@ -799,6 +819,7 @@ class WhitelistEnforcer:
             names = {'notepad.exe', 'notepad++.exe', 'code.exe'}
         return names & getattr(self, 'allowed_apps', set())
 
+    # Function purpose: Reports a prohibited old file and closes its associated application when enforcement applies.
     def _handle_file_violation(self, proc, name_lower, reason, file_path=None):
         if file_path and self._is_permitted_file(file_path):
             return

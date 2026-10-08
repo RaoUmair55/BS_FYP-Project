@@ -1,18 +1,18 @@
 // No database or network mutations: exercise the real broadcast functions with controlled lookups.
 const assert = require('node:assert/strict');
-const Exam = require('./src/models/Exam');
-const Session = require('./src/models/Session');
-const Violation = require('./src/models/Violation');
-const socketApi = require('./src/sockets/violationSocket');
+const Exam = require('../src/models/Exam');
+const Session = require('../src/models/Session');
+const Violation = require('../src/models/Violation');
+const socketApi = require('../src/sockets/violationSocket');
 const originalFindExam = Exam.findOne;
 const originalFindSession = Session.findById;
 const originalListExams = Exam.find;
 const originalListSessions = Session.find;
 const originalListViolations = Violation.find;
-const lifecycle = require('./src/utils/examLifecycle');
+const lifecycle = require('../src/utils/examLifecycle');
 const originalExpire = lifecycle.autoExpireFinishedExams;
-const sessionsRouter = require('./src/routes/sessions');
-const violationsRouter = require('./src/routes/violations');
+const sessionsRouter = require('../src/routes/sessions');
+const violationsRouter = require('../src/routes/violations');
 const exams = [
     { _id: '507f1f77bcf86cd799439011', examCode: 'EXAM-A', examId: 'ALIAS-A', createdBy: 'teacher-a', status: 'active' },
     { _id: '507f1f77bcf86cd799439012', examCode: 'EXAM-B', examId: 'ALIAS-B', createdBy: 'teacher-b', status: 'completed' }

@@ -9,6 +9,7 @@ const Submission = require('../models/Submission');
 const AuditLog = require('../models/AuditLog');
 const { requireAuth, requireRole } = require('../middleware/authMiddleware');
 const storageService = require('../services/storage');
+const { deletePhotoHistory } = require('../utils/cameraPhotos');
 const { logTeacherAction } = require('../utils/auditLogger');
 
 // All admin routes strictly require 'admin' role
@@ -191,7 +192,7 @@ router.get('/assets', async (req, res) => {
                     examTitle: s.examId,
                     candidateName: s.studentName || s.studentId || 'Candidate',
                     rollNumber: s.rollNumber || null,
-                    meta: { verificationStatus: s.cameraVerificationStatus, sessionStatus: s.status, riskScore: s.riskScore }
+                    meta: { photoCount: (s.cameraPhotos || []).length || 1, verificationStatus: s.cameraVerificationStatus, sessionStatus: s.status, riskScore: s.riskScore }
                 });
             });
         }
@@ -342,12 +343,12 @@ router.delete('/assets/:type/:id', async (req, res) => {
 
             if (deletedUrl) {
                 try {
-                    await storageService.delete(deletedUrl);
+                    await deletePhotoHistory(session, storageService);
                 } catch (delErr) {
-                    console.warn('[AdminDeleteAsset] Storage delete warning (verification):', delErr.message);
+                    return res.status(500).json({ error: 'Unable to delete photo history; please retry' });
                 }
             }
-            await Session.updateOne({ _id: id }, { $set: { cameraVerificationPhoto: null } });
+            await Session.updateOne({ _id: id }, { $set: { cameraVerificationPhoto: null, cameraPhotos: [], cameraPhotoRequests: [], cameraVerificationStatus: 'none' } });
         } else if (normalizedType === 'submission' || normalizedType === 'submissions') {
             const sub = await Submission.findById(id);
             if (!sub) return res.status(404).json({ error: 'Submission not found' });
@@ -437,11 +438,11 @@ router.post('/assets/batch-delete', async (req, res) => {
                     const session = await Session.findById(id);
                     if (session && session.cameraVerificationPhoto) {
                         try {
-                            await storageService.delete(session.cameraVerificationPhoto);
+                            await deletePhotoHistory(session, storageService);
                         } catch (e) {
-                            console.warn('[AdminBatchDelete] Storage delete warning:', e.message);
+                            throw e;
                         }
-                        await Session.updateOne({ _id: id }, { $set: { cameraVerificationPhoto: null } });
+                        await Session.updateOne({ _id: id }, { $set: { cameraVerificationPhoto: null, cameraPhotos: [], cameraPhotoRequests: [], cameraVerificationStatus: 'none' } });
                         deletedCount++;
                         results.push({ id, type, success: true });
                     } else if (session) {
@@ -521,11 +522,11 @@ router.post('/assets/purge-exam', async (req, res) => {
             for (const s of sessions) {
                 if (s.cameraVerificationPhoto) {
                     try {
-                        await storageService.delete(s.cameraVerificationPhoto);
+                        await deletePhotoHistory(s, storageService);
                     } catch (e) {
-                        console.warn('[AdminPurgeExam] Verification photo delete warning:', e.message);
+                        throw e;
                     }
-                    await Session.updateOne({ _id: s._id }, { $set: { cameraVerificationPhoto: null } });
+                    await Session.updateOne({ _id: s._id }, { $set: { cameraVerificationPhoto: null, cameraPhotos: [], cameraPhotoRequests: [], cameraVerificationStatus: 'none' } });
                     purgedVerification++;
                 }
             }

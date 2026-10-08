@@ -312,3 +312,8 @@ When creating an exam, the permitted-software section accepts one exact absolute
 ### Signup email verification
 
 Signup normalizes email and checks the Teacher collection; the unique MongoDB email index rejects concurrent duplicates. Set `REQUIRE_EMAIL_VERIFICATION=true` in `server/.env` and restart to require verification before login, refresh, authenticated APIs, evidence access and sockets. All unverified accounts, including existing teachers and administrators, must verify first. There is no legacy-account exemption; only `emailVerified=true` permits access when the flag is enabled. `false` preserves immediate signup/login. `/verify-email` confirms links (valid for one hour) or resends them. Configure `EMAIL_TOKEN_SECRET`, `DASHBOARD_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` and `MAIL_FROM` for real delivery. Without `SMTP_HOST`, Ethereal creates test previews in server logs, not inbox mail. Failed delivery keeps the account available for resend without issuing login tokens.
+
+
+### Exam-scoped camera review (8 October 2026)
+
+Webcam Grid is scoped to the selected active exam (including code/ID aliases). Release Paper and exam-wide extensions share that scope. +5/+10 controls are above the grid and explicitly apply to all candidates, not individual cards. The latest identity photo stays visible after verification. Request new photo sends an optional note without creating a violation or changing risk scores; pending requests disable duplicate requests. Expand Photo history for timestamped initial, requested and scheduled photos and per-photo review state. A stale photo cannot be confirmed after a newer upload.

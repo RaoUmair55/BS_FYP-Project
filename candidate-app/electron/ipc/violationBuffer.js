@@ -27,6 +27,7 @@ let dbInstance = null;
 let useJsonFallback = isElectron || !Database;
 let jsonStorePath = null;
 
+// Function purpose: Finds the persistent offline-buffer file in the candidate app data directory.
 function getStorePath(filename) {
   try {
     const userDataDir = (app && typeof app.getPath === 'function')
@@ -42,6 +43,7 @@ function getStorePath(filename) {
   }
 }
 
+// Function purpose: Creates the disk-backed JSON buffer when it does not already exist.
 function initJsonStore() {
   jsonStorePath = getStorePath('violations_offline_buffer.json');
   if (!fs.existsSync(jsonStorePath)) {
@@ -50,6 +52,7 @@ function initJsonStore() {
   console.log(`[ViolationBuffer] Disk-backed offline buffer initialized at: ${jsonStorePath}`);
 }
 
+// Function purpose: Reads persisted violations from the JSON fallback buffer.
 function readJsonStore() {
   if (!jsonStorePath) initJsonStore();
   try {
@@ -61,6 +64,7 @@ function readJsonStore() {
   }
 }
 
+// Function purpose: Writes updated violations to the JSON fallback buffer.
 function writeJsonStore(data) {
   if (!jsonStorePath) initJsonStore();
   try {
@@ -73,6 +77,7 @@ function writeJsonStore(data) {
   }
 }
 
+// Function purpose: Initializes or returns the local database used for offline violations.
 function getDatabase() {
   if (useJsonFallback || !Database) {
     if (!jsonStorePath) initJsonStore();
@@ -118,6 +123,7 @@ function getDatabase() {
  * @param {string|null} screenshotPath - Path to local evidence screenshot
  * @returns {number} Inserted row ID
  */
+// Function purpose: Persists a violation locally so it can survive a restart or network outage.
 function enqueue(violationPayload, screenshotPath = null) {
   const originalTimestamp = violationPayload.timestamp || new Date().toISOString();
   const createdAt = new Date().toISOString();
@@ -163,6 +169,7 @@ function enqueue(violationPayload, screenshotPath = null) {
  *
  * @returns {Array<Object>} Pending violation rows
  */
+// Function purpose: Loads unsent violations for the next delivery attempt.
 function getPending() {
   const db = getDatabase();
   if (db && !useJsonFallback) {
@@ -189,6 +196,7 @@ function getPending() {
  *
  * @param {number} id - Violation record ID
  */
+// Function purpose: Marks a successfully delivered violation as sent.
 function markSent(id) {
   const db = getDatabase();
   if (db && !useJsonFallback) {
@@ -205,7 +213,7 @@ function markSent(id) {
   }
 
   const store = readJsonStore();
-  store.violations = (store.violations || []).filter(v => v.id !== id);
+  store.violations = (store.violations || []).filter(/* Function purpose: Selects the entries that satisfy the condition used by this operation. */ v => v.id !== id);
   writeJsonStore(store);
   console.log(`[ViolationBuffer] Violation #${id} successfully marked as sent and removed from disk buffer.`);
 }
@@ -215,6 +223,7 @@ function markSent(id) {
  *
  * @param {number} id - Violation record ID
  */
+// Function purpose: Records another delivery attempt for a queued violation.
 function incrementAttempt(id) {
   const now = new Date().toISOString();
   const db = getDatabase();
@@ -235,7 +244,7 @@ function incrementAttempt(id) {
   }
 
   const store = readJsonStore();
-  const violation = (store.violations || []).find(v => v.id === id);
+  const violation = (store.violations || []).find(/* Function purpose: Finds the first entry matching the requested condition. */ v => v.id === id);
   if (violation) {
     violation.attempts = (violation.attempts || 0) + 1;
     violation.last_attempt_at = now;
@@ -248,6 +257,7 @@ function incrementAttempt(id) {
  *
  * @returns {{ pendingCount: number }}
  */
+// Function purpose: Summarizes the local delivery queue for the connection-status display.
 function getBufferStatus() {
   const db = getDatabase();
   if (db && !useJsonFallback) {

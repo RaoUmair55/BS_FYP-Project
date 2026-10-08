@@ -30,6 +30,7 @@ app.use(cors({
     origin: (origin, done) => done(null, !origin || origin === 'null' || origin === (process.env.DASHBOARD_URL || 'http://localhost:5173')),
     credentials: true
 }));
+app.use('/sessions/:sessionId/camera-verification', express.json({ limit: '2mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -56,7 +57,7 @@ app.use('/uploads', async (req, res, next) => {
             const session = violation && await Session.findById(violation.sessionId);
             examCode = session?.examId;
         } else if (folder === 'verification') {
-            const session = await Session.findOne({ cameraVerificationPhoto: storedUrl });
+            const session = await Session.findOne({ $or: [{ cameraVerificationPhoto: storedUrl }, { 'cameraPhotos.url': storedUrl }] });
             examCode = session?.examId;
         } else if (folder === 'submissions') {
             const submission = await Submission.findOne({ filePath: storedUrl });

@@ -5,6 +5,12 @@
 # Connection: A developer check rather than a live monitoring loop;
 #  it avoids real camera recording and process termination.
 """Deterministic regressions; no camera, microphone, screenshot or process termination."""
+import sys
+from pathlib import Path
+
+# Keep production modules importable when this developer check is run directly.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import os
 import tempfile
 import time
@@ -21,6 +27,7 @@ import server
 
 
 class DetectionChecks(unittest.TestCase):
+    # Function purpose: Checks that dev voice disabled does not disable normal exam health checks using controlled test inputs.
     def test_dev_voice_disabled_does_not_disable_normal_exam_health_checks(self):
         with patch.dict(os.environ, {'APP_MODE': 'dev', 'VOICE_MONITORING_ENABLED': 'false', 'IS_SELF_CHECK': 'true', 'EXAM_TYPE': 'online'}), \
                 patch.object(server, 'voice_monitor', None, create=True), \
@@ -28,19 +35,24 @@ class DetectionChecks(unittest.TestCase):
             self.assertFalse(any('Voice model' in error for error in server.health_check()['errors']))
             os.environ['APP_MODE'] = 'exam'
             self.assertTrue(any('Voice model' in error for error in server.health_check()['errors']))
+    # Function purpose: Checks that usb disk parent fallback never ejects a hub using controlled test inputs.
     def test_usb_disk_parent_fallback_never_ejects_a_hub(self):
         monitor = USBMonitor('usb-parent-check', lambda event: None)
         cfg = MagicMock()
+        # Function purpose: Provides the locate helper or dependency stub for this regression check.
         def locate(pointer, *args):
             pointer._obj.value = 10
             return 0
+        # Function purpose: Provides the parent helper or dependency stub for this regression check.
         def parent(pointer, *args):
             pointer._obj.value = 20
             return 0
         driver = ['USBSTOR']
+        # Function purpose: Provides the service helper or dependency stub for this regression check.
         def service(node, prop, kind, buffer, size, flags):
             buffer.value = driver[0]
             return 0
+        # Function purpose: Provides the eject helper or dependency stub for this regression check.
         def eject(node, veto, *args):
             if node == 10:
                 veto._obj.value = 8
@@ -59,6 +71,7 @@ class DetectionChecks(unittest.TestCase):
             self.assertEqual(monitor._eject_storage(drive)['status'], 'failed')
             self.assertEqual([call.args[0] for call in cfg.CM_Request_Device_EjectW.call_args_list], [10])
 
+    # Function purpose: Checks that voice background noise cannot reach speaker comparison using controlled test inputs.
     def test_voice_background_noise_cannot_reach_speaker_comparison(self):
         monitor = VoiceMonitor.__new__(VoiceMonitor)
         monitor.is_self_check = False
@@ -76,6 +89,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(monitor.mismatch_count, 0)
         encoder.embed_utterance.assert_not_called()
 
+    # Function purpose: Checks that usb safe ejection success veto and protected disks using controlled test inputs.
     def test_usb_safe_ejection_success_veto_and_protected_disks(self):
         monitor = USBMonitor('usb-eject-check', lambda event: None)
         drive = {'pnpDeviceId': 'USBSTOR\\TEST', 'ejectionAllowed': True, 'driveLetters': []}
@@ -98,6 +112,7 @@ class DetectionChecks(unittest.TestCase):
                 self.assertEqual(monitor._eject_storage({**drive, 'driveLetters': [letter]})['status'], 'skipped')
             cfg.CM_Request_Device_EjectW.assert_not_called()
 
+    # Function purpose: Checks that usb ejection failure still reports evidence and self check is read only using controlled test inputs.
     def test_usb_ejection_failure_still_reports_evidence_and_self_check_is_read_only(self):
         events = []
         monitor = USBMonitor('usb-eject-check', events.append)
@@ -111,6 +126,7 @@ class DetectionChecks(unittest.TestCase):
             eject.assert_called_once()
             self.assertEqual(len(events), 1)
 
+    # Function purpose: Checks that recent old file closes associated allowed app and preserves protected processes using controlled test inputs.
     def test_recent_old_file_closes_associated_allowed_app_and_preserves_protected_processes(self):
         monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
         monitor.session_id = 'file-close-check'
@@ -121,6 +137,7 @@ class DetectionChecks(unittest.TestCase):
         monitor.violation_counts = {}
         events, closed = [], []
         monitor.on_violation_callback = events.append
+        # Function purpose: Provides the process helper or dependency stub for this regression check.
         def process(pid, name):
             return SimpleNamespace(pid=pid, info={'username': 'student'}, name=lambda: name,
                 terminate=lambda: closed.append(pid), wait=lambda **kw: None)
@@ -133,6 +150,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(events[0]['details']['action'], 'file_closed_require_new')
         self.assertEqual(events[0]['details']['closedProcessIds'], [123])
 
+    # Function purpose: Checks that head turn survives slow frames but resets after interruption using controlled test inputs.
     def test_head_turn_survives_slow_frames_but_resets_after_interruption(self):
         monitor, events = self.camera()
         monitor.neutral_pose = np.array([0., 0.])
@@ -147,6 +165,7 @@ class DetectionChecks(unittest.TestCase):
                 monitor._observe_head_pose(35, 0, frame)
         self.assertEqual(events, [], 'disconnected observations must not confirm a turn')
 
+    # Function purpose: Checks that notepad released handle still reports and targets launch file using controlled test inputs.
     def test_notepad_released_handle_still_reports_and_targets_launch_file(self):
         monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
         monitor.session_id = 'notepad-check'
@@ -195,6 +214,7 @@ class DetectionChecks(unittest.TestCase):
                 self.assertEqual(closed, [123, 123])
                 self.assertEqual(events[-1]['details']['action'], 'file_closed_require_new')
 
+    # Function purpose: Checks that biased neutral cannot label frontal pose left using controlled test inputs.
     def test_biased_neutral_cannot_label_frontal_pose_left(self):
         monitor, events = self.camera()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -218,6 +238,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertIsNone(monitor.head_direction)
 
+    # Function purpose: Checks that occlusion handles bright cover and normal exposure using controlled test inputs.
     def test_occlusion_handles_bright_cover_and_normal_exposure(self):
         from services.lighting_occlusion_detector import CameraOcclusionDetector
         detector = CameraOcclusionDetector()
@@ -230,6 +251,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertFalse(detector.analyze_frame(gradient)[0])
         self.assertIsNone(detector.occlusion_start_time)
 
+    # Function purpose: Checks that usb query covers uasp and reports storage only using controlled test inputs.
     def test_usb_query_covers_uasp_and_reports_storage_only(self):
         monitor = USBMonitor('check-session', lambda event: None)
         result = SimpleNamespace(returncode=0, stdout='[{"DeviceID":"USB1","Model":"External SSD","Size":100}]')
@@ -240,6 +262,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertIn("BusType -eq 7", query)
         self.assertIn('$usbNumbers -contains $_.Index', query)
 
+    # Function purpose: Checks that voice invalid segments reset mismatch and capture recovers using controlled test inputs.
     def test_voice_invalid_segments_reset_mismatch_and_capture_recovers(self):
         monitor = VoiceMonitor.__new__(VoiceMonitor)
         monitor.is_self_check = False
@@ -258,6 +281,7 @@ class DetectionChecks(unittest.TestCase):
         monitor.running = True
         monitor.capture_error = None
         attempts = []
+        # Function purpose: Captures evidence for the supplied session and violation type, returning its saved path.
         def capture():
             attempts.append(1)
             if len(attempts) == 1:
@@ -269,10 +293,12 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(len(attempts), 2)
         self.assertIn('device disconnected', monitor.capture_error)
 
+    # Function purpose: Checks that phone book track separately and reject spatial jumps using controlled test inputs.
     def test_phone_book_track_separately_and_reject_spatial_jumps(self):
         monitor, events = self.camera()
         tensor = np.array([[[20, 110, 120, 210, .9, 67], [300, 130, 440, 290, .8, 73]]], dtype=np.float32)
         inputs = []
+        # Function purpose: Provides the infer helper or dependency stub for this regression check.
         def infer(_, data):
             inputs.append(data['images'])
             return [tensor]
@@ -293,6 +319,7 @@ class DetectionChecks(unittest.TestCase):
                 monitor._check_objects(frame)
         self.assertEqual(events, [])
 
+    # Function purpose: Checks that old file policy permits exact path and targets only owner using controlled test inputs.
     def test_old_file_policy_permits_exact_path_and_targets_only_owner(self):
         monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
         monitor.session_id = 'file-check'
@@ -321,6 +348,7 @@ class DetectionChecks(unittest.TestCase):
             self.assertEqual(events[-1]['details']['action'], 'file_access_review_required')
         self.assertFalse(monitor._is_permitted_file(approved + '.other.docx'))
 
+    # Function purpose: Checks that durable python delivery retries preserve identity using controlled test inputs.
     def test_durable_python_delivery_retries_preserve_identity(self):
         from services.violation_delivery import enqueue, deliver_one
         import sqlite3
@@ -344,6 +372,7 @@ class DetectionChecks(unittest.TestCase):
                 self.assertEqual(post.call_args.kwargs['json']['timestamp'], payload['timestamp'])
             self.assertFalse(deliver_one('http://127.0.0.1/violation', path))
 
+    # Function purpose: Provides the camera helper or dependency stub for this regression check.
     def camera(self):
         # Use real initialization/model loading, but feed controlled frames/inference results.
         monitor = AIMonitor('check-session', on_violation=lambda event: None)
@@ -355,6 +384,7 @@ class DetectionChecks(unittest.TestCase):
         monitor._emit_violation = lambda *args, **kwargs: events.append((args, kwargs))
         return monitor, events
 
+    # Function purpose: Checks that calibration wraparound jitter and real turn using controlled test inputs.
     def test_calibration_wraparound_jitter_and_real_turn(self):
         monitor, events = self.camera()
         frame = np.full((480, 640, 3), 100, dtype=np.uint8)
@@ -372,6 +402,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0][1]['details']['direction'], 'left')
 
+    # Function purpose: Checks that unstable calibration and nonfinite pose do not alert using controlled test inputs.
     def test_unstable_calibration_and_nonfinite_pose_do_not_alert(self):
         monitor, events = self.camera()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -382,6 +413,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(events, [])
         self.assertEqual(monitor.pose_baseline_samples, [])
 
+    # Function purpose: Checks that direction changes and downward duration using controlled test inputs.
     def test_direction_changes_and_downward_duration(self):
         monitor, events = self.camera()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -394,6 +426,7 @@ class DetectionChecks(unittest.TestCase):
             monitor._track_head_direction('down', frame, {})
         self.assertEqual(events[0][1]['details']['direction'], 'down')
 
+    # Function purpose: Checks that real landmarker blank frame and missing model fallback using controlled test inputs.
     def test_real_landmarker_blank_frame_and_missing_model_fallback(self):
         monitor, events = self.camera()
         self.assertIsNotNone(monitor.face_landmarker)
@@ -405,6 +438,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertIsNotNone(fallback.face_cascade)
         self.assertTrue(fallback.is_active)
 
+    # Function purpose: Checks that normal high camera position does not mean looking up using controlled test inputs.
     def test_normal_high_camera_position_does_not_mean_looking_up(self):
         monitor, events = self.camera()
         monitor.occlusion_detector = SimpleNamespace(analyze_frame=lambda frame: (False, '', {}))
@@ -418,6 +452,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(events, [])
         self.assertIsNotNone(monitor.neutral_eye_y)
 
+    # Function purpose: Checks that moderate lateral turn uses shorter sustained window using controlled test inputs.
     def test_moderate_lateral_turn_uses_shorter_sustained_window(self):
         monitor, events = self.camera()
         monitor.occlusion_detector = SimpleNamespace(analyze_frame=lambda frame: (False, '', {}))
@@ -435,6 +470,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(events[0][0][0], 'head_turn_away')
         self.assertEqual(events[0][1]['details']['direction'], 'left')
 
+    # Function purpose: Checks that phone alerts first hit and respects disabled rule using controlled test inputs.
     def test_phone_alerts_first_hit_and_respects_disabled_rule(self):
         monitor, events = self.camera()
         tensor = np.array([[[20, 30, 120, 180, 0.9, 67]]], dtype=np.float32)
@@ -454,6 +490,7 @@ class DetectionChecks(unittest.TestCase):
                 monitor._check_objects(frame)
         self.assertEqual(len(events), 1)
 
+    # Function purpose: Checks that weak phone still needs three hits and miss resets confirmation using controlled test inputs.
     def test_weak_phone_still_needs_three_hits_and_miss_resets_confirmation(self):
         monitor, events = self.camera()
         tensor = np.array([[[20, 110, 120, 210, .4, 67]]], dtype=np.float32)
@@ -480,6 +517,7 @@ class DetectionChecks(unittest.TestCase):
             monitor._check_objects(frame)
             self.assertEqual(len(events), 1)
 
+    # Function purpose: Checks that real model accepts blank frame without phone alert using controlled test inputs.
     def test_real_model_accepts_blank_frame_without_phone_alert(self):
         monitor, events = self.camera()
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -487,6 +525,7 @@ class DetectionChecks(unittest.TestCase):
             monitor._check_objects(frame)
         self.assertEqual(events, [])
 
+    # Function purpose: Checks that other winning class does not get relabelled phone using controlled test inputs.
     def test_other_winning_class_does_not_get_relabelled_phone(self):
         monitor, events = self.camera()
         tensor = np.zeros((1, 84, 1), dtype=np.float32)
@@ -499,6 +538,7 @@ class DetectionChecks(unittest.TestCase):
                 monitor._check_objects(np.zeros((480, 640, 3), dtype=np.uint8))
         self.assertEqual(events, [])
 
+    # Function purpose: Checks that multiple faces need sustained time and reset after gap using controlled test inputs.
     def test_multiple_faces_need_sustained_time_and_reset_after_gap(self):
         monitor, events = self.camera()
         with patch('ai_monitor.time.monotonic', side_effect=[100, 100.1, 101.2]):
@@ -511,6 +551,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertIsNone(monitor.second_person_start)
         self.assertEqual(monitor.object_candidates, {})
 
+    # Function purpose: Checks that usb reported once until disconnected using controlled test inputs.
     def test_usb_reported_once_until_disconnected(self):
         events = []
         monitor = USBMonitor('check-session', events.append)
@@ -526,6 +567,7 @@ class DetectionChecks(unittest.TestCase):
             self.assertEqual(monitor.get_removable_drives(), [])
         self.assertIsNotNone(monitor.last_error)
 
+    # Function purpose: Checks that unverified window title does not terminate new answer using controlled test inputs.
     def test_unverified_window_title_does_not_terminate_new_answer(self):
         monitor = WhitelistEnforcer.__new__(WhitelistEnforcer)
         monitor.IGNORE_DIRS = ()
@@ -535,8 +577,10 @@ class DetectionChecks(unittest.TestCase):
         events = []
         monitor._handle_file_violation = lambda *a, **k: events.append((a, k))
         proc = SimpleNamespace(pid=123, open_files=lambda: [])
+        # Function purpose: Provides the set pid helper or dependency stub for this regression check.
         def set_pid(hwnd, pointer):
             pointer._obj.value = 123
+        # Function purpose: Provides the set title helper or dependency stub for this regression check.
         def set_title(hwnd, buffer, count):
             buffer.value = 'answers.docx - Word'
         ui = SimpleNamespace(GetForegroundWindow=lambda: 1, GetWindowThreadProcessId=set_pid,
@@ -553,6 +597,7 @@ class DetectionChecks(unittest.TestCase):
             monitor._inspect_allowed_app(proc, 'winword.exe')
         self.assertEqual(len(events), 1)  # Verified old files remain blocked.
 
+    # Function purpose: Checks that distant voice mismatches are not consecutive using controlled test inputs.
     def test_distant_voice_mismatches_are_not_consecutive(self):
         monitor = VoiceMonitor.__new__(VoiceMonitor)
         monitor.is_self_check = False
@@ -581,6 +626,7 @@ class DetectionChecks(unittest.TestCase):
             self.assertIsNotNone(monitor.verification_error)
         self.assertEqual(len(events), 1)
 
+    # Function purpose: Checks that voice evidence has real duration and rejects empty using controlled test inputs.
     def test_voice_evidence_has_real_duration_and_rejects_empty(self):
         import wave
         monitor = VoiceMonitor.__new__(VoiceMonitor)
@@ -594,6 +640,7 @@ class DetectionChecks(unittest.TestCase):
                 with wave.open(path, 'rb') as clip:
                     self.assertEqual(clip.getnframes() / clip.getframerate(), 3.0)
 
+    # Function purpose: Checks that voice analysis queue is bounded using controlled test inputs.
     def test_voice_analysis_queue_is_bounded(self):
         import queue
         monitor = VoiceMonitor.__new__(VoiceMonitor)
@@ -604,6 +651,7 @@ class DetectionChecks(unittest.TestCase):
         self.assertEqual(monitor.verification_queue.qsize(), 2)
         self.assertIsNotNone(monitor.verification_error)
 
+    # Function purpose: Checks that voice enrollment confirmation and quality using controlled test inputs.
     def test_voice_enrollment_confirmation_and_quality(self):
         monitor = VoiceMonitor.__new__(VoiceMonitor)
         monitor.sample_rate = 16000
@@ -626,6 +674,7 @@ class DetectionChecks(unittest.TestCase):
                 self.assertFalse(monitor.set_reference_voice(audio, confirmation_audio=audio[:64000])['success'])
                 np.testing.assert_array_equal(monitor.reference_embedding, embedding)
 
+    # Function purpose: Checks that health does not claim dead camera is monitoring using controlled test inputs.
     def test_health_does_not_claim_dead_camera_is_monitoring(self):
         camera = SimpleNamespace(camera_ready=False, ort_session=object(),
                                  detector_errors={}, mp_face_mesh=None, face_cascade=object())

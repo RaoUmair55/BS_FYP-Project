@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
+import { scopedExams, scopedSessions, matchesExam } from '../utils/examScope';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -19,6 +20,8 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
     const [extendingMap, setExtendingMap] = useState({});
     const [releasingMap, setReleasingMap] = useState({});
     const [verifyingMap, setVerifyingMap] = useState({});
+    const [actionError, setActionError] = useState('');
+    const [requestingMap, setRequestingMap] = useState({});
     const [currentTime, setCurrentTime] = useState(Date.now());
 
     // Update current time ticker every second for accurate countdown
@@ -27,33 +30,29 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         return () => clearInterval(timer);
     }, []);
 
-    // Filter sessions by examFilter if selected
-    const filteredSessions = sessions.filter(s => {
-        if (examFilter && s.examId && s.examId.toUpperCase() !== examFilter.toUpperCase()) {
-            return false;
-        }
-        return true;
-    });
+    const visibleExams = scopedExams(exams, examFilter);
+    const filteredSessions = scopedSessions(sessions, exams, examFilter);
 
     const handleReleasePaper = async (examId) => {
-        if (!examId) return;
+        if (!examId || !visibleExams.some(exam => matchesExam(exam, examId))) return;
+        setActionError('');
         setReleasingMap(prev => ({ ...prev, [examId]: true }));
         try {
             const res = await authFetch(`${API_BASE_URL}/exams/${examId}/release-paper`, {
                 method: 'POST'
             });
-            if (res.ok) {
-                fetchSessions();
-            }
+            if (!res.ok) throw new Error((await res.json()).error || 'Exam action failed');
+            fetchSessions();
         } catch (err) {
-            console.error('Failed to release question paper:', err);
+            setActionError(err.message || 'Unable to release paper');
         } finally {
             setReleasingMap(prev => ({ ...prev, [examId]: false }));
         }
     };
 
     const handleExtendTime = async (examId, addMinutes) => {
-        if (!examId) return;
+        if (!examId || !visibleExams.some(exam => matchesExam(exam, examId))) return;
+        setActionError('');
         setExtendingMap(prev => ({ ...prev, [examId]: true }));
         try {
             const res = await authFetch(`${API_BASE_URL}/exams/${examId}/extend-time`, {
@@ -61,11 +60,10 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ addMinutes })
             });
-            if (res.ok) {
-                fetchSessions();
-            }
+            if (!res.ok) throw new Error((await res.json()).error || 'Exam action failed');
+            fetchSessions();
         } catch (err) {
-            console.error('Failed to extend exam time:', err);
+            setActionError(err.message || 'Unable to extend time');
         } finally {
             setExtendingMap(prev => ({ ...prev, [examId]: false }));
         }
@@ -93,10 +91,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
     };
 
     // Find any active exams with unreleased papers (Waiting Lobby active)
-    const unreleasedExams = exams.filter(e => {
-        const isFiltered = examFilter ? (e.examCode === examFilter || e.examId === examFilter) : true;
-        return isFiltered && e.status === 'active' && !e.paperReleased && e.paperPath;
-    });
+    const unreleasedExams = visibleExams.filter(e => !e.paperReleased && e.paperPath);
 
     // Find any active exams nearing completion (< 5 mins)
     const expiringExams = Array.from(new Set(
@@ -112,8 +107,8 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
     const fetchSessions = () => {
         Promise.all([
-            getActiveSessions().catch(e => ({ data: [] })),
-            getExams().catch(e => ({ data: [] }))
+            getActiveSessions(),
+            getExams()
         ])
         .then(([sessRes, examsRes]) => {
             setSessions(sessRes.data || []);
@@ -121,7 +116,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
             setLoading(false);
         })
         .catch(err => {
-            console.error("Error fetching candidate grid sessions/exams:", err);
+            setActionError('Unable to refresh the candidate grid. Check your connection; it will retry automatically.');
             setLoading(false);
         });
     };
@@ -132,18 +127,9 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         return () => clearInterval(interval);
     }, []);
 
-    const handleConfirmIdentity = async (sid, e) => {
+    const handleConfirmIdentity = async (sid, e, photo) => {
         if (e) e.stopPropagation();
         if (!sid) return;
-
-        // Optimistically mark verified
-        setSessions(prev => prev.map(s => {
-            const currentId = s.sessionId || s._id;
-            if (currentId === sid) {
-                return { ...s, cameraVerificationStatus: 'verified' };
-            }
-            return s;
-        }));
 
         setVerifyingMap(prev => ({ ...prev, [sid]: true }));
 
@@ -151,9 +137,10 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
             const res = await authFetch(`${API_BASE_URL}/sessions/${sid}/camera-verification`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'verified' })
+                body: JSON.stringify({ status: 'verified', photoUrl: photo?.url || sessions.find(session => (session.sessionId || session._id) === sid)?.cameraVerificationPhoto, historyPhotoId: photo?._id })
             });
 
+            if (!res.ok) throw new Error((await res.json()).error || 'Unable to confirm identity');
             if (res.ok) {
                 const data = await res.json();
                 if (data.session) {
@@ -167,10 +154,22 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                 }
             }
         } catch (err) {
-            console.error('Failed to verify identity:', err);
+            setActionError(err.message || 'Unable to confirm identity');
         } finally {
             setVerifyingMap(prev => ({ ...prev, [sid]: false }));
         }
+    };
+
+    const handleRequestPhoto = async (sid) => {
+        const note = window.prompt('Note for candidate (optional):', 'Please face the camera and improve the lighting.');
+        if (note === null) return;
+        setActionError(''); setRequestingMap(prev => ({ ...prev, [sid]: true }));
+        try {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sid}/request-camera-photo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note }) });
+            if (!res.ok) throw new Error((await res.json()).error || 'Unable to request photo');
+            fetchSessions();
+        } catch (err) { setActionError(err.message || 'Unable to request photo'); }
+        finally { setRequestingMap(prev => ({ ...prev, [sid]: false })); }
     };
 
     // Count unreviewed violations per candidate
@@ -207,6 +206,11 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                 </span>
             </div>
 
+            {actionError && <div className="md-alert md-alert-error" role="alert">{actionError}</div>}
+            {visibleExams.map(exam => <div key={exam._id || exam.examCode} className="md-card" style={{ padding: 12, marginBottom: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                <strong style={{ marginRight: 'auto' }}>{exam.examCode || exam.examId} · Extend time for all candidates</strong>
+                {[5, 10].map(minutes => <button key={minutes} className="md-btn md-btn-sm md-btn-outlined" disabled={extendingMap[exam.examCode || exam.examId]} onClick={() => handleExtendTime(exam.examCode || exam.examId, minutes)}>+{minutes}m for everyone</button>)}
+            </div>)}
             {/* Waiting Lobby Paper Release Banner */}
             {unreleasedExams.map(ex => {
                 const exCode = ex.examCode || ex.examId || '';
@@ -344,37 +348,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--warning)' }}>Extend:</span>
-                        {expiringExams.map(exCode => (
-                            <React.Fragment key={exCode}>
-                                <button
-                                    className="md-btn md-btn-sm"
-                                    style={{ background: 'var(--warning-bg)', color: 'var(--text-on-color)', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
-                                    disabled={extendingMap[exCode]}
-                                    onClick={() => handleExtendTime(exCode, 5)}
-                                >
-                                    +5m
-                                </button>
-                                <button
-                                    className="md-btn md-btn-sm"
-                                    style={{ background: 'var(--warning-bg)', color: 'var(--text-on-color)', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
-                                    disabled={extendingMap[exCode]}
-                                    onClick={() => handleExtendTime(exCode, 10)}
-                                >
-                                    +10m
-                                </button>
-                                <button
-                                    className="md-btn md-btn-sm"
-                                    style={{ background: 'var(--warning-bg)', color: 'var(--text-on-color)', fontSize: '11px', padding: '4px 8px', borderRadius: '4px', border: 'none', fontWeight: 600, cursor: 'pointer' }}
-                                    disabled={extendingMap[exCode]}
-                                    onClick={() => handleExtendTime(exCode, 15)}
-                                >
-                                    +15m
-                                </button>
-                            </React.Fragment>
-                        ))}
-                    </div>
+
                 </div>
             )}
 
@@ -387,6 +361,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
                     {filteredSessions.map((s) => {
                         const sid = s.sessionId || s._id;
+                        const isLab = visibleExams.some(exam => matchesExam(exam, s.examId) && exam.examType === 'physical_lab');
                         const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
                         const pendingAlerts = unreviewedBySession[sid] || 0;
                         const cameraStatus = s.cameraVerificationStatus || 'none';
@@ -398,7 +373,6 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                 : `${API_BASE_URL.replace(/\/$/, '')}/${s.cameraVerificationPhoto.replace(/^\//, '')}`)
                             : null;
                         const isVerifying = verifyingMap[sid] || false;
-                        const isExtending = extendingMap[s.examId] || false;
                         const isTerminated = s.status === 'terminated';
                         const isCompleted = s.status === 'completed';
 
@@ -491,19 +465,21 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                             <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#e2e8f0' }}>Exam Completed</div>
                                             <div style={{ fontSize: '11px', color: '#94a3b8' }}>Responses submitted</div>
                                         </div>
-                                    ) : !isVerified && photoUrl ? (
+                                    ) : isLab ? (
+                                        <p style={{ color: '#e2e8f0', padding: 16 }}>Physical lab · Camera checks disabled</p>
+                                    ) : photoUrl ? (
                                         /* If NOT verified yet and photo exists, show the self-check photo for verification */
                                         <img 
                                             src={assetUrl(photoUrl)} 
-                                            alt={`Self-check photo ${s.studentId}`} 
+                                            alt={`Latest identity photo for ${s.studentName || s.studentId}`}
                                             style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                                         />
                                     ) : isVerified ? (
-                                        /* Once verified, photo disappears cleanly and displays active live monitoring feed */
+                                        /* Legacy verified session without a retained image */
                                         <div style={{ textAlign: 'center', color: 'var(--success)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
                                             <ShieldCheck size={36} style={{ color: 'var(--success)' }} />
                                             <div style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0' }}>Identity Verified</div>
-                                            <div style={{ fontSize: '10px', color: '#94a3b8' }}>Camera Active ● Live</div>
+                                            <div style={{ fontSize: '10px', color: '#94a3b8' }}>Identity confirmation recorded</div>
                                         </div>
                                     ) : (
                                         <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -513,23 +489,31 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                     )}
 
                                     {/* Verification Badge Overlay (only when active) */}
-                                    {!isTerminated && !isCompleted && (
+                                    {!isLab && !isTerminated && !isCompleted && (
                                         <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '12px', color: 'var(--text-on-color)', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                             {isVerified ? <ShieldCheck size={11} style={{ color: 'var(--success)' }} /> : <Clock size={11} style={{ color: 'var(--warning)' }} />}
-                                            <span style={{ textTransform: 'capitalize' }}>{isVerified ? 'Identity Confirmed' : 'Self-Check Check Required'}</span>
+                                            <span style={{ textTransform: 'capitalize' }}>{isVerified ? 'Identity Confirmed' : 'Awaiting photo review'}</span>
                                         </div>
                                     )}
                                 </div>
 
+                                {s.cameraPhotos?.length > 0 && <details style={{ padding: '8px 12px', fontSize: 12 }}>
+                                    <summary style={{ cursor: 'pointer' }}>Photo history ({s.cameraPhotos.length}) · {isVerified ? 'Verified' : 'Awaiting review'}</summary>
+                                    {s.cameraPhotos.slice().reverse().map(photo => <figure key={photo._id || photo.url} style={{ margin: '12px 0' }}>
+                                        <img src={assetUrl(photo.url)} alt={`Identity checkpoint for ${s.studentName || s.studentId}`} loading="lazy" style={{ width: '100%', maxHeight: 240, objectFit: 'contain', borderRadius: 6 }} />
+                                        <figcaption>{new Date(photo.capturedAt).toLocaleString()} · {photo.source} · {photo.status === 'verified' ? 'Verified' : 'Awaiting review'}</figcaption>
+                                        {photo.status !== 'verified' && photo._id && <button className="md-btn md-btn-sm md-btn-outlined" disabled={isVerifying} onClick={event => handleConfirmIdentity(sid, event, photo)}>Confirm this photo</button>}
+                                    </figure>)}
+                                </details>}
                                 {/* Action Buttons Footer */}
-                                <div style={{ padding: '8px 12px', background: 'var(--bg-surface)', borderTop: '1px solid var(--bg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                                    {!isVerified && photoUrl && (
+                                <div style={{ padding: '8px 12px', background: 'var(--bg-surface)', borderTop: '1px solid var(--bg-muted)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                    {!isLab && !isTerminated && !isCompleted && !isVerified && photoUrl && (
                                         <button 
                                             className="md-btn md-btn-sm"
                                             style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: 'var(--success-soft)', color: 'var(--success)', border: '1px solid var(--success-soft)' }}
                                             onClick={(e) => handleConfirmIdentity(sid, e)}
                                             disabled={isVerifying}
-                                            title="Confirm student identity and clear self-check photo"
+                                            title="Confirm the latest identity photo"
                                         >
                                             <Check size={12} />
                                             <span>{isVerifying ? 'Confirming...' : 'Confirm Identity'}</span>
@@ -546,36 +530,10 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                         <span>Review</span>
                                     </button>
 
-                                    {onOpenChat && (
-                                        <button
-                                            className="md-btn md-btn-sm"
-                                            style={{ fontSize: '11px', padding: '4px 8px', background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid #bfdbfe' }}
-                                            onClick={() => onOpenChat(sid)}
-                                            title="Open direct live chat with this student"
-                                        >
-                                            <MessageSquare size={12} />
-                                            <span>Chat</span>
-                                        </button>
-                                    )}
-
-                                    <button
-                                        className="md-btn md-btn-sm"
-                                        style={{ fontSize: '11px', padding: '4px 6px', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
-                                        onClick={() => handleExtendTime(s.examId, 5)}
-                                        disabled={isExtending}
-                                        title="Extend this exam's duration by 5 minutes"
-                                    >
-                                        +5m
-                                    </button>
-                                    <button
-                                        className="md-btn md-btn-sm"
-                                        style={{ fontSize: '11px', padding: '4px 6px', background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
-                                        onClick={() => handleExtendTime(s.examId, 10)}
-                                        disabled={isExtending}
-                                        title="Extend this exam's duration by 10 minutes"
-                                    >
-                                        +10m
-                                    </button>
+                                    {onOpenChat && <button className="md-btn md-btn-sm md-btn-outlined" onClick={() => onOpenChat(sid)}><MessageSquare size={12} />Chat</button>}
+                                    {!isTerminated && !isCompleted && visibleExams.some(exam => matchesExam(exam, s.examId) && exam.examType !== 'physical_lab') && <button className="md-btn md-btn-sm md-btn-outlined" onClick={() => handleRequestPhoto(sid)} disabled={requestingMap[sid] || (s.cameraPhotoRequests || []).some(request => request.source === 'requested' && !request.completedAt)}>
+                                        <Camera size={12} />{requestingMap[sid] ? 'Requesting…' : (s.cameraPhotoRequests || []).some(request => request.source === 'requested' && !request.completedAt) ? 'Photo requested' : 'Request new photo'}
+                                    </button>}
                                 </div>
                             </div>
                         );

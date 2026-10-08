@@ -12,6 +12,7 @@ import time
 
 app = FastAPI()
 
+# Function purpose: Reports whether the backend and the required monitoring components are healthy.
 @app.get("/health")
 def health_check():
     errors = list(globals().get('startup_errors', []))
@@ -48,11 +49,13 @@ def health_check():
         errors.append(usb.last_error)
     return {'status': 'ok' if not errors else 'degraded', 'instanceId': os.environ.get('AI_INSTANCE_ID'), 'errors': errors}
 
+# Function purpose: Logs the supplied violation payload and echoes it to the API caller.
 @app.post("/violation")
 def log_violation(payload: dict):
     print("Violation logged:", payload)
     return payload
 
+# Function purpose: Updates permitted applications and related exam enforcement settings.
 @app.post("/configure-whitelist")
 def configure_whitelist(payload: dict):
     import server
@@ -62,6 +65,7 @@ def configure_whitelist(payload: dict):
         return {"success": True, "allowed_count": len(server.enforcer.allowed_apps)}
     return {"success": False, "error": "WhitelistEnforcer not initialized"}
 
+# Function purpose: Returns the current application enforcement check to Electron.
 @app.get("/check-apps")
 def check_apps():
     import server
@@ -70,6 +74,7 @@ def check_apps():
         return {"unauthorized_apps": unauthorized}
     return {"error": "Application monitor not initialized. Retry the system check."}
 
+# Function purpose: Returns detected removable storage information for the candidate self-check.
 @app.get("/check-usb")
 def check_usb():
     import server
@@ -80,6 +85,7 @@ def check_usb():
         return {"removable_drives": removable}
     return {"error": "USB monitor not initialized. Retry the system check."}
 
+# Function purpose: Terminates the requested application while preserving protected processes.
 @app.post("/kill-app")
 def kill_app(payload: dict):
     import psutil
@@ -117,6 +123,7 @@ import numpy as np
 _face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 _profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
 
+# Function purpose: Real-time face detector endpoint used by candidate Self-Check.
 @app.post("/detect-face")
 def detect_face(payload: dict):
     """
@@ -176,6 +183,7 @@ def detect_face(payload: dict):
     except Exception as e:
         return {"detected": False, "count": 0, "error": str(e)}
 
+# Function purpose: Calibrates the candidate's reference voice from recorded audio during Self-Check.
 @app.post("/set-reference-voice")
 def set_reference_voice(payload: dict):
     """
@@ -213,6 +221,7 @@ def set_reference_voice(payload: dict):
         print(f"[Server Error] /set-reference-voice failed: {e}")
         return {"success": False, "error": str(e)}
 
+# Function purpose: Returns the voice monitor’s readiness and enrollment status.
 @app.get("/check-voice")
 def check_voice():
     """Returns the calibration status of the reference voice profile."""
@@ -222,3 +231,19 @@ def check_voice():
         return {"calibrated": has_ref}
     return {"calibrated": False}
 
+
+
+# Function purpose: Returns a recent frame from the existing camera monitor for identity verification.
+@app.get("/identity-photo")
+def identity_photo():
+    import server
+    import cv2
+    import base64
+    monitor = getattr(server, 'ai_monitor', None)
+    frame = getattr(monitor, 'latest_identity_frame', None)
+    if os.environ.get('EXAM_TYPE') == 'physical_lab' or frame is None or time.monotonic() - getattr(monitor, 'last_frame_at', 0) > 3:
+        return {"success": False, "error": "No recent monitoring camera frame is available"}
+    ok, encoded = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not ok:
+        return {"success": False, "error": "Unable to encode camera frame"}
+    return {"success": True, "photoBase64": "data:image/jpeg;base64," + base64.b64encode(encoded).decode('ascii')}

@@ -21,12 +21,14 @@ webcam_capture_provider = WebcamCaptureProvider()
 # Default alias
 capture_provider = desktop_capture_provider
 
+# Function purpose: Captures the desktop screen (for OS/process violations).
 def capture_screenshot(session_id: str, violation_type: str):
     """
     Captures the desktop screen (for OS/process violations).
     """
     return desktop_capture_provider.capture(session_id, violation_type)
 
+# Function purpose: Captures the active webcam frame (for camera/AI violations like cell phones, multiple faces, head turn).
 def capture_webcam_frame(session_id: str, violation_type: str, frame=None):
     """
     Captures the active webcam frame (for camera/AI violations like cell phones, multiple faces, head turn).

@@ -4,8 +4,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "check:isolation": "node check_socket_isolation.js",
-    "check:late-evidence": "node check_late_evidence.js",
+    "check:isolation": "node checks/check_socket_isolation.js",
+    "check:late-evidence": "node checks/check_late_evidence.js",
     "dev": "nodemon src/index.js"
   },
   "dependencies": {

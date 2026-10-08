@@ -232,3 +232,8 @@ Old-file detection remains enabled. Teacher-approved exact candidate-PC paths ar
 
 
 Phone alerts now trigger on one YOLO inference with at least 60% confidence. Lower-confidence detections retain three-frame confirmation; books retain their existing confirmation. YOLO normally runs every third processed camera frame, with consecutive inference while a phone candidate remains pending. The loop targets 85ms per frame (about 11.7 processed FPS), so baseline checks target about 255ms apart; actual speed depends on hardware and inference time. Phone repeat alerts retain a two-second cooldown.
+
+
+### Exam-scoped camera review (8 October 2026)
+
+Online exams take three randomly spaced identity snapshots after the exam starts, using the existing AI-monitor camera rather than opening a second stream. The candidate consent notice explains these checkpoints and examiner retake requests. A requested photo opens a preview from the same camera, shows the examiner note and allows capture/retry. Upload failures retain the pending request. Scheduled checkpoints retry through session polling while the exam remains active; no snapshots run in physical-lab mode or after completion. Snapshots are identity-review evidence, not automatic cheating violations.

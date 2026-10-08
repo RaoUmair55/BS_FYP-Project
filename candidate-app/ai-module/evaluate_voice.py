@@ -16,6 +16,7 @@ import numpy as np
 from resemblyzer import VoiceEncoder, preprocess_wav
 
 
+# Function purpose: Parses this evaluation script’s inputs and runs its measurement workflow.
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--reference', required=True)
@@ -27,6 +28,7 @@ def main():
     thresholds = json.loads((Path(__file__).parent / 'config' / 'thresholds.json').read_text())
     cutoff = thresholds['voice_similarity_threshold']
     encoder = VoiceEncoder(device='cpu')
+    # Function purpose: Converts an audio sample into the speaker embedding used by the evaluation.
     def embed(path):
         with wave.open(path, 'rb') as clip:
             if clip.getsampwidth() != 2:

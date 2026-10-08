@@ -7,17 +7,17 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../renderer/examScreen.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '..', '../renderer/examScreen.js'), 'utf8');
 const notice = source.slice(source.indexOf('function showPreExistingFileModal'), source.indexOf('function handleSessionTerminated'));
 let submitted = 0;
 const fields = {};
 const context = {
   Date, console, selectedFile: { name: 'new-answer.docx' },
   lastPreExistingModalTime: 0, lastBlockedFileName: '', sessionInfo: { sessionId: 'check' },
-  escapeHtml: text => text.replaceAll('<', '&lt;'),
-  window: { api: { sendTestViolation: () => submitted++ } },
-  document: { getElementById: id => fields[id] || null,
-    createElement: () => ({ style: {} }), body: { appendChild: element => { fields[element.id] = element; } } }
+  escapeHtml: /* Function purpose: Escapes text before inserting it into HTML to prevent markup injection. */ text => text.replaceAll('<', '&lt;'),
+  window: { api: { sendTestViolation: /* Function purpose: Provides the send test violation test helper or stub used by this regression check. */ () => submitted++ } },
+  document: { getElementById: /* Function purpose: Provides the get element by id test helper or stub used by this regression check. */ id => fields[id] || null,
+    createElement: /* Function purpose: Provides the create element test helper or stub used by this regression check. */ () => ({ style: {} }), body: { appendChild: /* Function purpose: Provides the append child test helper or stub used by this regression check. */ element => { fields[element.id] = element; } } }
 };
 vm.createContext(context);
 vm.runInContext(notice, context);

@@ -46,6 +46,7 @@ class AIMonitor:
     Emits violations that match the standard team schema.
     """
 
+    # Function purpose: Initializes the AIMonitor with session details, configuration, and ML models.
     def __init__(self, session_id: str, on_violation: Optional[Callable] = None, on_violation_callback: Optional[Callable] = None):
         """
         Initializes the AIMonitor with session details, configuration, and ML models.
@@ -56,6 +57,7 @@ class AIMonitor:
         self.is_active = False
         self.running = False
         self.camera_ready = False
+        self.latest_identity_frame = None
         self.last_frame_at = 0
         self.frame_count = 0
         self.head_turn_start = None
@@ -216,6 +218,7 @@ class AIMonitor:
             (150.0, -150.0, -125.0)     # Right mouth corner
         ], dtype=np.float64)
 
+    # Function purpose: Starts the monitoring loop reading from the webcam in a non-blocking background thread.
     def start(self, camera_index=0):
         """
         Starts the monitoring loop reading from the webcam in a non-blocking background thread.
@@ -231,6 +234,7 @@ class AIMonitor:
         else:
             self._run_loop(camera_index)
 
+    # Function purpose: Reads camera frames and runs the configured visual monitoring checks.
     def _run_loop(self, camera_index=0):
         self.running = True
         cap = None
@@ -296,6 +300,7 @@ class AIMonitor:
                     
                 consecutive_read_failures = 0
                 self.camera_ready = True
+                self.latest_identity_frame = frame.copy()
                 self.last_frame_at = loop_start
                 frame_interval = loop_start - last_processed_at
                 if frame_interval > 2.0:
@@ -353,6 +358,7 @@ class AIMonitor:
                 self.face_landmarker.close()
                 self.face_landmarker = None
 
+    # Function purpose: Robust multi-cascade face, eye, profile, and multi-directional head/gaze monitoring.
     def _check_faces_opencv(self, frame):
         """
         Robust multi-cascade face, eye, profile, and multi-directional head/gaze monitoring.
@@ -545,10 +551,12 @@ class AIMonitor:
         direction = turn_direction if (is_lateral_turn or is_downward_gaze or is_upward_gaze) else None
         self._track_head_direction(direction, frame, {'reason': turn_reason})
 
+    # Function purpose: Stops the monitoring loop cleanly by breaking the while loop condition.
     def stop(self):
         """Stops the monitoring loop cleanly by breaking the while loop condition."""
         self.running = False
 
+    # Function purpose: Estimates head yaw using MediaPipe Face Mesh and PnP solve.
     def _check_head_pose(self, frame):
         """
         Estimates head yaw using MediaPipe Face Mesh and PnP solve.
@@ -651,6 +659,7 @@ class AIMonitor:
             return
         self._observe_head_pose(float(angles[1]), float(angles[0]), frame)
 
+    # Function purpose: Clears accumulated head-turn state so a new observation starts a fresh incident.
     def _reset_head_tracking(self):
         self.head_turn_start = None
         self.head_direction = None
@@ -659,6 +668,7 @@ class AIMonitor:
         if self.neutral_pose is None:
             self.pose_baseline_samples.clear()
 
+    # Function purpose: Processes a head-pose observation while applying calibration and stability checks.
     def _observe_head_pose(self, yaw, pitch, frame):
         now = time.monotonic()
         pose = np.array([yaw, pitch], dtype=float)
@@ -713,6 +723,7 @@ class AIMonitor:
             'absolute_yaw': round(absolute_yaw, 1), 'neutral_yaw': round(float(self.neutral_pose[0]), 1),
             'pitch': round(float(pitch), 1)})
 
+    # Function purpose: Tracks how long a suspicious head direction persists before reporting it.
     def _track_head_direction(self, direction, frame, details):
         now = time.monotonic()
         if direction is None:
@@ -738,12 +749,14 @@ class AIMonitor:
             details={**details, 'reason': reason, 'direction': direction, 'duration': round(elapsed, 1),
                      'measurement': 'head_direction', 'backend': self.face_backend}, frame=annotated)
 
+    # Function purpose: Records a detector failure for health reporting without crashing the camera loop.
     def _record_detector_error(self, detector, error):
         message = f'{detector} detection failed: {error}'
         if self.detector_errors.get(detector) != message:
             print(f'[AIMonitor Error] {message}')
         self.detector_errors[detector] = message
 
+    # Function purpose: Resets time-based detection state after interrupted or invalid observations.
     def _reset_temporal_state(self):
         for name in ('head_turn_start', 'lateral_turn_start', 'downward_gaze_start',
                      'upward_gaze_start', 'no_face_start', 'second_person_start'):
@@ -752,6 +765,7 @@ class AIMonitor:
         self.object_candidates.clear()
         self.occlusion_detector.reset()
 
+    # Function purpose: Tracks face counts over time so transient observations do not immediately become alerts.
     def _record_face_count(self, count, frame):
         if count < 2:
             self.second_person_start = None
@@ -764,6 +778,7 @@ class AIMonitor:
                                  details={'face_count': count}, frame=frame)
             self.second_person_start = now
 
+    # Function purpose: Alert on a clear phone immediately; confirm weaker objects across frames.
     def _check_objects(self, frame):
         """Alert on a clear phone immediately; confirm weaker objects across frames."""
         now = time.monotonic()
@@ -846,6 +861,7 @@ class AIMonitor:
             self._emit_violation('cell_phone' if class_id == 67 else 'unauthorized_object', severity=3,
                 details={'confidence': round(confidence, 2), 'object_class': targets[class_id]}, frame=annotated)
 
+    # Function purpose: Builds a monitoring event and passes it to the configured violation callback.
     def _emit_violation(self, violation_type, severity, details, frame=None):
         rule_for_type = {
             'cell_phone': 'detectCellPhone',

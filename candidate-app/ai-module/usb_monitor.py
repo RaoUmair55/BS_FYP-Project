@@ -33,6 +33,7 @@ class USBMonitor:
     wired mice, keyboards, webcams, and audio interfaces are Human Interface Devices (HID)
     or media classes that never mount as drive letters and are structurally excluded.
     """
+    # Function purpose: Initializes this component’s configuration, state and dependencies.
     def __init__(self, session_id, on_violation_callback, is_self_check=False):
         self.session_id = session_id
         self.on_violation_callback = on_violation_callback
@@ -42,6 +43,7 @@ class USBMonitor:
         self.reported_drives = set()
         self.last_error = None
 
+    # Function purpose: Finds removable storage devices attached to the computer.
     def get_removable_drives(self):
         """
         Returns a list of currently connected USB physical mass storage devices.
@@ -101,12 +103,14 @@ class USBMonitor:
             print(f"[USBMonitor] Drive enumeration error: {e}")
             return []
 
+    # Function purpose: One-off check used during Self-Check to list currently connected removable storage.
     def check_for_existing_removable_drives(self):
         """
         One-off check used during Self-Check to list currently connected removable storage.
         """
         return self.get_removable_drives()
 
+    # Function purpose: Starts background continuous monitoring thread.
     def start(self):
         """Starts background continuous monitoring thread."""
         self.running = True
@@ -116,6 +120,7 @@ class USBMonitor:
         self.monitor_thread.start()
         print(f"[USBMonitor] Started USB removable storage monitor loop (is_self_check={self.is_self_check}).")
 
+    # Function purpose: Stops background monitoring loop.
     def stop(self):
         """Stops background monitoring loop."""
         self.running = False
@@ -123,6 +128,7 @@ class USBMonitor:
             self.monitor_thread.join(timeout=3.0)
         print("[USBMonitor] Stopped USB removable storage monitor loop.")
 
+    # Function purpose: Repeatedly checks the monitored resource until this component is stopped.
     def _monitor_loop(self):
         while self.running:
             # During self-check, continuous violations are paused (one-time checks used instead)
@@ -141,6 +147,7 @@ class USBMonitor:
 
             time.sleep(3.0)
 
+    # Function purpose: Reports newly connected removable drives while avoiding duplicate alerts.
     def _report_connected_drives(self, current_drives):
         current = {d['device'].upper(): d for d in current_drives if d.get('device')}
         self.reported_drives.intersection_update(current)
@@ -148,6 +155,7 @@ class USBMonitor:
             self._handle_violation(current[key])
             self.reported_drives.add(key)
 
+    # Function purpose: Handles a detected policy violation and passes its evidence to the alert pipeline.
     def _handle_violation(self, drive_info):
         if self.is_self_check:
             return
@@ -190,6 +198,7 @@ class USBMonitor:
         except Exception as e:
             print(f"[USBMonitor] Error dispatching USB violation: {e}")
 
+    # Function purpose: Ask Windows for safe removal of this disk only; honour vetoes, never force removal.
     def _eject_storage(self, drive_info):
         """Ask Windows for safe removal of this disk only; honour vetoes, never force removal."""
         if self.is_self_check or os.name != 'nt':

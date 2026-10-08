@@ -33,6 +33,7 @@ class VoiceMonitor:
       if similarity is below voice_similarity_threshold for 2+ consecutive gated segments.
     """
 
+    # Function purpose: Initializes this component’s configuration, state and dependencies.
     def __init__(
         self,
         session_id: str,
@@ -97,6 +98,7 @@ class VoiceMonitor:
         os.makedirs(self.storage_dir, exist_ok=True)
         self._load_persisted_reference()
 
+    # Function purpose: Thread-safe lazy initializer for VoiceEncoder.
     def _get_encoder(self):
         """Thread-safe lazy initializer for VoiceEncoder."""
         if self.encoder is None:
@@ -112,6 +114,7 @@ class VoiceMonitor:
                         self.encoder = None
         return self.encoder
 
+    # Function purpose: Finds the persisted speaker-reference file for the current candidate session.
     def _get_reference_path(self, session_id: Optional[str] = None) -> str:
         """Returns the file path for storing the session's reference embedding."""
         sid = session_id or self.session_id or "default"
@@ -120,6 +123,7 @@ class VoiceMonitor:
             safe_session_id = "default"
         return os.path.join(self.storage_dir, f"voice_reference_{safe_session_id}.npy")
 
+    # Function purpose: Attempts to load a previously captured reference embedding from disk.
     def _load_persisted_reference(self):
         """Attempts to load a previously captured reference embedding from disk."""
         candidates = []
@@ -142,6 +146,7 @@ class VoiceMonitor:
                     print(f"[VoiceMonitor Warning] Could not load persisted reference voice from {path}: {e}")
 
 
+    # Function purpose: Creates and stores the candidate's reference voice embedding from a 3-5 second sample.
     def set_reference_voice(self, audio_data, session_id: Optional[str] = None, confirmation_audio=None, microphone_label=None) -> dict:
         """
         Creates and stores the candidate's reference voice embedding from a 3-5 second sample.
@@ -219,6 +224,7 @@ class VoiceMonitor:
             print(f"[VoiceMonitor Error] Failed to set reference voice: {e}")
             return {"success": False, "error": str(e)}
 
+    # Function purpose: Converts diverse audio formats into a 16kHz float32 numpy array in [-1.0, 1.0].
     def _convert_to_float_wav(self, audio_data) -> Optional[np.ndarray]:
         """Converts diverse audio formats into a 16kHz float32 numpy array in [-1.0, 1.0]."""
         if isinstance(audio_data, np.ndarray):
@@ -264,6 +270,7 @@ class VoiceMonitor:
 
         return None
 
+    # Function purpose: Starts the background microphone audio stream and monitoring thread.
     def start(self):
         """Starts the background microphone audio stream and monitoring thread."""
         if self.running:
@@ -275,6 +282,7 @@ class VoiceMonitor:
         self.monitor_thread.start()
         print("[VoiceMonitor] Two-Stage Voice Monitor started.")
 
+    # Function purpose: Stops the audio monitoring loop and releases audio streams.
     def stop(self):
         """Stops the audio monitoring loop and releases audio streams."""
         self.running = False
@@ -287,6 +295,7 @@ class VoiceMonitor:
             self.stream = None
         print("[VoiceMonitor] Voice Monitor stopped.")
 
+    # Function purpose: Repeatedly checks the monitored resource until this component is stopped.
     def _monitor_loop(self):
         while self.running:
             try:
@@ -298,6 +307,7 @@ class VoiceMonitor:
             if self.running:
                 time.sleep(1)
 
+    # Function purpose: Reads microphone frames, identifies sustained speech and queues usable segments for comparison.
     def _capture_loop(self):
         """
         Main audio capture loop.
@@ -390,6 +400,7 @@ class VoiceMonitor:
         finally:
             self.stream = None
 
+    # Function purpose: Adds a speech segment to the bounded analysis queue.
     def _queue_voice_segment(self, audio, duration):
         try:
             self.verification_queue.put_nowait((audio, duration))
@@ -397,6 +408,7 @@ class VoiceMonitor:
             self.mismatch_count = 0
             self.verification_error = 'Voice analysis cannot keep up. Notify the examiner.'
 
+    # Function purpose: Processes queued speech segments without blocking microphone capture.
     def _verification_loop(self):
         while self.running:
             try:
@@ -408,6 +420,7 @@ class VoiceMonitor:
             finally:
                 self.verification_queue.task_done()
 
+    # Function purpose: Saves suspicious audio speech segment as a WAV file for evidence review.
     def _save_audio_clip(self, audio_bytes: bytes) -> Optional[str]:
         """Saves suspicious audio speech segment as a WAV file for evidence review."""
         try:
@@ -435,6 +448,7 @@ class VoiceMonitor:
             print(f"[VoiceMonitor Warning] Could not save audio clip: {e}")
             return None
 
+    # Function purpose: Compares usable speech with the candidate reference and requires repeated mismatches before an alert.
     def _verify_speaker_segment(self, audio_bytes: bytes, duration: float):
         """
         STAGE 2: Speaker Verification (Runs ONLY when gated in by Stage 1).
@@ -535,6 +549,7 @@ class VoiceMonitor:
             self.mismatch_count = 0
             print(f"[VoiceMonitor Error] Speaker verification failed: {e}")
 
+    # Function purpose: Rejects unsuitable or noisy audio before speaker comparison.
     def _has_clear_speech(self, audio_bytes):
         vad = webrtcvad.Vad(3)
         frame_bytes = int(self.sample_rate * 0.03) * 2
@@ -545,6 +560,7 @@ class VoiceMonitor:
         return (voiced * 0.03 >= self.thresholds.get('vad_sustained_seconds', 1.5) and
                 voiced / len(frames) >= 0.6)
 
+    # Function purpose: Constructs standard schema violation payload and emits to callback.
     def _emit_violation(self, violation_type: str, severity: int, details: dict, audio_path: Optional[str] = None):
         """Constructs standard schema violation payload and emits to callback."""
         screenshot_path = None

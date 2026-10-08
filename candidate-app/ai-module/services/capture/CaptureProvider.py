@@ -13,6 +13,7 @@ class CaptureProvider(ABC):
     must inherit from this base class and implement the capture method.
     """
 
+    # Function purpose: Captures evidence (e.g. screen snapshot, webcam frame) associated with a violation.
     @abstractmethod
     def capture(self, session_id: str, violation_type: str) -> Optional[str]:
         """

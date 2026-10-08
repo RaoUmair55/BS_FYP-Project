@@ -6,6 +6,7 @@
  */
 let isSubmitting = false;
 
+// Function purpose: Validates the exam entry fields and requests candidate login.
 async function handleLogin() {
   if (isSubmitting) return;
 
@@ -61,7 +62,7 @@ async function handleLogin() {
           allowedApplications = examData.allowedApplications;
         }
       } else {
-        const errJson = await checkRes.json().catch(() => ({}));
+        const errJson = await checkRes.json().catch(/* Function purpose: Handles a rejected asynchronous operation and reports or recovers from its failure. */ () => ({}));
         if (checkRes.status === 403 || errJson.lobbyClosed) {
           throw new Error(errJson.error || `🚫 Lobby Closed: The question paper has already been released by the examiner. Late entry is not permitted.`);
         } else if (checkRes.status === 404) {
@@ -92,22 +93,22 @@ async function handleLogin() {
   }
 }
 
-document.getElementById('loginBtn').addEventListener('click', (e) => {
+document.getElementById('loginBtn').addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ (e) => {
   e.preventDefault();
   handleLogin();
 });
 
-document.getElementById('examId').addEventListener('keydown', (e) => {
+document.getElementById('examId').addEventListener('keydown', /* Function purpose: Handles the keydown event and updates the associated screen or process state. */ (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     handleLogin();
   }
 });
-document.getElementById('examId').addEventListener('input', (e) => {
+document.getElementById('examId').addEventListener('input', /* Function purpose: Handles the input event and updates the associated screen or process state. */ (e) => {
   e.target.setAttribute('aria-invalid', 'false');
   document.getElementById('errorMsg').textContent = '';
 });
-document.getElementById('examId').addEventListener('blur', (e) => {
+document.getElementById('examId').addEventListener('blur', /* Function purpose: Handles the blur event and updates the associated screen or process state. */ (e) => {
   const code = e.target.value.trim().toUpperCase();
   e.target.value = code;
   if (code && (!/^[A-Z0-9-]{3,32}$/.test(code) || !/[A-Z0-9]/.test(code))) {

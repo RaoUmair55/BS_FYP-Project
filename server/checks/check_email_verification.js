@@ -1,17 +1,17 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-assert.match(fs.readFileSync(path.join(__dirname, 'src/index.js'), 'utf8'), /app\.use\('\/verification', require\('\.\/routes\/verification'\)\)/);
+assert.match(fs.readFileSync(path.join(__dirname, '..', 'src/index.js'), 'utf8'), /app\.use\('\/verification', require\('\.\/routes\/verification'\)\)/);
 process.env.EMAIL_TOKEN_SECRET = 'verification-test-only-secret';
 process.env.JWT_SECRET = 'access-test-only-secret';
-const Teacher = require('./src/models/Teacher');
-const Audit = require('./src/models/AuthAuditLog');
-const Refresh = require('./src/models/RefreshToken');
+const Teacher = require('../src/models/Teacher');
+const Audit = require('../src/models/AuthAuditLog');
+const Refresh = require('../src/models/RefreshToken');
 const bcrypt = require('bcrypt');
-const mail = require('./src/services/mail');
-const strategy = require('./src/services/verification');
-const auth = require('./src/routes/auth');
-const verification = require('./src/routes/verification');
+const mail = require('../src/services/mail');
+const strategy = require('../src/services/verification');
+const auth = require('../src/routes/auth');
+const verification = require('../src/routes/verification');
 const handler = (router, path) => router.stack.find(x => x.route?.path === path).route.stack.at(-1).handle;
 const response = () => ({ statusCode: 200, status(n){this.statusCode=n;return this;},json(data){this.data=data;return this;},cookie(){return this;} });
 async function call(router,path,body){const res=response();await handler(router,path)({body,headers:{},ip:'127.0.0.1'},res);return res;}
@@ -35,7 +35,7 @@ async function call(router,path,body){const res=response();await handler(router,
  res=await call(auth,'/login',{email:'teacher@example.com',password:'Password1'});assert.equal(res.statusCode,403);
  Teacher.findOne=async()=>({passwordHash:'hash',emailVerified:false});
  res=await call(auth,'/login',{email:'teacher@example.com',password:'Password1'});assert.equal(res.statusCode,403);
- const policy = require('./src/utils/emailVerification');
+ const policy = require('../src/utils/emailVerification');
  assert.equal(policy.needsVerification({emailVerified:false}),true);
  assert.equal(policy.needsVerification({emailVerified:false,emailVerificationRequired:false}),true);
  assert.equal(policy.needsVerification({emailVerified:true,emailVerificationRequired:true}),false);

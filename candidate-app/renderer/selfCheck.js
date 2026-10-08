@@ -22,7 +22,7 @@ let displayPassed = false;
 let devVoiceEnabled = true;
 let canSkipVoice = false;
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOMContentLoaded event and updates the associated screen or process state. */ async () => {
   try {
     let sessionInfo = null;
     try {
@@ -40,14 +40,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       control.className = 'check-item';
       control.innerHTML = '<label style="display:flex;align-items:center;gap:12px"><input id="dev-voice-toggle" type="checkbox" checked> Voice monitoring (development presentation)</label><p>Turn off to skip microphone and speaker comparison. Camera and environment checks stay enabled.</p>';
       document.getElementById('check-mic').before(control);
-      control.querySelector('input').addEventListener('change', (event) => {
+      control.querySelector('input').addEventListener('change', /* Function purpose: Handles the change event and updates the associated screen or process state. */ (event) => {
         if (voiceCheckBusy || audioCheckBusy) {
           event.target.checked = devVoiceEnabled;
           alert('Finish the current audio check before changing voice monitoring.');
           return;
         }
         devVoiceEnabled = event.target.checked;
-        ['check-mic', 'check-voice'].forEach(id => { document.getElementById(id).style.display = devVoiceEnabled ? '' : 'none'; });
+        ['check-mic', 'check-voice'].forEach(/* Function purpose: Runs document.getElementById as part of this callback’s processing. */ id => { document.getElementById(id).style.display = devVoiceEnabled ? '' : 'none'; });
         updateBeginButton();
       });
     }
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       micPassed = true;
       voicePassed = true;
 
-      ['check-camera', 'check-mic', 'check-voice'].forEach(id => {
+      ['check-camera', 'check-mic', 'check-voice'].forEach(/* Function purpose: Runs document.getElementById as part of this callback’s processing. */ id => {
         const el = document.getElementById(id);
         if (el) {
           const icon = el.querySelector('.status-icon');
@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Display teacher-allowed applications if configured
     const allowedNotice = document.getElementById('allowed-apps-notice');
     if (allowedNotice && sessionInfo && sessionInfo.allowedApplications && sessionInfo.allowedApplications.length > 0) {
-      const appNames = sessionInfo.allowedApplications.map(a => a.name || a.executable).join(', ');
+      const appNames = sessionInfo.allowedApplications.map(/* Function purpose: Transforms each entry into the value needed by this operation. */ a => a.name || a.executable).join(', ');
       allowedNotice.innerHTML = `<strong>Permitted Tools for this exam:</strong> ${appNames}`;
       allowedNotice.style.display = 'block';
     }
@@ -100,10 +100,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+// Function purpose: Enables exam entry only when the required self-checks have passed.
 function updateBeginButton() {
   btnBegin.disabled = !(cameraPassed && (canSkipVoice && !devVoiceEnabled || micPassed && voicePassed) && appsPassed && usbPassed && displayPassed);
 }
 
+// Function purpose: Uploads the initial candidate camera photo for examiner verification.
 async function uploadCameraVerificationSnapshot(video) {
   try {
     let sessionInfo = null;
@@ -142,6 +144,7 @@ async function uploadCameraVerificationSnapshot(video) {
   }
 }
 
+// Function purpose: Updates the visible result of a self-check.
 function setStatus(id, status, errorMsg = '') {
   const container = document.getElementById(id);
   const icon = container.querySelector('.status-icon');
@@ -169,6 +172,7 @@ let activeCameraStream = null;
 let faceAlignmentInterval = null;
 let isFaceProperlyAligned = false;
 
+// Function purpose: Checks face position repeatedly to guide a properly centered identity photo.
 function startFaceAlignmentTracking(video) {
   if (faceAlignmentInterval) clearInterval(faceAlignmentInterval);
 
@@ -184,7 +188,7 @@ function startFaceAlignmentTracking(video) {
   let isChecking = false;
   let centeredChecks = 0;
 
-  faceAlignmentInterval = setInterval(async () => {
+  faceAlignmentInterval = setInterval(/* Function purpose: Runs the periodic check or screen update at the configured interval. */ async () => {
     if (!activeCameraStream || cameraPassed || !video || video.readyState < 2 || isChecking) return;
     isChecking = true;
 
@@ -316,14 +320,14 @@ function startFaceAlignmentTracking(video) {
   }, 160);
 }
 
-btnCamera.addEventListener('click', async () => {
+btnCamera.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
   btnCamera.disabled = true;
   btnCamera.textContent = 'Opening Camera...';
 
   // Cleanly release any prior active stream in the page
   if (activeCameraStream) {
     try {
-      activeCameraStream.getTracks().forEach(t => t.stop());
+      activeCameraStream.getTracks().forEach(/* Function purpose: Runs t.stop as part of this callback’s processing. */ t => t.stop());
     } catch (e) {}
     activeCameraStream = null;
   }
@@ -333,8 +337,8 @@ btnCamera.addEventListener('click', async () => {
       throw new Error('MediaDevices API is not supported in this browser window.');
     }
 
-    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(/* Function purpose: Handles a rejected asynchronous operation and reports or recovers from its failure. */ () => []);
+    const videoDevices = devices.filter(/* Function purpose: Selects the entries that satisfy the condition used by this operation. */ d => d.kind === 'videoinput');
     console.log('[SelfCheck] Detected video devices:', videoDevices);
 
     let stream = null;
@@ -390,7 +394,7 @@ btnCamera.addEventListener('click', async () => {
       if (video.readyState >= 2) {
         startFaceAlignmentTracking(video);
       } else {
-        video.onloadedmetadata = () => startFaceAlignmentTracking(video);
+        video.onloadedmetadata = /* Function purpose: Handles interaction with video.onloadedmetadata. */ () => startFaceAlignmentTracking(video);
       }
     }
 
@@ -423,7 +427,7 @@ btnCamera.addEventListener('click', async () => {
 });
 
 if (btnCaptureCalibration) {
-  btnCaptureCalibration.addEventListener('click', async () => {
+  btnCaptureCalibration.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
     const video = document.getElementById('camera-preview');
     const guideEllipse = document.getElementById('face-guide-ellipse');
     const guideText = document.getElementById('camera-guide-text');
@@ -503,7 +507,7 @@ if (btnCaptureCalibration) {
 
 let audioCheckBusy = false;
 let voiceCheckBusy = false;
-btnMic.addEventListener('click', async () => {
+btnMic.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
   audioCheckBusy = true;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -518,6 +522,7 @@ btnMic.addEventListener('click', async () => {
     const meter = document.getElementById('mic-level');
     let hasDetectedSound = false;
 
+    // Function purpose: Updates the visible microphone audio-level meter.
     const updateMeter = () => {
       analyser.getByteFrequencyData(dataArray);
       let sum = 0;
@@ -535,7 +540,7 @@ btnMic.addEventListener('click', async () => {
         updateBeginButton();
         btnMic.disabled = true;
         btnMic.textContent = 'Microphone OK';
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(/* Function purpose: Runs track.stop as part of this callback’s processing. */ track => track.stop());
         microphone.disconnect();
         audioContext.close().catch(console.error);
       }
@@ -551,10 +556,12 @@ btnMic.addEventListener('click', async () => {
   }
 });
 
+// Function purpose: Encodes recorded PCM samples as a WAV file for voice enrollment.
 function encodeWAV(samples, sampleRate = 16000) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
 
+  // Function purpose: Writes the WAV header text into the audio byte buffer.
   function writeString(view, offset, string) {
     for (let i = 0; i < string.length; i++) {
       view.setUint8(offset + i, string.charCodeAt(i));
@@ -584,6 +591,7 @@ function encodeWAV(samples, sampleRate = 16000) {
   return buffer;
 }
 
+// Function purpose: Converts binary audio into base64 for transport to the backend.
 function arrayBufferToBase64(buffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -594,6 +602,7 @@ function arrayBufferToBase64(buffer) {
   return window.btoa(binary);
 }
 
+// Function purpose: Records a microphone sample for the voice self-check.
 async function recordVoiceSample(durationSeconds = 8) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   const microphoneLabel = stream.getAudioTracks()[0].label;
@@ -603,7 +612,7 @@ async function recordVoiceSample(durationSeconds = 8) {
   const scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
 
   const recordedChunks = [];
-  scriptNode.onaudioprocess = (e) => {
+  scriptNode.onaudioprocess = /* Function purpose: Handles interaction with scriptNode.onaudioprocess. */ (e) => {
     const inputData = e.inputBuffer.getChannelData(0);
     recordedChunks.push(new Float32Array(inputData));
   };
@@ -621,13 +630,13 @@ async function recordVoiceSample(durationSeconds = 8) {
   try {
     for (let s = durationSeconds; s > 0; s--) {
       if (countdownEl) countdownEl.textContent = `${s}s`;
-      await new Promise(res => setTimeout(res, 1000));
+      await new Promise(/* Function purpose: Runs setTimeout as part of this callback’s processing. */ res => setTimeout(res, 1000));
     }
     if (countdownEl) countdownEl.textContent = 'Processing...';
   } finally {
     source.disconnect();
     scriptNode.disconnect();
-    stream.getTracks().forEach(t => t.stop());
+    stream.getTracks().forEach(/* Function purpose: Runs t.stop as part of this callback’s processing. */ t => t.stop());
     await audioContext.close();
   }
 
@@ -662,6 +671,7 @@ async function recordVoiceSample(durationSeconds = 8) {
   return { audio: 'data:audio/wav;base64,' + base64Wav, microphoneLabel };
 }
 
+// Function purpose: Runs voice recording and enrollment, then updates the self-check result.
 async function handleVoiceRecord() {
   voiceCheckBusy = true;
   const statusBox = document.getElementById('voice-recording-status');
@@ -679,7 +689,7 @@ async function handleVoiceRecord() {
   try {
     const sample = await recordVoiceSample(8);
     if (statusBox) statusBox.textContent = 'Confirmation: repeat the phrase naturally after the countdown.';
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(/* Function purpose: Runs setTimeout as part of this callback’s processing. */ resolve => setTimeout(resolve, 2000));
     const confirmation = await recordVoiceSample(4);
     if (sample.microphoneLabel !== confirmation.microphoneLabel) throw new Error('Microphone changed between recordings.');
     if (statusBox) statusBox.textContent = 'Calibrating speaker embedding profile...';
@@ -731,7 +741,7 @@ if (btnRecordVoice) {
 }
 
 if (btnRecordAgainVoice) {
-  btnRecordAgainVoice.addEventListener('click', () => {
+  btnRecordAgainVoice.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ () => {
     if (btnRecordVoice) {
       btnRecordVoice.disabled = false;
       btnRecordVoice.textContent = '🎙️ Record Voice Sample (4s)';
@@ -747,7 +757,7 @@ if (btnRecordAgainVoice) {
 }
 
 
-btnApps.addEventListener('click', async () => {
+btnApps.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
   try {
     setStatus('check-apps', 'pending');
     btnApps.textContent = 'Checking...';
@@ -778,7 +788,7 @@ btnApps.addEventListener('click', async () => {
       explanation.style.marginBottom = '0.5rem';
       list.appendChild(explanation);
 
-      apps.forEach(app => {
+      apps.forEach(/* Function purpose: Runs document.createElement as part of this callback’s processing. */ app => {
         const li = document.createElement('li');
         li.style.display = 'flex';
         li.style.justifyContent = 'space-between';
@@ -798,7 +808,7 @@ btnApps.addEventListener('click', async () => {
         closeBtn.style.fontSize = '12px';
         closeBtn.style.backgroundColor = '#ef4444';
 
-        closeBtn.onclick = async () => {
+        closeBtn.onclick = /* Function purpose: Handles interaction with closeBtn.onclick. */ async () => {
            closeBtn.disabled = true;
            closeBtn.textContent = 'Closing...';
            const result = await window.api.killApp(app.name);
@@ -826,7 +836,7 @@ btnApps.addEventListener('click', async () => {
   }
 });
 
-btnUsb.addEventListener('click', async () => {
+btnUsb.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
   try {
     setStatus('check-usb', 'pending');
     btnUsb.textContent = 'Scanning USB Drives...';
@@ -856,7 +866,7 @@ btnUsb.addEventListener('click', async () => {
       explanation.style.marginBottom = '0.5rem';
       list.appendChild(explanation);
 
-      drives.forEach(drive => {
+      drives.forEach(/* Function purpose: Runs document.createElement as part of this callback’s processing. */ drive => {
         const li = document.createElement('li');
         li.style.marginBottom = '6px';
         li.style.padding = '8px';
@@ -882,7 +892,7 @@ btnUsb.addEventListener('click', async () => {
   }
 });
 
-btnDisplay.addEventListener('click', async () => {
+btnDisplay.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
   try {
     setStatus('check-display', 'pending');
     btnDisplay.textContent = 'Checking Displays...';
@@ -911,12 +921,12 @@ btnDisplay.addEventListener('click', async () => {
   }
 });
 
-btnBegin.addEventListener('click', async () => {
+btnBegin.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
     btnBegin.disabled = true;
     btnBegin.textContent = 'Starting Exam Mode...';
     try {
         if (activeCameraStream) {
-            activeCameraStream.getTracks().forEach(track => track.stop());
+            activeCameraStream.getTracks().forEach(/* Function purpose: Runs track.stop as part of this callback’s processing. */ track => track.stop());
             activeCameraStream = null;
         }
         const result = await window.api.startExamMode({ voiceEnabled: !canSkipVoice || devVoiceEnabled });

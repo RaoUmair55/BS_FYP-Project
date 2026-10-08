@@ -1,7 +1,7 @@
 // Exercise the actual grouping helper without rendering or network access.
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync(require('node:path').join(__dirname, 'src/components/PriorityQueue.jsx'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'src/components/PriorityQueue.jsx'), 'utf8');
 const body = source.slice(source.indexOf('export function groupViolationsList'), source.indexOf('export default function PriorityQueue'));
 const group = new Function(`${body.replace('export function', 'function')}; return groupViolationsList;`)();
 const old = { _id: 'a', sessionId: 'session', type: 'second_voice_detected', timestamp: '2026-10-06T10:00:00Z', audioPath: '/uploads/audio_clips/old.wav', details: { audioPath: 'D:\\local.wav' } };

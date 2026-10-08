@@ -8,14 +8,14 @@ const Module = require('node:module');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const mongoose = require('mongoose');
-const Session = require('./src/models/Session');
-const Violation = require('./src/models/Violation');
-const Exam = require('./src/models/Exam');
-const Submission = require('./src/models/Submission');
-const storage = require('./src/services/storage');
-const socketApi = require('./src/sockets/violationSocket');
-const audit = require('./src/utils/auditLogger');
-const { calculateRiskScore } = require('./src/scoring/severityEngine');
+const Session = require('../src/models/Session');
+const Violation = require('../src/models/Violation');
+const Exam = require('../src/models/Exam');
+const Submission = require('../src/models/Submission');
+const storage = require('../src/services/storage');
+const socketApi = require('../src/sockets/violationSocket');
+const audit = require('../src/utils/auditLogger');
+const { calculateRiskScore } = require('../src/scoring/severityEngine');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'integrityflow-late-'));
 const saved = new Map();
@@ -82,8 +82,8 @@ for (const name of ['broadcastViolation', 'broadcastRiskScoreUpdate', 'broadcast
     replace(socketApi, name, (...args) => socketEvents.push([name, ...args]));
 }
 replace(audit, 'logTeacherAction', async () => {});
-const violationsRouter = require('./src/routes/violations');
-const examRouter = require('./src/routes/exams');
+const violationsRouter = require('../src/routes/violations');
+const examRouter = require('../src/routes/exams');
 const payload = (overrides = {}) => ({ sessionId, type: 'head_turn_away', severity: 2,
     timestamp: new Date(now - 120000).toISOString(), details: {}, ...overrides });
 
@@ -120,8 +120,8 @@ async function main() {
         return load.call(this,name,...args);
     };
     try {
-        bridge = require('../candidate-app/electron/ipc/pythonBridge');
-        buffer = require('../candidate-app/electron/ipc/violationBuffer');
+        bridge = require('../../candidate-app/electron/ipc/pythonBridge');
+        buffer = require('../../candidate-app/electron/ipc/violationBuffer');
     } finally { Module._load=load; }
     bridge.setExamActive(true);
 

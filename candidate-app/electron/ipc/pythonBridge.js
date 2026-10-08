@@ -19,10 +19,12 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 let pythonPort = null;
 let lastHealthError = '';
+// Function purpose: Stores the dynamically assigned port used to contact the local Python backend.
 function setPythonPort(port) {
   pythonPort = port;
   lastHealthError = '';
 }
+// Function purpose: Builds the local Python URL using the current backend port.
 function getPythonUrl() {
   if (!Number.isInteger(pythonPort) || pythonPort < 1 || pythonPort > 65535) throw new Error('AI module is not ready. Retry the system check.');
   return `http://127.0.0.1:${pythonPort}`;
@@ -35,15 +37,18 @@ let statusChangeCallback = null;
 let isExamActive = false;
 let bufferDrainRunning = false;
 
+// Function purpose: Updates whether exam monitoring is currently active.
 function setExamActive(active) {
   isExamActive = Boolean(active);
   console.log(`[PythonBridge] Active exam state updated to: ${isExamActive}`);
 }
 
+// Function purpose: Returns whether the candidate is currently in an active exam.
 function getExamActive() {
   return isExamActive;
 }
 
+// Function purpose: Checks whether the local Python backend is reachable and reports its health.
 async function checkPythonHealth(instanceId) {
   try {
     const response = await axios.get(`${getPythonUrl()}/health`, {
@@ -65,6 +70,7 @@ async function checkPythonHealth(instanceId) {
  * @param {Object} violationPayload
  * @returns {Promise<boolean>}
  */
+// Function purpose: Attempts to deliver a violation directly to the exam server.
 async function sendViolationDirect(violationPayload) {
   // Assign once before delivery so buffering preserves the same event on a lost acknowledgement.
   violationPayload.eventId ||= randomUUID();
@@ -136,6 +142,7 @@ async function sendViolationDirect(violationPayload) {
  * @param {Object} violationPayload
  * @returns {Promise<boolean>}
  */
+// Function purpose: Forwards a monitoring event to the server and preserves it for retry if delivery fails.
 async function forwardViolationToServer(violationPayload, durableFirst = false) {
   if (!isExamActive && !durableFirst) {
     console.log(`[PythonBridge] Pre-exam violation ignored: ${violationPayload?.type} (Exam not started yet)`);
@@ -148,7 +155,7 @@ async function forwardViolationToServer(violationPayload, durableFirst = false) 
       violationPayload.timestamp ||= new Date().toISOString();
       violationBuffer.enqueue(violationPayload, violationPayload.screenshotPath);
       notifyStatusChange();
-      setImmediate(() => processOfflineBuffer());
+      setImmediate(/* Function purpose: Runs processOfflineBuffer as part of this callback’s processing. */ () => processOfflineBuffer());
       return true;
     } catch (error) {
       console.error('[PythonBridge] Could not persist incoming alert:', error);
@@ -183,6 +190,7 @@ async function forwardViolationToServer(violationPayload, durableFirst = false) 
 /**
  * Executes a single drainage pass over the offline buffer, oldest first.
  */
+// Function purpose: Retries pending locally stored violations without losing their event identity.
 async function processOfflineBuffer() {
   if (bufferDrainRunning) return;
   bufferDrainRunning = true;
@@ -252,6 +260,7 @@ async function processOfflineBuffer() {
   } finally { bufferDrainRunning = false; }
 }
 
+// Function purpose: Notifies the renderer when the offline delivery status changes.
 function notifyStatusChange() {
   if (statusChangeCallback) {
     try {
@@ -267,6 +276,7 @@ function notifyStatusChange() {
  * @param {number} intervalMs - Interval in milliseconds (default 12s)
  * @param {Function|null} onStatus - Optional callback on buffer state change
  */
+// Function purpose: Starts periodic retries for violations saved during connection failures.
 function startBufferRetryLoop(intervalMs = 12000, onStatus = null) {
   if (onStatus) {
     statusChangeCallback = onStatus;
@@ -278,13 +288,14 @@ function startBufferRetryLoop(intervalMs = 12000, onStatus = null) {
   // Run initial pass immediately
   processOfflineBuffer();
 
-  retryIntervalTimer = setInterval(() => {
+  retryIntervalTimer = setInterval(/* Function purpose: Runs the periodic check or screen update at the configured interval. */ () => {
     processOfflineBuffer();
   }, intervalMs);
 
   console.log(`[ViolationBuffer] Background offline retry loop started (interval: ${intervalMs / 1000}s).`);
 }
 
+// Function purpose: Stops the background violation retry timer.
 function stopBufferRetryLoop() {
   if (retryIntervalTimer) {
     clearInterval(retryIntervalTimer);
@@ -293,6 +304,7 @@ function stopBufferRetryLoop() {
   }
 }
 
+// Function purpose: Requests termination of the specified application.
 async function killApp(name) {
   try {
     const response = await axios.post(`${getPythonUrl()}/kill-app`, { name }, { timeout: 3000, proxy: false });
@@ -306,7 +318,7 @@ async function killApp(name) {
 module.exports = {
   setPythonPort,
   getPythonUrl,
-  getLastPythonHealthError: () => lastHealthError,
+  getLastPythonHealthError: /* Function purpose: Returns the last recorded Python health-check failure for diagnostics. */ () => lastHealthError,
   checkPythonHealth,
   forwardViolationToServer,
   sendViolationDirect,

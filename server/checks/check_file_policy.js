@@ -1,7 +1,7 @@
 // Read-only model/route doubles: exact teacher-approved paths survive create + candidate lookup.
 const assert = require('node:assert/strict');
-const Exam = require('./src/models/Exam');
-const audit = require('./src/utils/auditLogger');
+const Exam = require('../src/models/Exam');
+const audit = require('../src/utils/auditLogger');
 const oldFind = Exam.findOne;
 const oldSave = Exam.prototype.save;
 const oldLog = audit.logTeacherAction;
@@ -9,7 +9,7 @@ let saved;
 Exam.findOne = async () => null;
 Exam.prototype.save = async function () { saved = this; return this; };
 audit.logTeacherAction = async () => {};
-const router = require('./src/routes/exams');
+const router = require('../src/routes/exams');
 const create = router.stack.find(layer => layer.route?.path === '/' && layer.route.methods.post).route.stack.at(-1).handle;
 async function call(paths) {
   let result;

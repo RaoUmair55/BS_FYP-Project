@@ -23,14 +23,17 @@ class WebcamCaptureProvider(CaptureProvider):
     as a JPEG (<200KB) to the screenshots evidence directory with microsecond timestamps.
     """
 
+    # Function purpose: Initializes this component’s configuration, state and dependencies.
     def __init__(self, screenshot_dir: str = SCREENSHOT_DIR):
         self.screenshot_dir = screenshot_dir
         self._ensure_directory()
 
+    # Function purpose: Creates the evidence output directory if it does not already exist.
     def _ensure_directory(self):
         if not os.path.exists(self.screenshot_dir):
             os.makedirs(self.screenshot_dir, exist_ok=True)
 
+    # Function purpose: Saves the provided webcam frame to the evidence folder.
     def capture(self, session_id: str, violation_type: str, frame: Optional[Any] = None) -> Optional[str]:
         """
         Saves the provided webcam frame to the evidence folder.

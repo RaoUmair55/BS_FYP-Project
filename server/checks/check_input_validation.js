@@ -3,10 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { nameSchema, rollNumberSchema, examCodeSchema, emailSchema, passwordSchema } = require('./src/utils/inputValidation');
+const { nameSchema, rollNumberSchema, examCodeSchema, emailSchema, passwordSchema } = require('../src/utils/inputValidation');
 
 async function main() {
-    const frontend = await import('../dashboard/src/utils/inputValidation.js');
+    const frontend = await import('../../dashboard/src/utils/inputValidation.js');
     for (const name of ['Rao Umair Ahmed', "O'Connor", 'Anne-Marie', 'محمد عثمان', 'José García']) {
         assert(nameSchema.safeParse(name).success, name);
         assert(frontend.validName(name), name);
@@ -33,7 +33,7 @@ async function main() {
     assert(!passwordSchema.safeParse(oversized).success);
     assert(!frontend.validPasswordSize(oversized));
 
-    const source = fs.readFileSync(path.join(__dirname, '../candidate-app/renderer/identity.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', '../candidate-app/renderer/identity.js'), 'utf8');
     for (const [name, roll, expected] of [['12345','233163',0], ['--','233163',0], ['Umair','---',0], ['محمد عثمان','233163',1], ['Rao Umair Ahmed','FA20-BCS-042',1]]) {
         let ready, calls = 0;
         const elements = new Map();
@@ -54,7 +54,7 @@ async function main() {
         assert.equal(calls,expected,`${name}/${roll}`);
         if (expected) { await element('btnSubmitIdentity').listeners.click(); assert.equal(calls,1,'duplicate submission prevented'); }
     }
-    const login = fs.readFileSync(path.join(__dirname, '../candidate-app/renderer/login.js'),'utf8');
+    const login = fs.readFileSync(path.join(__dirname, '..', '../candidate-app/renderer/login.js'),'utf8');
     for (const code of ['', '---', 'EXAM 101', 'X'.repeat(33)]) {
         let calls=0;
         const fields = {examId:{value:code,focus(){},setAttribute(){},addEventListener(){}},loginBtn:{addEventListener(){}},errorMsg:{}};

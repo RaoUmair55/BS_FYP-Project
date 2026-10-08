@@ -26,14 +26,17 @@ class MssCaptureProvider(CaptureProvider):
     and saves to the local screenshots directory with microsecond timestamps.
     """
 
+    # Function purpose: Initializes this component’s configuration, state and dependencies.
     def __init__(self, screenshot_dir: str = SCREENSHOT_DIR):
         self.screenshot_dir = screenshot_dir
         self._ensure_directory()
 
+    # Function purpose: Creates the evidence output directory if it does not already exist.
     def _ensure_directory(self):
         if not os.path.exists(self.screenshot_dir):
             os.makedirs(self.screenshot_dir, exist_ok=True)
 
+    # Function purpose: Captures the desktop, compresses the JPEG and saves it with session and event identifiers.
     def capture(self, session_id: str, violation_type: str) -> Optional[str]:
         """
         Captures the full screen, compresses it to JPEG (targeting <200KB),
