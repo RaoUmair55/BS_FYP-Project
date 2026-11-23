@@ -11,6 +11,11 @@ const { requireAuth, requireRole } = require('../middleware/authMiddleware');
 const storageService = require('../services/storage');
 const { deletePhotoHistory } = require('../utils/cameraPhotos');
 const { logTeacherAction } = require('../utils/auditLogger');
+const scoringStrategy = require('../services/scoring');
+
+function escapeRegex(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // All admin routes strictly require 'admin' role
 router.use(requireAuth, requireRole('admin'));
@@ -80,8 +85,25 @@ router.get('/stats', async (req, res) => {
 
         const totalAssets = papersCount + verificationCount + screenshotsCount + submissionsWithFileCount;
 
-        // High risk candidate sessions (risk score >= 60)
-        const highRiskSessionsCount = await Session.countDocuments({ riskScore: { $gte: 60 } });
+        // High risk candidate sessions (dynamically computed risk score >= 60)
+        const nonDismissedViolations = await Violation.find({
+            decision: { $ne: 'dismissed' }
+        }).select('sessionId severity timestamp receivedLate decision').lean();
+        const violationsBySession = new Map();
+        for (const v of nonDismissedViolations) {
+            if (!v.sessionId) continue;
+            if (v.receivedLate && v.decision !== 'confirmed') continue;
+            if (!violationsBySession.has(v.sessionId)) {
+                violationsBySession.set(v.sessionId, []);
+            }
+            violationsBySession.get(v.sessionId).push(v);
+        }
+        let highRiskSessionsCount = 0;
+        for (const sessionViolations of violationsBySession.values()) {
+            if (scoringStrategy.calculateScore(sessionViolations) >= 60) {
+                highRiskSessionsCount += 1;
+            }
+        }
 
         res.json({
             overview: {
@@ -137,17 +159,22 @@ router.get('/assets', async (req, res) => {
 
         // 1. Fetch Question Papers
         if (type === 'all' || type === 'papers') {
-            const query = { paperPath: { $ne: null, $exists: true } };
+            const andClauses = [{ paperPath: { $ne: null, $exists: true } }];
             if (examId) {
-                query.$or = [{ examId: new RegExp('^' + examId + '$', 'i') }, { examCode: new RegExp('^' + examId + '$', 'i') }];
+                const safeExamId = escapeRegex(examId);
+                andClauses.push({ $or: [{ examId: new RegExp('^' + safeExamId + '$', 'i') }, { examCode: new RegExp('^' + safeExamId + '$', 'i') }] });
             }
             if (search) {
-                query.$or = [
-                    { title: new RegExp(search, 'i') },
-                    { examCode: new RegExp(search, 'i') },
-                    { paperFilename: new RegExp(search, 'i') }
-                ];
+                const safeSearch = escapeRegex(search);
+                andClauses.push({
+                    $or: [
+                        { title: new RegExp(safeSearch, 'i') },
+                        { examCode: new RegExp(safeSearch, 'i') },
+                        { paperFilename: new RegExp(safeSearch, 'i') }
+                    ]
+                });
             }
+            const query = andClauses.length === 1 ? andClauses[0] : { $and: andClauses };
             const exams = await Exam.find(query).sort({ createdAt: -1 }).limit(200);
             exams.forEach(e => {
                 items.push({
@@ -170,16 +197,17 @@ router.get('/assets', async (req, res) => {
         if (type === 'all' || type === 'verification') {
             const query = { cameraVerificationPhoto: { $ne: null, $exists: true } };
             if (examId) {
-                query.examId = new RegExp('^' + examId + '$', 'i');
+                query.examId = new RegExp('^' + escapeRegex(examId) + '$', 'i');
             }
             if (search) {
+                const safeSearch = escapeRegex(search);
                 query.$or = [
-                    { studentName: new RegExp(search, 'i') },
-                    { rollNumber: new RegExp(search, 'i') },
-                    { studentId: new RegExp(search, 'i') }
+                    { studentName: new RegExp(safeSearch, 'i') },
+                    { rollNumber: new RegExp(safeSearch, 'i') },
+                    { studentId: new RegExp(safeSearch, 'i') }
                 ];
             }
-            const sessions = await Session.find(query).sort({ createdAt: -1 }).limit(200);
+            const sessions = await Session.find(query).sort({ startTime: -1 }).limit(200);
             sessions.forEach(s => {
                 items.push({
                     id: s._id.toString(),
@@ -187,12 +215,12 @@ router.get('/assets', async (req, res) => {
                     title: `Verification Photo: ${s.studentName || 'Candidate'}`,
                     filename: `verify_${s._id}.jpg`,
                     url: s.cameraVerificationPhoto,
-                    createdAt: s.createdAt,
+                    createdAt: s.startTime,
                     examId: s.examId,
                     examTitle: s.examId,
                     candidateName: s.studentName || s.studentId || 'Candidate',
                     rollNumber: s.rollNumber || null,
-                    meta: { photoCount: (s.cameraPhotos || []).length || 1, verificationStatus: s.cameraVerificationStatus, sessionStatus: s.status, riskScore: s.riskScore }
+                    meta: { photoCount: (s.cameraPhotos || []).length || 1, verificationStatus: s.cameraVerificationStatus, sessionStatus: s.status }
                 });
             });
         }
@@ -244,35 +272,48 @@ router.get('/assets', async (req, res) => {
 
         // 4. Fetch Submissions
         if (type === 'all' || type === 'submissions') {
-            const query = { filePath: { $ne: null, $exists: true } };
-            if (examId) query.examId = new RegExp('^' + examId + '$', 'i');
-            if (search) {
-                query.$or = [
-                    { studentName: new RegExp(search, 'i') },
-                    { rollNumber: new RegExp(search, 'i') },
-                    { filename: new RegExp(search, 'i') }
-                ];
-            }
-            const submissions = await Submission.find(query).sort({ uploadedAt: -1 }).limit(200);
+            const submissions = await Submission.find({ filePath: { $ne: null, $exists: true } }).sort({ uploadedAt: -1 }).limit(200);
+
+            const subSessionIds = [...new Set(submissions.map(sub => sub.sessionId).filter(Boolean))];
+            const subSessionDocs = await Session.find({ _id: { $in: subSessionIds.filter(id => mongoose.Types.ObjectId.isValid(id)) } });
+            const subSessionMap = new Map();
+            subSessionDocs.forEach(s => subSessionMap.set(s._id.toString(), s));
+
             submissions.forEach(sub => {
+                const s = subSessionMap.get(String(sub.sessionId));
+                const candName = s?.studentName || s?.studentId || 'Candidate';
+                const rollNum = s?.rollNumber || null;
+                const examCode = s?.examId || 'EXAM';
+
+                if (examId && examCode.toLowerCase() !== examId.toLowerCase()) {
+                    return;
+                }
+                if (search) {
+                    const searchLower = search.toLowerCase();
+                    const matchName = candName.toLowerCase().includes(searchLower);
+                    const matchRoll = (rollNum || '').toLowerCase().includes(searchLower);
+                    const matchFile = (sub.filename || '').toLowerCase().includes(searchLower);
+                    if (!matchName && !matchRoll && !matchFile) return;
+                }
+
                 items.push({
                     id: sub._id.toString(),
                     assetType: 'submission',
-                    title: `Candidate Submission: ${sub.studentName || 'Candidate'}`,
+                    title: `Candidate Submission: ${candName}`,
                     filename: sub.filename || 'submission.zip',
                     url: sub.filePath,
-                    createdAt: sub.submittedAt,
-                    examId: sub.examId,
-                    examTitle: sub.examId,
-                    candidateName: sub.studentName,
-                    rollNumber: sub.rollNumber,
+                    createdAt: sub.uploadedAt,
+                    examId: examCode,
+                    examTitle: examCode,
+                    candidateName: candName,
+                    rollNumber: rollNum,
                     meta: { size: sub.fileSize, submissionStatus: sub.submissionType }
                 });
             });
         }
 
-        // Sort all items descending by createdAt
-        items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        // Sort all items descending by createdAt (safely handling missing timestamps)
+        items.sort((a, b) => (new Date(b.createdAt || 0).getTime() || 0) - (new Date(a.createdAt || 0).getTime() || 0));
 
         const totalItems = items.length;
         const startIndex = (pageNum - 1) * limitNum;
@@ -579,27 +620,35 @@ router.get('/audit-logs', async (req, res) => {
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
 
-        const query = {};
-        if (action) query.action = action;
+        const andClauses = [];
+        if (action) andClauses.push({ action });
         if (teacher) {
-            query.$or = [
-                { teacherName: new RegExp(teacher, 'i') },
-                { teacherEmail: new RegExp(teacher, 'i') }
-            ];
+            const safeTeacher = escapeRegex(teacher);
+            andClauses.push({
+                $or: [
+                    { teacherName: new RegExp(safeTeacher, 'i') },
+                    { teacherEmail: new RegExp(safeTeacher, 'i') }
+                ]
+            });
         }
         if (search) {
-            query.$or = [
-                { targetSummary: new RegExp(search, 'i') },
-                { action: new RegExp(search, 'i') },
-                { teacherName: new RegExp(search, 'i') },
-                { teacherEmail: new RegExp(search, 'i') }
-            ];
+            const safeSearch = escapeRegex(search);
+            andClauses.push({
+                $or: [
+                    { targetSummary: new RegExp(safeSearch, 'i') },
+                    { action: new RegExp(safeSearch, 'i') },
+                    { teacherName: new RegExp(safeSearch, 'i') },
+                    { teacherEmail: new RegExp(safeSearch, 'i') }
+                ]
+            });
         }
         if (startDate || endDate) {
-            query.timestamp = {};
-            if (startDate) query.timestamp.$gte = new Date(startDate);
-            if (endDate) query.timestamp.$lte = new Date(endDate);
+            const ts = {};
+            if (startDate) ts.$gte = new Date(startDate);
+            if (endDate) ts.$lte = new Date(endDate);
+            andClauses.push({ timestamp: ts });
         }
+        const query = andClauses.length === 0 ? {} : (andClauses.length === 1 ? andClauses[0] : { $and: andClauses });
 
         const total = await AuditLog.countDocuments(query);
         const logs = await AuditLog.find(query)

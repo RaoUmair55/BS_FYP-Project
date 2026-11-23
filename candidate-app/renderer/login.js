@@ -46,6 +46,7 @@ async function handleLogin() {
     let allowedApplications = [];
     let examType = 'online';
     let rules = {};
+    let requireSecondaryCamera = false;
     // Confirm the exam before starting local monitoring.
     {
       const checkRes = await fetch(`${serverUrl}/exams/code/${encodeURIComponent(examId)}`, { signal: AbortSignal.timeout(15000) });
@@ -58,6 +59,7 @@ async function handleLogin() {
           examType = examData.examType;
         }
         rules = examData.rules || {};
+        requireSecondaryCamera = examData.requireSecondaryCamera === true;
         if (examData.allowedApplications && Array.isArray(examData.allowedApplications)) {
           allowedApplications = examData.allowedApplications;
         }
@@ -75,7 +77,7 @@ async function handleLogin() {
       }
     }
 
-    const entryData = { examId, allowedApplications, examType, rules };
+    const entryData = { examId, allowedApplications, examType, rules, requireSecondaryCamera };
     sessionStorage.setItem('sessionInfo', JSON.stringify(entryData));
     localStorage.setItem('sessionInfo', JSON.stringify(entryData));
 

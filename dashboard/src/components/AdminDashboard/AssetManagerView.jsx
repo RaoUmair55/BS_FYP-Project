@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { assetUrl } from '../../services/api';
+import { getInMemoryToken } from '../../context/AuthContext';
 import { 
     FileText, 
     Image, 
@@ -82,7 +83,7 @@ export default function AssetManagerView({
         if (!item.url) return;
         try {
             const targetUrl = assetUrl(item.url);
-            const token = localStorage.getItem('token');
+            const token = getInMemoryToken();
             const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             const response = await fetch(targetUrl, { headers });
             if (!response.ok) throw new Error('Download failed');

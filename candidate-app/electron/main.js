@@ -8,7 +8,7 @@
  * it owns the active session and monitoring lifecycle.
  */
 let displayCheckInterval = null;
-let devVoiceEnabled = true;
+let devVoiceEnabled = false;
 const { app, BrowserWindow, dialog, ipcMain, screen, clipboard, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -155,7 +155,8 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     EXAM_SESSION_ID: activeSessionInfo.sessionId,
     EXAM_TYPE: activeSessionInfo.examType || 'online',
     APP_MODE: mode,
-    VOICE_MONITORING_ENABLED: mode === 'dev' && !devVoiceEnabled ? 'false' : 'true',
+    // Audio/voice monitoring disabled for now (opt-in via ENABLE_VOICE_MONITORING=true)
+    VOICE_MONITORING_ENABLED: (process.env.ENABLE_VOICE_MONITORING || '').trim().toLowerCase() === 'true' && devVoiceEnabled ? 'true' : 'false',
     IS_SELF_CHECK: isSelfCheck ? 'true' : 'false',
     ALLOWED_APPLICATIONS: JSON.stringify(activeSessionInfo.allowedApplications || []),
     EXAM_RULES: JSON.stringify(activeSessionInfo.rules || {})
@@ -306,11 +307,7 @@ app.on('window-all-closed', /* Function purpose: Handles the window-all-closed e
   }
 });
 
-app.on('before-quit', /* Function purpose: Handles the before-quit event and updates the associated screen or process state. */ () => {
-  console.log('[Electron] Cleaning up processes before quit...');
-  setExamActive(false);
-  stopBufferRetryLoop();
-  cleanUpPythonProcess();
+function cleanupDisplayMonitoring() {
   if (displayAddedListener) {
     screen.removeListener('display-added', displayAddedListener);
     displayAddedListener = null;
@@ -319,6 +316,18 @@ app.on('before-quit', /* Function purpose: Handles the before-quit event and upd
     screen.removeListener('display-removed', displayRemovedListener);
     displayRemovedListener = null;
   }
+  if (displayCheckInterval) {
+    clearInterval(displayCheckInterval);
+    displayCheckInterval = null;
+  }
+}
+
+app.on('before-quit', /* Function purpose: Handles the before-quit event and updates the associated screen or process state. */ () => {
+  console.log('[Electron] Cleaning up processes before quit...');
+  setExamActive(false);
+  stopBufferRetryLoop();
+  cleanUpPythonProcess();
+  cleanupDisplayMonitoring();
   stopReceiver();
 });
 
@@ -360,7 +369,7 @@ ipcMain.on('test-violation', /* Function purpose: Forwards a development test ev
 // Check apps via Python
 ipcMain.handle('check-apps', /* Function purpose: Asks Python which running applications violate the exam whitelist. */ async () => {
   try {
-    const response = await fetch(`${getPythonUrl()}/check-apps`, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${getPythonUrl()}/check-apps`, { signal: AbortSignal.timeout(12000) });
     if (!response.ok) return { error: 'App check unavailable' };
     return await response.json();
   } catch (error) {
@@ -372,7 +381,7 @@ ipcMain.handle('check-apps', /* Function purpose: Asks Python which running appl
 // Check USB removable storage drives via Python
 ipcMain.handle('check-usb-drives', /* Function purpose: Asks Python for removable drives during the candidate self-check. */ async () => {
   try {
-    const response = await fetch(`${getPythonUrl()}/check-usb`, { signal: AbortSignal.timeout(7000) });
+    const response = await fetch(`${getPythonUrl()}/check-usb`, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) return { error: 'USB check unavailable' };
     return await response.json();
   } catch (error) {
@@ -381,17 +390,23 @@ ipcMain.handle('check-usb-drives', /* Function purpose: Asks Python for removabl
   }
 });
 
-// Function purpose: Counts connected physical displays for the single-display exam restriction.
-function getPhysicalMonitorCount() {
+// Function purpose: Counts connected physical displays asynchronously so Electron's main thread never stalls.
+async function getPhysicalMonitorCount() {
   const electronDisplays = screen.getAllDisplays();
   let count = electronDisplays.length;
 
   if (process.platform === 'win32') {
     try {
-      const { execSync } = require('child_process');
-      const cmd = 'powershell -NoProfile -NonInteractive -Command "@(Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorConnectionParams -ErrorAction SilentlyContinue | Where-Object { $_.Active -eq $true }).Count"';
-      const stdout = execSync(cmd, { timeout: 3000, encoding: 'utf8', windowsHide: true });
-      const wmiCount = parseInt(stdout.trim(), 10);
+      const { execFile } = require('child_process');
+      const stdout = await new Promise((resolve, reject) => {
+        execFile(
+          'powershell',
+          ['-NoProfile', '-NonInteractive', '-Command', '@(Get-CimInstance -Namespace root\\wmi -ClassName WmiMonitorConnectionParams -ErrorAction SilentlyContinue | Where-Object { $_.Active -eq $true }).Count'],
+          { timeout: 4000, windowsHide: true },
+          (err, out) => (err ? reject(err) : resolve(out))
+        );
+      });
+      const wmiCount = parseInt(String(stdout).trim(), 10);
       if (!isNaN(wmiCount) && wmiCount > 0) {
         count = Math.max(count, wmiCount);
       }
@@ -401,10 +416,10 @@ function getPhysicalMonitorCount() {
 }
 
 // Get display count and information via Electron screen module & WMI hardware query
-ipcMain.handle('get-display-count', /* Function purpose: Counts physical monitors and reports whether the single-display requirement is met. */ () => {
+ipcMain.handle('get-display-count', /* Function purpose: Counts physical monitors and reports whether the single-display requirement is met. */ async () => {
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();
-  const totalCount = getPhysicalMonitorCount();
+  const totalCount = await getPhysicalMonitorCount();
   return {
     count: totalCount,
     displays: displays.map(/* Function purpose: Transforms each entry into the value needed by this operation. */ d => ({
@@ -480,6 +495,7 @@ ipcMain.handle('monitoring-health', /* Function purpose: Retrieves the Python mo
 
 ipcMain.handle('finish-exam', /* Function purpose: Marks monitoring inactive and shuts down the exam monitoring process. */ () => {
   setExamActive(false);
+  cleanupDisplayMonitoring();
   cleanUpPythonProcess();
   return { success: true };
 });
@@ -492,23 +508,25 @@ ipcMain.handle('get-session-info', /* Function purpose: Returns the active candi
 let isLoggingIn = false;
 
 // Handle Login / Exam Code Entry
-ipcMain.handle('login', /* Function purpose: Stores validated candidate entry data and begins the exam-specific setup flow. */ async (event, { examId, studentId, studentName, rollNumber, allowedApplications, examType, rules }) => {
+ipcMain.handle('login', /* Function purpose: Stores validated candidate entry data and begins the exam-specific setup flow. */ async (event, { examId, studentId, studentName, rollNumber, allowedApplications, examType, rules, requireSecondaryCamera }) => {
   if (isLoggingIn) {
     console.log('[Electron] Login already in progress, ignoring duplicate invoke');
     return { success: false, error: 'Login in progress' };
   }
   isLoggingIn = true;
-  devVoiceEnabled = true;
+  devVoiceEnabled = false;
   try {
 
     console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
     setExamActive(false);
     activeSessionInfo.sessionId = null;
+    activeSessionInfo.sessionToken = null;
     activeSessionInfo.consentGiven = false;
     activeSessionInfo.consentTimestamp = null;
     activeSessionInfo.examId = examId;
     if (examType) activeSessionInfo.examType = examType;
     activeSessionInfo.rules = rules || {};
+    activeSessionInfo.requireSecondaryCamera = requireSecondaryCamera === true;
     if (studentId) activeSessionInfo.studentId = studentId;
     if (studentName) activeSessionInfo.studentName = studentName;
     if (rollNumber) activeSessionInfo.rollNumber = rollNumber;
@@ -572,9 +590,11 @@ ipcMain.handle('proceed-to-identity', /* Function purpose: Requires explicit con
 
 // Handle Transition from Identity Screen to Self-Check
 ipcMain.handle('proceed-to-self-check', /* Function purpose: Stores identity information and opens the pre-exam self-check screen. */ async (event, identityData) => {
-  console.log('[Electron] Identity captured. Proceeding to Self-Check...', identityData);
+  console.log('[Electron] Identity captured. Proceeding to Self-Check...');
   if (identityData) {
     activeSessionInfo.sessionId = identityData.sessionId;
+    activeSessionInfo.sessionToken = identityData.sessionToken;
+    activeSessionInfo.requireSecondaryCamera = identityData.requireSecondaryCamera === true;
     activeSessionInfo.studentName = identityData.studentName;
     activeSessionInfo.rollNumber = identityData.rollNumber;
     activeSessionInfo.studentId = identityData.studentId || identityData.rollNumber;
@@ -600,24 +620,25 @@ let isStartingExam = false;
 ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring and applies window, display and clipboard restrictions. */ async (event, options = {}) => {
   if (isStartingExam) return { success: false, error: 'Exam startup is already in progress.' };
   isStartingExam = true;
-  devVoiceEnabled = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? options?.voiceEnabled !== false : true;
+  devVoiceEnabled = (process.env.ENABLE_VOICE_MONITORING || '').trim().toLowerCase() === 'true' ? options?.voiceEnabled !== false : false;
   setExamActive(false);
   try {
+    if (activeSessionInfo.requireSecondaryCamera) {
+      const response = await fetch(`${activeSessionInfo.serverUrl}/pairing/start`, {
+        method: 'POST', headers: { Authorization: `Bearer ${activeSessionInfo.sessionToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionInfo.sessionId, prepare: true }), signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error((await response.json()).error || 'Side camera must be verified');
+    }
     console.log('[Electron] Transitioning to Exam Mode...');
     cleanUpPythonProcess();
 
-    // Clean up any existing screen listeners before registering fresh ones
-    if (displayAddedListener) {
-      screen.removeListener('display-added', displayAddedListener);
-      displayAddedListener = null;
-    }
-    if (displayRemovedListener) {
-      screen.removeListener('display-removed', displayRemovedListener);
-      displayRemovedListener = null;
-    }
+    // Clean up any previous display listeners and intervals before re-registering
+    cleanupDisplayMonitoring();
 
     // Register display addition listener for continuous monitoring during active exam
     displayAddedListener = /* Function purpose: Handles interaction with displayAddedListener. */ async (event, newDisplay) => {
+      if (!getExamActive()) return;
       const totalDisplays = screen.getAllDisplays().length;
       console.log(`[Electron] Display change detected during exam! Total displays: ${totalDisplays}, New display ID: ${newDisplay?.id}`);
 
@@ -647,11 +668,13 @@ ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring an
       clearInterval(displayCheckInterval);
       displayCheckInterval = null;
     }
-    // Function purpose: Checks active exams for additional physical displays every four seconds.
+    // Function purpose: Safety-net WMI display check every 20s (display-added event fires instantly at 0ms).
+    let displayScanInFlight = false;
     displayCheckInterval = setInterval(async () => {
+      if (displayScanInFlight || !getExamActive()) return;
+      displayScanInFlight = true;
       try {
-      if (!getExamActive()) return;
-      const currentCount = getPhysicalMonitorCount();
+      const currentCount = await getPhysicalMonitorCount();
       if (currentCount > 1) {
         console.log(`[Electron] Multiple physical displays detected during exam via WMI scan! Total: ${currentCount}`);
         const violationPayload = {
@@ -669,8 +692,10 @@ ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring an
       }
       } catch (error) {
         console.error('[Electron] Periodic display check failed:', error);
+      } finally {
+        displayScanInFlight = false;
       }
-    }, 4000);
+    }, 20000);
 
     // Small delay to ensure port is freed
     const targetMode = (process.env.APP_MODE || '').trim().toLowerCase() === 'dev' ? 'dev' : 'exam';
@@ -680,6 +705,13 @@ ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring an
     if (isReady) {
       if (mainWindow) {
         clipboard.clear();
+        if (activeSessionInfo.requireSecondaryCamera) {
+          const response = await fetch(`${activeSessionInfo.serverUrl}/pairing/start`, {
+            method: 'POST', headers: { Authorization: `Bearer ${activeSessionInfo.sessionToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: activeSessionInfo.sessionId }), signal: AbortSignal.timeout(10000)
+          });
+          if (!response.ok) throw new Error((await response.json()).error || 'Side camera connection must be restored');
+        }
         await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
         // Officially activate live proctoring & violation capture now that examScreen is active
         setExamActive(true);
@@ -687,12 +719,14 @@ ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring an
       return { success: true };
     } else {
       setExamActive(false);
+      cleanupDisplayMonitoring();
       const error = (pythonProcess?.hasExited ? lastPythonStderr : getLastPythonHealthError()) || lastPythonStderr || 'AI module failed to start in exam mode. Retry the system check.';
       cleanUpPythonProcess();
       return { success: false, error };
     }
   } catch (err) {
     setExamActive(false);
+    cleanupDisplayMonitoring();
     cleanUpPythonProcess();
     return { success: false, error: err.message };
   } finally { isStartingExam = false; }

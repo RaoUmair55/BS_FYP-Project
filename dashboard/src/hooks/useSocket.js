@@ -7,6 +7,8 @@ export default function useSocket() {
     const [connected, setConnected] = useState(false);
     const [violations, setViolations] = useState([]);
     const [riskScores, setRiskScores] = useState({});
+    const [secondaryCameraStatuses, setSecondaryCameraStatuses] = useState({});
+    const [secondaryCameraMeta, setSecondaryCameraMeta] = useState({});
     const [cameraVerifications, setCameraVerifications] = useState({});
     
     // Use a ref to hold the socket instance across re-renders
@@ -93,6 +95,21 @@ export default function useSocket() {
             }));
         });
 
+        socket.on('secondaryCameraStatus', data => {
+            if (!data?.sessionId) return;
+            setSecondaryCameraStatuses(prev => ({ ...prev, [data.sessionId]: data.status }));
+            setSecondaryCameraMeta(prev => ({
+                ...prev,
+                [data.sessionId]: {
+                    ...(prev[data.sessionId] || {}),
+                    status: data.status,
+                    fixedStandMode: data.fixedStandMode ?? prev[data.sessionId]?.fixedStandMode ?? false,
+                    referencePhoto: data.referencePhoto !== undefined ? data.referencePhoto : prev[data.sessionId]?.referencePhoto ?? null,
+                    referencePhotoAt: data.referencePhoto ? new Date().toISOString() : prev[data.sessionId]?.referencePhotoAt ?? null
+                }
+            }));
+        });
+
         socket.on('cameraVerificationUpdated', (data) => {
             setCameraVerifications((prev) => ({
                 ...prev,
@@ -109,5 +126,5 @@ export default function useSocket() {
         };
     }, []);
 
-    return { connected, violations, setViolations, riskScores, cameraVerifications, socket: socketRef.current };
+    return { secondaryCameraStatuses, secondaryCameraMeta, connected, violations, setViolations, riskScores, cameraVerifications, socket: socketRef.current };
 }

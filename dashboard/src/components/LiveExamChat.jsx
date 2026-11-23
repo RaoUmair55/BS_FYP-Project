@@ -4,6 +4,8 @@ import {
     X, User, Clock, AlertCircle, Sparkles, MessageCircle, ChevronDown 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import notify from '../utils/notify';
+import ModalPortal from './ModalPortal';
 import './Components.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -12,13 +14,23 @@ export default function LiveExamChat({
     isOpen, 
     onClose, 
     examId: initialExamId, 
+    activeExams = [],
     initialSessionId, 
     activeSessions = [], 
     socket, 
     isInline = false 
 }) {
     const { authFetch, teacher } = useAuth();
-    const [selectedExamId, setSelectedExamId] = useState(initialExamId || '');
+    const resolveFallbackExamId = () => {
+        if (initialExamId) return initialExamId;
+        if (initialSessionId) {
+            const match = activeSessions.find(s => String(s.sessionId || s._id) === String(initialSessionId));
+            if (match?.examId) return match.examId;
+        }
+        return activeExams[0]?.examCode || activeExams[0]?.examId || activeSessions[0]?.examId || '';
+    };
+
+    const [selectedExamId, setSelectedExamId] = useState(resolveFallbackExamId);
     const [messages, setMessages] = useState([]);
     const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId || 'ALL');
     const [inputText, setInputText] = useState('');
@@ -26,12 +38,22 @@ export default function LiveExamChat({
     const [sending, setSending] = useState(false);
     const messagesEndRef = useRef(null);
 
-    // Sync incoming examId prop
+    // Sync incoming examId prop or automatically pick the active exam when unfiltered ("All Live Exams")
     useEffect(() => {
         if (initialExamId) {
             setSelectedExamId(initialExamId);
+            return;
         }
-    }, [initialExamId]);
+        const validCodes = new Set([
+            ...activeExams.map(e => String(e.examCode || e.examId || '').toUpperCase()),
+            ...activeSessions.map(s => String(s.examId || '').toUpperCase())
+        ].filter(Boolean));
+
+        if (!selectedExamId || (validCodes.size > 0 && !validCodes.has(String(selectedExamId).toUpperCase()))) {
+            const fallback = resolveFallbackExamId();
+            if (fallback) setSelectedExamId(fallback);
+        }
+    }, [initialExamId, activeExams, activeSessions, initialSessionId]);
 
     // Sync initialSessionId prop when switching directly to a candidate channel
     useEffect(() => {
@@ -136,12 +158,26 @@ export default function LiveExamChat({
                     return [...prev, savedMsg];
                 });
                 setInputText('');
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                notify.error('Message Failed', errData.error || 'Could not send chat message.');
             }
         } catch (err) {
             console.error('Failed to send message:', err);
+            notify.error('Message Failed', err.message || 'Network error while sending message.');
         } finally {
             setSending(false);
         }
+    };
+
+    const markThreadAsRead = (sid) => {
+        const unread = messages.filter(m => m.sessionId === sid && m.sender === 'student' && !m.read);
+        if (unread.length === 0) return;
+        setMessages(prev => prev.map(m => (m.sessionId === sid && m.sender === 'student' ? { ...m, read: true } : m)));
+        unread.forEach(m => {
+            const id = m._id || m.id;
+            if (id) authFetch(`${API_BASE_URL}/messages/${id}/read`, { method: 'PATCH' }).catch(() => {});
+        });
     };
 
     // Group messages by candidate session thread
@@ -164,8 +200,11 @@ export default function LiveExamChat({
         }
     });
 
-    // Merge active sessions that haven't sent a message yet
+    // Merge active sessions (scoped to selectedExamId) that haven't sent a message yet
     activeSessions.forEach(s => {
+        if (selectedExamId && s.examId && String(s.examId).toUpperCase() !== String(selectedExamId).toUpperCase()) {
+            return;
+        }
         const sid = s.sessionId || s._id;
         if (sid && !candidateThreads[sid]) {
             candidateThreads[sid] = {
@@ -178,6 +217,12 @@ export default function LiveExamChat({
         }
     });
 
+    const examOptions = Array.from(new Set([
+        ...activeExams.map(e => e.examCode || e.examId).filter(Boolean),
+        ...activeSessions.map(s => s.examId).filter(Boolean),
+        ...(selectedExamId ? [selectedExamId] : [])
+    ]));
+
     const activeThread = selectedSessionId !== 'ALL' ? candidateThreads[selectedSessionId] : null;
 
     // Filter displayed messages based on selected thread
@@ -189,15 +234,29 @@ export default function LiveExamChat({
     });
 
     const innerChatContent = (
-        <div style={{ display: 'flex', flex: 1, width: '100%', height: '100%', minHeight: isInline ? '480px' : 'auto', overflow: 'hidden', background: 'var(--bg-base)' }}>
+        <div className="live-chat-shell">
             {/* Left Sidebar: Channels List */}
-            <div style={{ width: '260px', borderRight: '1px solid var(--border-color)', background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-base)', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="live-chat-sidebar">
+                <div className="live-chat-sidebar-header">
                     <span>CHANNELS</span>
                     <span className="badge" style={{ fontSize: '10px' }}>{Object.keys(candidateThreads).length + 1} Channels</span>
                 </div>
 
-                <div style={{ overflowY: 'auto', flex: 1, padding: '6px' }}>
+                {!initialExamId && examOptions.length > 1 && (
+                    <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-color)' }}>
+                        <select
+                            value={selectedExamId}
+                            onChange={(e) => { setSelectedExamId(e.target.value); setSelectedSessionId('ALL'); }}
+                            style={{ width: '100%', padding: '5px 8px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-surface)', color: 'var(--text-main)', fontSize: '11.5px', fontWeight: 600 }}
+                        >
+                            {examOptions.map(code => (
+                                <option key={code} value={code}>{code}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
+                <div className="live-chat-channel-list">
                     {/* Broadcast All Channel */}
                     <div 
                         onClick={() => setSelectedSessionId('ALL')}
@@ -220,7 +279,7 @@ export default function LiveExamChat({
                             </div>
                             <div>
                                 <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main)' }}>
-                                    📢 All Candidates
+                                    All Candidates
                                 </div>
                                 <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
                                     Broadcast announcements
@@ -236,7 +295,7 @@ export default function LiveExamChat({
                         return (
                             <div 
                                 key={th.sessionId}
-                                onClick={() => setSelectedSessionId(th.sessionId)}
+                                onClick={() => { setSelectedSessionId(th.sessionId); markThreadAsRead(th.sessionId); }}
                                 style={{
                                     padding: '8px 12px',
                                     borderRadius: '8px',
@@ -276,9 +335,9 @@ export default function LiveExamChat({
             </div>
 
             {/* Right Area: Active Message Conversation */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'transparent', minHeight: 0, overflow: 'hidden' }}>
                 {/* Channel Header Banner */}
-                <div style={{ padding: '10px 16px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--bg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ padding: '10px 16px', background: 'rgba(255, 255, 255, 0.25)', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {selectedSessionId === 'ALL' ? (
                             <>
@@ -310,7 +369,7 @@ export default function LiveExamChat({
                 </div>
 
                 {/* Messages List Area */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0 }}>
                     {loading ? (
                         <div style={{ textAlign: 'center', color: '#94a3b8', margin: 'auto', fontSize: '13px' }}>
                             Loading messages...
@@ -399,16 +458,17 @@ export default function LiveExamChat({
 
     if (isInline) {
         return (
-            <div style={{ height: 'calc(100vh - 210px)', minHeight: '480px', display: 'flex', flexDirection: 'column', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+            <div style={{ flex: 1, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', overflow: 'hidden' }}>
                 {innerChatContent}
             </div>
         );
     }
 
     return (
+        <ModalPortal>
         <div 
             className="md-modal-overlay" 
-            style={{ zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={(e) => {
                 if (e.target === e.currentTarget && onClose) {
                     onClose();
@@ -455,5 +515,6 @@ export default function LiveExamChat({
                 {innerChatContent}
             </div>
         </div>
+        </ModalPortal>
     );
 }

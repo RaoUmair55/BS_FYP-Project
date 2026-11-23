@@ -1,3 +1,4 @@
+import { sideCameraLabels } from '../utils/violationLabels';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
     AlertCircle, AlertTriangle, ShieldAlert, Check, X, 
@@ -7,11 +8,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { assetUrl } from '../services/api';
+import ModalPortal from './ModalPortal';
 import './Components.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
+    if (sideCameraLabels[typeStr]) return sideCameraLabels[typeStr];
     if (!typeStr) return "Unknown";
     if (typeStr === 'head_turn_away') {
         if (details?.reason) return details.reason;
@@ -35,7 +38,7 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
         const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
         const appName = details?.object_class ? ` in ${details.object_class}` : '';
-        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing File Opened${appName}`;
+        return fileTarget ? `Pre-Existing File: ${fileTarget}${appName}` : `Pre-Existing File Opened${appName}`;
     }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
@@ -50,11 +53,11 @@ function formatType(typeStr, details = {}) {
 }
 
 function getCategoryInfo(typeStr, details = {}) {
-    if (!typeStr) return { label: 'General Alert', icon: '⚠️', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
+    if (sideCameraLabels[typeStr]) return { label: sideCameraLabels[typeStr], color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
+    if (!typeStr) return { label: 'General Alert', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
     if (typeStr === 'pre_existing_file' || details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName) {
         return {
-            label: `📂 Pre-Existing File`,
-            icon: '📂',
+            label: 'Pre-Existing File',
             color: 'var(--warning)',
             badgeBg: 'var(--warning-soft)'
         };
@@ -62,28 +65,27 @@ function getCategoryInfo(typeStr, details = {}) {
     if (typeStr.includes('object') || typeStr.includes('phone') || details?.object_class) {
         const item = details?.object_class ? details.object_class.toLowerCase() : 'Mobile / Object';
         return { 
-            label: `📱 ${item.charAt(0).toUpperCase() + item.slice(1)}`, 
-            icon: '📱', 
+            label: item.charAt(0).toUpperCase() + item.slice(1), 
             color: 'var(--danger)', 
             badgeBg: 'var(--danger-soft)' 
         };
     }
     if (typeStr.includes('head') || typeStr.includes('turn') || typeStr.includes('gaze')) {
-        return { label: '👤 Head / Gaze Turn', icon: '👤', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
+        return { label: 'Head / Gaze Turn', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('second_person') || typeStr.includes('multiple_faces')) {
-        return { label: '👥 Second Person', icon: '👥', color: 'var(--danger)', badgeBg: 'var(--danger-soft)' };
+        return { label: 'Second Person', color: 'var(--danger)', badgeBg: 'var(--danger-soft)' };
     }
     if (typeStr.includes('no_face')) {
-        return { label: '👁️ Face Missing', icon: '👁️', color: 'var(--danger)', badgeBg: 'var(--warning-soft)' };
+        return { label: 'Face Missing', color: 'var(--danger)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('app') || typeStr.includes('window')) {
-        return { label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: 'var(--primary-soft)' };
+        return { label: 'App Switch', color: 'var(--primary)', badgeBg: 'var(--primary-soft)' };
     }
     if (typeStr.includes('camera') || typeStr.includes('dark')) {
-        return { label: '🌑 Camera Feed Dark', icon: '🌑', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
+        return { label: 'Camera Feed Dark', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
     }
-    return { label: '⚠️ Suspicious Activity', icon: '⚠️', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
+    return { label: 'Suspicious Activity', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
 }
 
 function timeAgo(dateString) {
@@ -388,24 +390,24 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
         if (severity >= 4) {
             return {
                 label: `Critical (L${severity})`,
-                bg: '#fce8e6',
+                bg: 'var(--danger-soft)',
                 color: 'var(--danger)',
-                border: 'var(--danger-soft)'
+                border: 'rgba(239, 68, 68, 0.35)'
             };
         }
         if (severity === 3) {
             return {
                 label: `Moderate (L${severity})`,
-                bg: '#fef7e0',
+                bg: 'var(--warning-soft)',
                 color: 'var(--warning)',
-                border: 'var(--warning-soft)'
+                border: 'rgba(245, 158, 11, 0.35)'
             };
         }
         return {
             label: `Low (L${severity})`,
-            bg: '#e6f4ea',
+            bg: 'var(--success-soft)',
             color: 'var(--success)',
-            border: 'var(--success-soft)'
+            border: 'rgba(16, 185, 129, 0.35)'
         };
     };
 
@@ -535,6 +537,16 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                             Low ({queueData.filter(v => v.severity <= 2).length})
                         </button>
                     </div>
+                </div>
+            </div>
+
+            {/* Human-in-the-Loop Examiner Guidance */}
+            <div style={{ padding: '10px 12px 0' }}>
+                <div className="ai-disclaimer-banner">
+                    <ShieldAlert size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                    <span>
+                        AI detections indicate <strong>potential suspicious activity</strong> for examiner review and are not automatic proof of misconduct.
+                    </span>
                 </div>
             </div>
 
@@ -700,7 +712,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                                             }}
                                                         >
                                                             <Image size={12} />
-                                                            <span>{isEvidenceOpen ? 'Hide Evidence' : `📸 Evidence (${snapshots.length})`}</span>
+                                                            <span>{isEvidenceOpen ? 'Hide Evidence' : `Evidence (${snapshots.length})`}</span>
                                                             {isEvidenceOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                                                         </button>
                                                     )}
@@ -796,8 +808,9 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                                             gap: '8px'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-main)' }}>
-                                                    📸 Captured Evidence ({snapshots.length} Snapshots) — Click to Enlarge
+                                                <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-main)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                    <Image size={13} />
+                                                    <span>Captured Evidence ({snapshots.length} Snapshots) — Click to Enlarge</span>
                                                 </span>
                                                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                                     Category: {category.label}
@@ -939,10 +952,11 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
 
             {/* Zoom Modal for Evidence Screenshot */}
             {modalImageSrc && (
+                <ModalPortal>
                 <div 
                     className="modal-backdrop" 
                     onClick={() => setModalImageSrc(null)}
-                    style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)' }}
+                    style={{ zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)' }}
                 >
                     <div 
                         className="md-card" 
@@ -965,12 +979,14 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                         />
                     </div>
                 </div>
+                </ModalPortal>
             )}
 
             {/* Note Dialog Modal */}
             {selectedViolationForNote && (
-                <div className="modal-backdrop">
-                    <div className="md-card md-modal-card" style={{ width: '440px' }}>
+                <ModalPortal>
+                <div className="modal-backdrop" onClick={() => setSelectedViolationForNote(null)}>
+                    <div className="md-card md-modal-card" style={{ width: '440px' }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 500, color: 'var(--text-main)' }}>
                                 Add Reviewer Note
@@ -1043,6 +1059,7 @@ export default function PriorityQueue({ socket, examFilter, onSelectExamFilter, 
                         </form>
                     </div>
                 </div>
+                </ModalPortal>
             )}
         </div>
     );

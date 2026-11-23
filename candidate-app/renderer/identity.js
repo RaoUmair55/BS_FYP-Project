@@ -132,6 +132,8 @@ document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the D
       }
 
       const sessionObj = {
+        sessionToken: session.sessionToken,
+        requireSecondaryCamera: session.requireSecondaryCamera === true,
         sessionId,
         examId: activeExamId,
         studentName,
@@ -144,13 +146,7 @@ document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the D
       localStorage.setItem('sessionInfo', JSON.stringify(sessionObj));
 
       // Transition to System Self-Check in Electron
-      await window.api.proceedToSelfCheck({
-        sessionId,
-        examId: activeExamId,
-        studentName,
-        rollNumber,
-        studentId: rollNumber
-      });
+      await window.api.proceedToSelfCheck(sessionObj);
     } catch (err) {
       isSubmitting = false;
       console.error('[Identity] Error creating session:', err);

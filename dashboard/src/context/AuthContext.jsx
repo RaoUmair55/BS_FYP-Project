@@ -28,6 +28,7 @@ export function AuthProvider({ children }) {
     const [currentTeacher, setCurrentTeacher] = useState(null);
     const [accessToken, setAccessTokenState] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [showAuthModal, setShowAuthModal] = useState(false);
 
     const updateAccessToken = useCallback((token) => {
         setInMemoryToken(token);
@@ -269,6 +270,8 @@ export function AuthProvider({ children }) {
                 teacher: currentTeacher, // Backwards-compatible alias
                 isLoading,
                 loading: isLoading,      // Backwards-compatible alias
+                showAuthModal,
+                setShowAuthModal,
                 login,
                 signup,
                 logout,

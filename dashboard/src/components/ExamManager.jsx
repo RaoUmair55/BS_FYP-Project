@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Play, CheckCircle, Clock, Users, X, AlertCircle, Eye, BarChart2, Radio, Trash2, Lock, Sparkles, Send } from 'lucide-react';
+import {
+    FileText, Plus, Play, CheckCircle, Clock, Users, X, AlertCircle, Eye, BarChart2,
+    Radio, Trash2, Lock, Unlock, Sparkles, Send, Globe, Building2, Settings,
+    Smartphone, Monitor, AlertTriangle, Code2, Terminal, FileSpreadsheet, Calculator, Cpu
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import notify from '../utils/notify';
+import ModalPortal from './ModalPortal';
 import './Components.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const SOFTWARE_PRESETS = [
-    { id: 'vscode', name: 'Visual Studio Code', executable: 'code.exe', category: 'IDE & Coding', icon: '💻' },
-    { id: 'codeblocks', name: 'Code::Blocks', executable: 'codeblocks.exe', category: 'IDE & Coding', icon: '🧱' },
-    { id: 'devcpp', name: 'Dev-C++', executable: 'devcpp.exe', category: 'IDE & Coding', icon: '⚡' },
-    { id: 'clion', name: 'CLion (C/C++)', executable: 'clion64.exe', category: 'IDE & Coding', icon: '⚙️' },
-    { id: 'pycharm', name: 'PyCharm', executable: 'pycharm64.exe', category: 'IDE & Coding', icon: '🐍' },
-    { id: 'notepadpp', name: 'Notepad++', executable: 'notepad++.exe', category: 'IDE & Coding', icon: '📝' },
-    { id: 'eclipse', name: 'Eclipse IDE', executable: 'eclipse.exe', category: 'IDE & Coding', icon: '🌙' },
-    { id: 'intellij', name: 'IntelliJ IDEA', executable: 'idea64.exe', category: 'IDE & Coding', icon: '💡' },
-    { id: 'winword', name: 'Microsoft Word', executable: 'winword.exe', category: 'Office & Text', icon: '📄' },
-    { id: 'excel', name: 'Microsoft Excel', executable: 'excel.exe', category: 'Office & Text', icon: '📊' },
-    { id: 'notepad', name: 'Windows Notepad', executable: 'notepad.exe', category: 'Office & Text', icon: '🗒️' },
-    { id: 'calc', name: 'Windows Calculator', executable: 'CalculatorApp.exe', category: 'Math & Tools', icon: '🧮' },
-    { id: 'matlab', name: 'MATLAB', executable: 'matlab.exe', category: 'Math & Tools', icon: '📐' }
+    { id: 'vscode', name: 'Visual Studio Code', executable: 'code.exe', category: 'IDE & Coding', Icon: Code2 },
+    { id: 'codeblocks', name: 'Code::Blocks', executable: 'codeblocks.exe', category: 'IDE & Coding', Icon: Terminal },
+    { id: 'devcpp', name: 'Dev-C++', executable: 'devcpp.exe', category: 'IDE & Coding', Icon: Terminal },
+    { id: 'clion', name: 'CLion (C/C++)', executable: 'clion64.exe', category: 'IDE & Coding', Icon: Code2 },
+    { id: 'pycharm', name: 'PyCharm', executable: 'pycharm64.exe', category: 'IDE & Coding', Icon: Code2 },
+    { id: 'notepadpp', name: 'Notepad++', executable: 'notepad++.exe', category: 'IDE & Coding', Icon: FileText },
+    { id: 'eclipse', name: 'Eclipse IDE', executable: 'eclipse.exe', category: 'IDE & Coding', Icon: Code2 },
+    { id: 'intellij', name: 'IntelliJ IDEA', executable: 'idea64.exe', category: 'IDE & Coding', Icon: Code2 },
+    { id: 'winword', name: 'Microsoft Word', executable: 'winword.exe', category: 'Office & Text', Icon: FileText },
+    { id: 'excel', name: 'Microsoft Excel', executable: 'excel.exe', category: 'Office & Text', Icon: FileSpreadsheet },
+    { id: 'notepad', name: 'Windows Notepad', executable: 'notepad.exe', category: 'Office & Text', Icon: FileText },
+    { id: 'calc', name: 'Windows Calculator', executable: 'CalculatorApp.exe', category: 'Math & Tools', Icon: Calculator },
+    { id: 'matlab', name: 'MATLAB', executable: 'matlab.exe', category: 'Math & Tools', Icon: Cpu }
 ];
 
 export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSummary, historyOnly = false }) {
@@ -35,11 +41,28 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
     // Confirmation dialog state for deleting an exam
     const [deleteExamModalData, setDeleteExamModalData] = useState(null); // { id, title, code }
 
+    useEffect(() => {
+        setActiveTab(historyOnly ? 'completed' : 'active');
+    }, [historyOnly]);
+
+    useEffect(() => {
+        if (!showModal && !endExamModalData && !deleteExamModalData) return;
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape') return;
+            if (deleteExamModalData) setDeleteExamModalData(null);
+            else if (endExamModalData) setEndExamModalData(null);
+            else if (showModal && !submitting) setShowModal(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [showModal, endExamModalData, deleteExamModalData, submitting]);
+
     // Form state
     const [title, setTitle] = useState('');
     const [customCode, setCustomCode] = useState('');
     const [status, setStatus] = useState('active');
     const [examType, setExamType] = useState('online'); // 'online' | 'physical_lab'
+    const [requireSecondaryCamera, setRequireSecondaryCamera] = useState(false);
     const [durationMinutes, setDurationMinutes] = useState(60);
     const [detectCellPhone, setDetectCellPhone] = useState(true);
     const [detectMultiplePersons, setDetectMultiplePersons] = useState(true);
@@ -150,6 +173,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             }
             formData.append('status', status);
             formData.append('examType', examType);
+            formData.append('requireSecondaryCamera', String(requireSecondaryCamera));
             formData.append('durationMinutes', durationMinutes);
             formData.append('rules', JSON.stringify({
                 detectCellPhone: examType === 'physical_lab' ? false : detectCellPhone,
@@ -177,10 +201,12 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             }
 
             // Success
+            notify.success('Exam Created', `${data.exam?.title || title} (${data.exam?.examCode || customCode || 'Ready'}) is ready.`);
             setTitle('');
             setCustomCode('');
             setStatus('active');
             setExamType('online');
+            setRequireSecondaryCamera(false);
             setPaperFile(null);
             setAllowedApps([]);
             setPermittedFiles('');
@@ -204,9 +230,17 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             });
             if (res.ok) {
                 fetchExams();
+                notify.success(
+                    newStatus === 'active' ? 'Exam Activated' : newStatus === 'completed' ? 'Exam Ended' : 'Status Updated',
+                    `Exam status changed to ${newStatus}.`
+                );
+            } else {
+                const data = await res.json().catch(() => ({}));
+                notify.error('Status Update Failed', data.error || 'Could not update exam status.');
             }
         } catch (err) {
             console.error('Failed to update status:', err);
+            notify.error('Status Update Failed', err.message || 'Network error while updating exam status.');
         } finally {
             setEndExamModalData(null);
         }
@@ -219,12 +253,14 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             });
             if (res.ok) {
                 fetchExams();
+                notify.success('Exam Deleted', 'Exam and associated paper were removed.');
             } else {
-                const data = await res.json();
-                alert(data.error || 'Failed to delete exam');
+                const data = await res.json().catch(() => ({}));
+                notify.error('Delete Failed', data.error || 'Failed to delete exam.');
             }
         } catch (err) {
             console.error('Failed to delete exam:', err);
+            notify.error('Delete Failed', err.message || 'Network error while deleting exam.');
         } finally {
             setDeleteExamModalData(null);
         }
@@ -241,12 +277,14 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
             });
             if (res.ok) {
                 fetchExams();
+                notify.success('Question Paper Released', 'Candidates in the lobby can now view the exam paper.');
             } else {
                 const data = await res.json().catch(() => ({}));
-                alert(data.error || 'Failed to release question paper');
+                notify.error('Paper Release Failed', data.error || 'Failed to release question paper.');
             }
         } catch (err) {
             console.error('Failed to release question paper:', err);
+            notify.error('Paper Release Failed', err.message || 'Network error while releasing paper.');
         } finally {
             setReleasingMap(prev => ({ ...prev, [examId]: false }));
         }
@@ -307,7 +345,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                 style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                             >
                                 <Sparkles size={14} />
-                                <span>⚡ Quick Demo Login</span>
+                                <span>Quick Demo Login</span>
                             </button>
                             <button
                                 type="button"
@@ -357,12 +395,12 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         <div className="exam-code-badge">{exam.examCode}</div>
                                         <span className="md-badge" style={{
                                             background: exam.examType === 'physical_lab' ? 'var(--primary-soft)' : 'var(--bg-muted)',
-                                            color: exam.examType === 'physical_lab' ? '#0369a1' : 'var(--text-muted)',
+                                            color: exam.examType === 'physical_lab' ? 'var(--primary)' : 'var(--text-muted)',
                                             fontWeight: 600,
                                             fontSize: '11px',
                                             padding: '2px 8px'
                                         }}>
-                                            {exam.examType === 'physical_lab' ? '🏫 Physical Lab' : '🌐 Remote Online'}
+                                            {exam.examType === 'physical_lab' ? <><Building2 size={11} /><span>Physical Lab</span></> : <><Globe size={11} /><span>Remote Online</span></>}
                                         </span>
                                         {exam.isMine ? (
                                             <span className="md-badge" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
@@ -384,13 +422,15 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             {exam.status === 'draft' && <span>DRAFT</span>}
                                         </span>
                                         {isLive && exam.paperPath && !exam.paperReleased && (
-                                            <span className="md-badge" style={{ background: 'var(--primary-soft)', color: '#0369a1', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
-                                                🔒 Lobby
+                                            <span className="md-badge" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
+                                                <Lock size={11} />
+                                                <span>Lobby</span>
                                             </span>
                                         )}
                                         {isLive && exam.paperPath && exam.paperReleased && (
                                             <span className="md-badge" style={{ background: 'var(--success-soft)', color: 'var(--success)', fontWeight: 600, fontSize: '11px', padding: '2px 8px' }}>
-                                                ✓ Unlocked
+                                                <Unlock size={11} />
+                                                <span>Unlocked</span>
                                             </span>
                                         )}
                                         <button
@@ -421,10 +461,10 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                     </div>
                                     {exam.rules && (
                                         <div className="meta-item" style={{ fontSize: '11px', color: 'var(--text-muted)', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                                            {exam.rules.detectCellPhone && <span className="md-badge" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', padding: '1px 6px' }}>📱 Mobile</span>}
-                                            {exam.rules.detectMultiplePersons && <span className="md-badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: '1px 6px' }}>👥 Multi-Person</span>}
-                                            {exam.rules.enforceAppWhitelist && <span className="md-badge" style={{ background: 'var(--success-soft)', color: 'var(--success)', padding: '1px 6px' }}>🖥️ Whitelist</span>}
-                                            {exam.rules.autoTerminateRiskScore > 0 && <span className="md-badge" style={{ background: 'var(--warning-soft)', color: 'var(--warning)', padding: '1px 6px' }}>⚠️ Alert Threshold ({exam.rules.autoTerminateRiskScore})</span>}
+                                            {exam.rules.detectCellPhone && <span className="md-badge" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', padding: '2px 7px' }}><Smartphone size={11} /><span>Mobile</span></span>}
+                                            {exam.rules.detectMultiplePersons && <span className="md-badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: '2px 7px' }}><Users size={11} /><span>Multi-Person</span></span>}
+                                            {exam.rules.enforceAppWhitelist && <span className="md-badge" style={{ background: 'var(--success-soft)', color: 'var(--success)', padding: '2px 7px' }}><Monitor size={11} /><span>Whitelist</span></span>}
+                                            {exam.rules.autoTerminateRiskScore > 0 && <span className="md-badge" style={{ background: 'var(--warning-soft)', color: 'var(--warning)', padding: '2px 7px' }}><AlertTriangle size={11} /><span>Alert Threshold ({exam.rules.autoTerminateRiskScore})</span></span>}
                                         </div>
                                     )}
 
@@ -445,8 +485,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         </div>
                                     ) : (
                                         <div className="meta-item" style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                                            <span className="md-badge" style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)', padding: '1px 6px' }}>
-                                                🔒 Strict Lockdown (0 External Apps)
+                                            <span className="md-badge" style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)', padding: '2px 7px' }}>
+                                                <Lock size={11} />
+                                                <span>Strict Lockdown (0 External Apps)</span>
                                             </span>
                                         </div>
                                     )}
@@ -481,7 +522,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                                     onClick={() => handleReleasePaper(exam.examCode || exam._id)}
                                                 >
                                                     <Send size={14} />
-                                                    <span>{releasingMap[exam.examCode || exam._id] ? 'Releasing...' : '🚀 Release Paper & Start Exam'}</span>
+                                                    <span>{releasingMap[exam.examCode || exam._id] ? 'Releasing...' : 'Release Paper & Start Exam'}</span>
                                                 </button>
                                             )}
                                             <button
@@ -520,8 +561,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
             {/* End Exam Confirmation Dialog Modal */}
             {endExamModalData && (
-                <div className="md-modal-overlay">
-                    <div className="md-modal-card" style={{ maxWidth: '440px' }}>
+                <ModalPortal>
+                <div className="md-modal-overlay" onClick={() => setEndExamModalData(null)}>
+                    <div className="md-modal-card" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header" style={{ borderBottom: 'none', paddingBottom: '0' }}>
                             <h3 style={{ color: 'var(--risk-high)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <AlertCircle size={20} /> End Exam Session?
@@ -549,12 +591,14 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         </div>
                     </div>
                 </div>
+                </ModalPortal>
             )}
 
             {/* Delete Exam Confirmation Dialog Modal */}
             {deleteExamModalData && (
-                <div className="md-modal-overlay">
-                    <div className="md-modal-card" style={{ maxWidth: '440px' }}>
+                <ModalPortal>
+                <div className="md-modal-overlay" onClick={() => setDeleteExamModalData(null)}>
+                    <div className="md-modal-card" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header" style={{ borderBottom: 'none', paddingBottom: '0' }}>
                             <h3 style={{ color: 'var(--risk-high)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Trash2 size={20} /> Delete Exam?
@@ -582,12 +626,14 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         </div>
                     </div>
                 </div>
+                </ModalPortal>
             )}
 
             {/* Create Exam Modal */}
             {showModal && (
-                <div className="md-modal-overlay">
-                    <div className="md-modal-card" style={{ maxWidth: '640px' }}>
+                <ModalPortal>
+                <div className="md-modal-overlay" onClick={() => !submitting && setShowModal(false)}>
+                    <div className="md-modal-card" style={{ maxWidth: '720px', width: '94vw' }} onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header">
                             <h3>Create New Exam</h3>
                             <button className="md-icon-btn" onClick={() => setShowModal(false)}>
@@ -646,7 +692,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         onClick={() => setExamType('online')}
                                         style={{
                                             border: examType === 'online' ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                                            background: examType === 'online' ? '#f8faff' : 'var(--bg-surface)',
+                                            background: examType === 'online' ? 'var(--primary-soft)' : 'var(--bg-surface)',
                                             borderRadius: '8px',
                                             padding: '12px',
                                             cursor: 'pointer',
@@ -654,7 +700,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         }}
                                     >
                                         <div style={{ fontWeight: 600, fontSize: '13px', color: examType === 'online' ? 'var(--primary)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            🌐 Remote Online Exam
+                                            <Globe size={15} />
+                                            <span>Remote Online Exam</span>
                                         </div>
                                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
                                             Full AI Vision, Eye Tracking, Mic & Audio. Ideal for home/remote students.
@@ -664,15 +711,16 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                         onClick={() => setExamType('physical_lab')}
                                         style={{
                                             border: examType === 'physical_lab' ? '2px solid var(--primary)' : '1px solid var(--border-color)',
-                                            background: examType === 'physical_lab' ? '#f0f9ff' : 'var(--bg-surface)',
+                                            background: examType === 'physical_lab' ? 'var(--primary-soft)' : 'var(--bg-surface)',
                                             borderRadius: '8px',
                                             padding: '12px',
                                             cursor: 'pointer',
                                             transition: 'all 0.15s ease'
                                         }}
                                     >
-                                        <div style={{ fontWeight: 600, fontSize: '13px', color: examType === 'physical_lab' ? '#0369a1' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            🏫 On-Campus Lab Exam
+                                        <div style={{ fontWeight: 600, fontSize: '13px', color: examType === 'physical_lab' ? 'var(--primary)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Building2 size={15} />
+                                            <span>On-Campus Lab Exam</span>
                                         </div>
                                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
                                             No Cam/Mic Needed. USB Guard, Clipboard Block & Process Lockdown.
@@ -696,10 +744,15 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                 </select>
                             </div>
 
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                                <input type="checkbox" checked={requireSecondaryCamera} onChange={e => setRequireSecondaryCamera(e.target.checked)} />
+                                <span>Require secondary phone camera <small>(verified placement before entry; alerts and snapshots only)</small></span>
+                            </label>
                             {/* Proctoring Rules Configuration */}
                             <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
-                                <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', marginBottom: '10px' }}>
-                                    ⚙️ Proctoring Rules & AI Strictness Settings
+                                <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                    <Settings size={15} style={{ color: 'var(--primary)' }} />
+                                    <span>Proctoring Rules & AI Strictness Settings</span>
                                 </div>
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '13px' }}>
@@ -709,7 +762,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             checked={detectCellPhone}
                                             onChange={(e) => setDetectCellPhone(e.target.checked)}
                                         />
-                                        <span>📱 Mobile Phone AI Detection</span>
+                                        <Smartphone size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                        <span>Mobile Phone AI Detection</span>
                                     </label>
 
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
@@ -718,7 +772,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             checked={detectMultiplePersons}
                                             onChange={(e) => setDetectMultiplePersons(e.target.checked)}
                                         />
-                                        <span>👥 Multiple Persons Detection</span>
+                                        <Users size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                        <span>Multiple Persons Detection</span>
                                     </label>
 
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
@@ -727,7 +782,8 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             checked={enforceAppWhitelist}
                                             onChange={(e) => setEnforceAppWhitelist(e.target.checked)}
                                         />
-                                        <span>🖥️ App Whitelist Enforcement</span>
+                                        <Monitor size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                        <span>App Whitelist Enforcement</span>
                                     </label>
 
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-main)' }}>
@@ -736,13 +792,15 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                             checked={detectLookingAway}
                                             onChange={(e) => setDetectLookingAway(e.target.checked)}
                                         />
-                                        <span>👀 Gaze / Looking Away Alerts</span>
+                                        <Eye size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                                        <span>Gaze / Looking Away Alerts</span>
                                     </label>
                                 </div>
 
                                 <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
-                                    <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-main)', display: 'block', marginBottom: '4px' }}>
-                                        ⚠️ High-Risk Alert Threshold for Teacher Review
+                                    <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                        <AlertTriangle size={14} style={{ color: 'var(--warning)' }} />
+                                        <span>High-Risk Alert Threshold for Teacher Review</span>
                                     </label>
                                     <select
                                         className="md-select"
@@ -764,8 +822,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                             {/* Allowed Software & Tools Configuration */}
                             <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)' }}>
-                                        💻 Permitted Software & Coding Tools (Optional)
+                                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                        <Monitor size={15} style={{ color: 'var(--primary)' }} />
+                                        <span>Permitted Software & Coding Tools (Optional)</span>
                                     </div>
                                     <span style={{ fontSize: '12px', fontWeight: 600, color: allowedApps.length > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
                                         {allowedApps.length > 0 ? `${allowedApps.length} Permitted` : 'Full Lockdown (Default)'}
@@ -784,6 +843,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                                     {SOFTWARE_PRESETS.map((preset) => {
                                         const isSelected = allowedApps.some(a => a.executable.toLowerCase() === preset.executable.toLowerCase());
+                                        const PresetIcon = preset.Icon;
                                         return (
                                             <div
                                                 key={preset.id}
@@ -801,7 +861,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                                                     transition: 'all 0.15s ease'
                                                 }}
                                             >
-                                                <span style={{ fontSize: '16px' }}>{preset.icon}</span>
+                                                <PresetIcon size={15} style={{ color: isSelected ? 'var(--primary)' : 'var(--text-muted)', flexShrink: 0 }} />
                                                 <div style={{ flex: 1, overflow: 'hidden' }}>
                                                     <div style={{ fontSize: '12px', fontWeight: isSelected ? 600 : 500, color: isSelected ? 'var(--primary)' : 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                                                         {preset.name}
@@ -823,8 +883,9 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
 
                                 {/* Custom Executable Adder */}
                                 <div style={{ paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
-                                    <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-main)', marginBottom: '6px' }}>
-                                        ➕ Add Custom Application / Tool
+                                    <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-main)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <Plus size={13} />
+                                        <span>Add Custom Application / Tool</span>
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <input
@@ -898,6 +959,7 @@ export default function ExamManager({ onSelectExamForMonitoring, onSelectExamSum
                         </form>
                     </div>
                 </div>
+                </ModalPortal>
             )}
         </div>
     );

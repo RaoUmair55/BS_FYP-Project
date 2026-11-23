@@ -251,6 +251,7 @@ async function loadExamPaper() {
 async function init() {
   try {
     sessionInfo = await window.api.getSessionInfo();
+    if (sessionInfo?.requireSecondaryCamera) window.IntegritySideCamera.monitor(sessionInfo);
     if (!sessionInfo || !sessionInfo.examId) {
       throw new Error("Missing session information.");
     }
@@ -1063,7 +1064,7 @@ window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOM
   if (retryBtn) {
     retryBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
       errorAlert.style.display = 'none';
-      await performSubmission();
+      await performSubmission(autoSubmitting);
     });
   }
 
@@ -1143,14 +1144,20 @@ window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOM
       }
     } catch (err) {
       console.error('Submission failed:', err);
-      if (isAutoSubmit) autoSubmitting = false;
+      // Hide blocking auto-submit modal and stop 1s timer loop so the candidate can click Retry cleanly
+      const autoModal = document.getElementById('autoSubmitModal');
+      if (autoModal) autoModal.style.display = 'none';
+      if (isAutoSubmit && timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
       if (submitExamBtn) {
         submitExamBtn.disabled = false;
         submitExamBtn.innerHTML = `<span>Submit Exam</span><span>➔</span>`;
       }
       
       if (errorAlert) {
-        errorAlertMsg.textContent = `Submission failed: ${err.message}`;
+        errorAlertMsg.textContent = `Submission failed: ${err.message}. Click Retry to submit again.`;
         errorAlert.style.display = 'flex';
       }
     } finally { submissionInFlight = false; }

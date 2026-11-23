@@ -19,7 +19,12 @@ const Submission = require('./models/Submission');
 const { ownsExam } = require('./middleware/examAccess');
 
 const app = express();
+// Local tunnel agents are the only trusted forwarding proxies in development.
+app.set('trust proxy', 'loopback');
 const server = http.createServer(app);
+
+// Only the phone route relaxes CSP for local WASM.
+app.use('/side-camera', require('./routes/sideCameraPage'));
 
 // Global Security & Parser Middleware
 app.use(helmet({
@@ -87,6 +92,7 @@ connectDB().then(() => {
 });
 
 // Mount Routes
+app.use('/pairing', require('./routes/pairing'));
 app.use('/auth', require('./routes/auth'));
 app.use('/verification', require('./routes/verification'));
 app.use('/', require('./routes/violations'));

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock, AlertTriangle, Plus, CheckCircle, X, ChevronRight } from 'lucide-react';
 import { getExams, getActiveSessions } from '../services/api';
+import notify from '../utils/notify';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -70,8 +71,9 @@ export default function ExamTimeExpiryAlert({ authFetch, socket, soundEnabled, p
             });
 
             if (res.ok) {
-                const data = await res.json();
-                setSuccessMessage(`✅ Extended ${code} by +${addMinutes}m! New end time updated.`);
+                await res.json().catch(() => ({}));
+                notify.success(`Extended ${code} by +${addMinutes}m`, 'All active candidates have received the updated end time.');
+                setSuccessMessage(`Extended ${code} by +${addMinutes}m. New end time updated.`);
                 setTimeout(() => setSuccessMessage(null), 6000);
                 // Clear dismissal if extended
                 setDismissedExams(prev => {
@@ -82,11 +84,11 @@ export default function ExamTimeExpiryAlert({ authFetch, socket, soundEnabled, p
                 await fetchData();
             } else {
                 const errData = await res.json().catch(() => ({}));
-                alert(`Could not extend exam time: ${errData.error || 'Server error'}`);
+                notify.error('Time Extension Failed', errData.error || 'Could not extend exam time.');
             }
         } catch (err) {
             console.error('Failed to extend exam time:', err);
-            alert(`Failed to extend exam time: ${err.message}`);
+            notify.error('Time Extension Failed', err.message || 'Network error while extending exam time.');
         } finally {
             setExtendingMap(prev => ({ ...prev, [code]: false }));
         }
@@ -163,32 +165,39 @@ export default function ExamTimeExpiryAlert({ authFetch, socket, soundEnabled, p
         <div style={{
             position: 'sticky',
             top: 0,
-            zIndex: 900,
+            zIndex: 30,
             width: '100%',
-            background: 'linear-gradient(90deg, var(--warning-bg) 0%, var(--warning-bg) 40%, var(--warning-bg) 100%)',
-            color: 'var(--text-on-color)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
-            borderBottom: '2px solid var(--warning)',
-            animation: 'slideDown 0.3s ease-out'
+            background: 'var(--fluent-glass-bg)',
+            backdropFilter: 'blur(16px) saturate(150%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(150%)',
+            color: 'var(--text-main)',
+            borderBottom: '1px solid var(--border-color)',
+            boxShadow: '0 4px 16px rgba(15, 23, 42, 0.06)',
+            animation: 'glassFadeIn 0.25s ease-out'
         }}>
             {successMessage && (
                 <div style={{
-                    background: 'var(--success-bg)',
-                    color: 'var(--text-on-color)',
-                    padding: '8px 20px',
+                    background: 'linear-gradient(90deg, rgba(22, 163, 74, 0.12), rgba(22, 163, 74, 0.04))',
+                    color: 'var(--text-main)',
+                    padding: '9px 24px',
                     fontSize: '13px',
-                    fontWeight: 600,
+                    fontWeight: 500,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    borderBottom: '1px solid var(--success)'
+                    borderLeft: '3px solid var(--success)',
+                    borderBottom: '1px solid rgba(22, 163, 74, 0.18)'
                 }}>
-                    <span>{successMessage}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle size={15} style={{ color: 'var(--success)', flexShrink: 0 }} />
+                        <span>{successMessage}</span>
+                    </span>
                     <button 
                         onClick={() => setSuccessMessage(null)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--text-on-color)', cursor: 'pointer', fontSize: '14px' }}
+                        aria-label="Dismiss notification"
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', padding: '4px', borderRadius: '6px' }}
                     >
-                        ✕
+                        <X size={14} />
                     </button>
                 </div>
             )}
@@ -200,140 +209,83 @@ export default function ExamTimeExpiryAlert({ authFetch, socket, soundEnabled, p
                     <div 
                         key={item.code} 
                         style={{
-                            padding: '12px 20px',
+                            padding: '10px 24px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             flexWrap: 'wrap',
                             gap: '12px',
-                            borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+                            background: 'linear-gradient(90deg, rgba(217, 119, 6, 0.10) 0%, rgba(217, 119, 6, 0.03) 65%, transparent 100%)',
+                            borderLeft: '3px solid var(--warning)',
+                            borderTop: '1px solid var(--border-color)'
                         }}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                             <div style={{
                                 background: 'var(--warning-soft)',
                                 color: 'var(--warning)',
-                                width: '36px',
-                                height: '36px',
+                                width: '34px',
+                                height: '34px',
                                 borderRadius: '8px',
+                                border: '1px solid rgba(217, 119, 6, 0.22)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 flexShrink: 0
                             }}>
-                                <Clock size={20} className="pulse-icon" />
+                                <Clock size={17} />
                             </div>
 
-                            <div>
+                            <div style={{ minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '14px', fontWeight: 700, letterSpacing: '0.2px' }}>
-                                        ⏳ Exam Ending Soon: {item.title} ({item.code})
+                                    <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)' }}>
+                                        Exam Ending Soon: {item.title} ({item.code})
                                     </span>
-                                    <span style={{
-                                        background: 'var(--danger-bg)',
-                                        color: 'var(--text-on-color)',
-                                        fontSize: '11.5px',
-                                        fontWeight: 800,
+                                    <span className="tabular-nums" style={{
+                                        background: 'var(--danger-soft)',
+                                        color: 'var(--danger)',
+                                        border: '1px solid rgba(220, 38, 38, 0.25)',
+                                        fontSize: '11px',
+                                        fontWeight: 700,
                                         padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        letterSpacing: '0.4px',
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                        borderRadius: '6px',
+                                        letterSpacing: '0.02em'
                                     }}>
-                                        {item.timeFormatted} LEFT
+                                        {item.timeFormatted} left
                                     </span>
                                 </div>
-                                <div style={{ fontSize: '12px', color: '#fef3c7', marginTop: '2px' }}>
-                                    Active sessions will auto-submit when the countdown reaches 0. Would you like to extend time for all candidates?
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                    Active sessions will auto-submit at 0:00. Extend time for all candidates if needed.
                                 </div>
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#fde68a', marginRight: '4px' }}>
-                                Add Time:
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginRight: '2px' }}>
+                                Extend:
                             </span>
 
-                            <button
-                                onClick={() => handleExtendTime(item.exam, 5)}
-                                disabled={isExtending}
-                                style={{
-                                    background: 'var(--bg-surface)',
-                                    color: 'var(--warning)',
-                                    border: 'none',
-                                    borderRadius: '6px',
-                                    padding: '6px 12px',
-                                    fontSize: '12px',
-                                    fontWeight: 700,
-                                    cursor: isExtending ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--warning-soft)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)'; }}
-                            >
-                                +5 Mins
-                            </button>
+                            {[5, 10, 15].map(mins => (
+                                <button
+                                    key={mins}
+                                    type="button"
+                                    className="md-btn md-btn-outlined md-btn-sm"
+                                    onClick={() => handleExtendTime(item.exam, mins)}
+                                    disabled={isExtending}
+                                >
+                                    <Plus size={12} />
+                                    <span>{mins}m</span>
+                                </button>
+                            ))}
 
                             <button
-                                onClick={() => handleExtendTime(item.exam, 10)}
-                                disabled={isExtending}
-                                style={{
-                                    background: 'var(--bg-surface)',
-                                    color: 'var(--warning)',
-                                    border: 'none',
-                                    borderRadius: '6px',
-                                    padding: '6px 12px',
-                                    fontSize: '12px',
-                                    fontWeight: 700,
-                                    cursor: isExtending ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--warning-soft)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)'; }}
-                            >
-                                +10 Mins
-                            </button>
-
-                            <button
-                                onClick={() => handleExtendTime(item.exam, 15)}
-                                disabled={isExtending}
-                                style={{
-                                    background: 'var(--bg-surface)',
-                                    color: 'var(--warning)',
-                                    border: 'none',
-                                    borderRadius: '6px',
-                                    padding: '6px 12px',
-                                    fontSize: '12px',
-                                    fontWeight: 700,
-                                    cursor: isExtending ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--warning-soft)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-surface)'; }}
-                            >
-                                +15 Mins
-                            </button>
-
-                            <button
+                                type="button"
+                                className="md-btn md-btn-text md-btn-sm"
                                 onClick={() => handleDismiss(item.code)}
-                                title="Dismiss notification"
-                                style={{
-                                    background: 'rgba(255, 255, 255, 0.15)',
-                                    color: 'var(--text-on-color)',
-                                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                                    borderRadius: '6px',
-                                    padding: '6px 10px',
-                                    fontSize: '12px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    marginLeft: '4px'
-                                }}
+                                title="Dismiss for 3 minutes"
+                                style={{ marginLeft: '2px' }}
                             >
-                                <X size={14} />
+                                <X size={13} />
                                 <span>Dismiss</span>
                             </button>
                         </div>

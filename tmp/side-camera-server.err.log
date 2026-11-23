@@ -1,0 +1,91 @@
+Side camera watchdog: connection <monitor> to 159.41.243.16:27017 timed out
+[ExamLifecycle] Error auto-expiring finished exams: MongoServerSelectionError: connection <monitor> to 159.41.243.16:27017 timed out
+    at Topology.selectServer (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\sdam\topology.js:327:38)
+    at async tryOperation (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\operations\execute_operation.js:196:22)
+    at async executeOperation (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\operations\execute_operation.js:78:16)
+    at async FindCursor._initialize (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\find_cursor.js:62:26)
+    at async FindCursor.cursorInit (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:632:27)
+    at async FindCursor.fetchBatch (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:666:13)
+    at async FindCursor.next (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:342:17)
+    at async [Symbol.asyncIterator] (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:250:34)
+    at async FindCursor.toArray (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:422:26)
+    at async model.Query._find (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongoose\lib\query.js:2430:14) {
+  errorLabelSet: Set(0) {},
+  reason: TopologyDescription {
+    type: 'ReplicaSetNoPrimary',
+    servers: Map(3) {
+      'ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net:27017' => [ServerDescription],
+      'ac-ynbeopi-shard-00-01.4s7vcv6.mongodb.net:27017' => [ServerDescription],
+      'ac-ynbeopi-shard-00-02.4s7vcv6.mongodb.net:27017' => [ServerDescription]
+    },
+    stale: false,
+    compatible: true,
+    heartbeatFrequencyMS: 10000,
+    localThresholdMS: 15,
+    setName: 'atlas-7utmh0-shard-0',
+    maxElectionId: new ObjectId('7fffffff000000000000025c'),
+    maxSetVersion: 284,
+    commonWireVersion: 0,
+    logicalSessionTimeoutMinutes: null
+  },
+  code: undefined,
+  [cause]: MongoNetworkTimeoutError: connection <monitor> to 159.41.243.16:27017 timed out
+      at Timeout._onTimeout (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cmap\connection.js:126:26)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7) {
+    errorLabelSet: Set(2) { 'ResetPool', 'InterruptInUseConnections' },
+    beforeHandshake: false,
+    [cause]: undefined
+  }
+}
+Side camera watchdog: getaddrinfo ENOTFOUND ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net
+[ExamLifecycle] Error auto-expiring finished exams: MongoServerSelectionError: getaddrinfo ENOTFOUND ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net
+    at Topology.selectServer (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\sdam\topology.js:327:38)
+    at async tryOperation (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\operations\execute_operation.js:148:18)
+    at async executeOperation (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\operations\execute_operation.js:78:16)
+    at async FindCursor._initialize (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\find_cursor.js:62:26)
+    at async FindCursor.cursorInit (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:632:27)
+    at async FindCursor.fetchBatch (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:666:13)
+    at async FindCursor.next (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:342:17)
+    at async [Symbol.asyncIterator] (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:250:34)
+    at async FindCursor.toArray (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cursor\abstract_cursor.js:422:26)
+    at async model.Query._find (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongoose\lib\query.js:2430:14) {
+  errorLabelSet: Set(0) {},
+  reason: TopologyDescription {
+    type: 'ReplicaSetNoPrimary',
+    servers: Map(3) {
+      'ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net:27017' => [ServerDescription],
+      'ac-ynbeopi-shard-00-01.4s7vcv6.mongodb.net:27017' => [ServerDescription],
+      'ac-ynbeopi-shard-00-02.4s7vcv6.mongodb.net:27017' => [ServerDescription]
+    },
+    stale: false,
+    compatible: true,
+    heartbeatFrequencyMS: 10000,
+    localThresholdMS: 15,
+    setName: 'atlas-7utmh0-shard-0',
+    maxElectionId: new ObjectId('7fffffff000000000000025c'),
+    maxSetVersion: 284,
+    commonWireVersion: 0,
+    logicalSessionTimeoutMinutes: null
+  },
+  code: undefined,
+  [cause]: MongoNetworkError: getaddrinfo ENOTFOUND ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net
+      at TLSSocket.<anonymous> (D:\BS_FYP Project\IntegrityFlow\server\node_modules\mongodb\lib\cmap\connect.js:286:44)
+      at Object.onceWrapper (node:events:623:26)
+      at TLSSocket.emit (node:events:508:28)
+      at emitErrorNT (node:internal/streams/destroy:170:8)
+      at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    errorLabelSet: Set(1) { 'ResetPool' },
+    beforeHandshake: false,
+    [cause]: Error: getaddrinfo ENOTFOUND ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+      errno: -3008,
+      code: 'ENOTFOUND',
+      syscall: 'getaddrinfo',
+      hostname: 'ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net'
+    }
+  }
+}
+Side camera watchdog: getaddrinfo ENOTFOUND ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net
+Side camera watchdog: getaddrinfo ENOTFOUND ac-ynbeopi-shard-00-00.4s7vcv6.mongodb.net

@@ -1,19 +1,23 @@
+import { sideCameraLabels, violationSourceLabel } from '../utils/violationLabels';
 import AudioEvidence from './AudioEvidence';
 import React, { useEffect, useState, useMemo } from 'react';
 import { getViolations } from '../services/api';
 import { assetUrl } from '../services/api';
 import { 
-    Check, X, Clock, CheckCircle, XCircle, Eye, Camera, AlertTriangle, 
-    ShieldCheck, FileText, Download, Paperclip, AlertOctagon, MessageSquare, 
-    Send, UserX, AlertCircle, Image, Maximize2, ChevronDown, ChevronUp,
-    Layers, Filter, Sparkles, Smartphone, Users, Copy, CheckCheck, ExternalLink, FileCode, Volume2, RefreshCw
+    Check, X, Clock, CheckCircle, XCircle, Eye, EyeOff, Camera, CameraOff, AlertTriangle, 
+    ShieldCheck, FileText, FolderOpen, Download, Paperclip, AlertOctagon, MessageSquare, 
+    Send, User, UserX, AlertCircle, Image, Maximize2, ChevronDown, ChevronUp,
+    Layers, Filter, Sparkles, Smartphone, Monitor, Users, Copy, CheckCheck, ExternalLink, FileCode, Volume2, Mic, RefreshCw
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, getInMemoryToken } from '../context/AuthContext';
+import notify from '../utils/notify';
+import ModalPortal from './ModalPortal';
 import './Components.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
+    if (sideCameraLabels[typeStr]) return sideCameraLabels[typeStr];
     if (!typeStr) return "Unknown";
     if (typeStr === 'head_turn_away') {
         if (details?.reason) return details.reason;
@@ -33,7 +37,7 @@ function formatType(typeStr, details = {}) {
     }
     if (typeStr === 'second_voice_detected') {
         const sim = details?.similarity_score !== undefined ? ` (${Math.round(details.similarity_score * 100)}% match)` : '';
-        return `🎙️ Possible Unfamiliar Speaker${sim}`;
+        return `Possible Unfamiliar Speaker${sim}`;
     }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
@@ -41,7 +45,7 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
         const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
         const appName = details?.object_class ? ` in ${details.object_class}` : '';
-        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing File Opened${appName}`;
+        return fileTarget ? `Pre-Existing File: ${fileTarget}${appName}` : `Pre-Existing File Opened${appName}`;
     }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
@@ -56,12 +60,12 @@ function formatType(typeStr, details = {}) {
 }
 
 function getCategoryInfo(typeStr, details = {}) {
-    if (!typeStr) return { key: 'other', label: 'General Alert', icon: '⚠️', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
+    if (!typeStr) return { key: 'other', label: 'General Alert', Icon: AlertTriangle, color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
     if (typeStr === 'pre_existing_file' || details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName) {
         return { 
             key: 'files',
-            label: `📂 Pre-Existing File`, 
-            icon: '📂', 
+            label: 'Pre-Existing File', 
+            Icon: FolderOpen, 
             color: 'var(--warning)', 
             badgeBg: 'var(--warning-soft)' 
         };
@@ -69,8 +73,8 @@ function getCategoryInfo(typeStr, details = {}) {
     if (typeStr.includes('voice') || typeStr.includes('speech') || typeStr.includes('audio')) {
         return { 
             key: 'voice', 
-            label: '🎙️ Voice / Speech', 
-            icon: '🎙️', 
+            label: 'Voice / Speech', 
+            Icon: Mic, 
             color: '#0d9488', 
             badgeBg: 'rgba(13, 148, 136, 0.15)' 
         };
@@ -79,31 +83,31 @@ function getCategoryInfo(typeStr, details = {}) {
         const item = details?.object_class ? details.object_class.toLowerCase() : 'Mobile / Object';
         return { 
             key: 'objects',
-            label: `📱 ${item.charAt(0).toUpperCase() + item.slice(1)}`, 
-            icon: '📱', 
+            label: item.charAt(0).toUpperCase() + item.slice(1), 
+            Icon: Smartphone, 
             color: 'var(--danger)', 
             badgeBg: 'var(--danger-soft)' 
         };
     }
     if (typeStr.includes('head') || typeStr.includes('turn') || typeStr.includes('gaze')) {
-        return { key: 'head', label: '👤 Head / Gaze Turn', icon: '👤', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
+        return { key: 'head', label: 'Head / Gaze Turn', Icon: User, color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('second_person') || typeStr.includes('multiple_faces')) {
-        return { key: 'people', label: '👥 Second Person', icon: '👥', color: 'var(--danger)', badgeBg: 'var(--danger-soft)' };
+        return { key: 'people', label: 'Second Person', Icon: Users, color: 'var(--danger)', badgeBg: 'var(--danger-soft)' };
     }
     if (typeStr.includes('no_face')) {
-        return { key: 'noface', label: '👁️ Face Missing', icon: '👁️', color: 'var(--danger)', badgeBg: 'var(--warning-soft)' };
+        return { key: 'noface', label: 'Face Missing', Icon: EyeOff, color: 'var(--danger)', badgeBg: 'var(--warning-soft)' };
     }
     if (typeStr.includes('app') || typeStr.includes('window')) {
-        return { key: 'app', label: '🖥️ App Switch', icon: '🖥️', color: '#4338ca', badgeBg: 'var(--primary-soft)' };
+        return { key: 'app', label: 'App Switch', Icon: Monitor, color: '#4338ca', badgeBg: 'var(--primary-soft)' };
     }
     if (typeStr.includes('camera') || typeStr.includes('dark')) {
-        return { key: 'camera', label: '🌑 Camera Feed Dark', icon: '🌑', color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
+        return { key: 'camera', label: 'Camera Feed Dark', Icon: CameraOff, color: 'var(--text-muted)', badgeBg: 'var(--bg-muted)' };
     }
-    return { key: 'other', label: '⚠️ Suspicious Activity', icon: '⚠️', color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
+    return { key: 'other', label: 'Suspicious Activity', Icon: AlertTriangle, color: 'var(--warning)', badgeBg: 'var(--warning-soft)' };
 }
 
-export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
+export default function EvidenceViewer({ sessionId, liveViolations = [], secondaryCameraMeta = null }) {
     const { authFetch } = useAuth();
     const [mainTab, setMainTab] = useState('submission'); // 'submission', 'evidence', 'identity'
     const [history, setHistory] = useState([]);
@@ -112,6 +116,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     const [submissions, setSubmissions] = useState([]);
     const [copiedSubId, setCopiedSubId] = useState(null);
     const [cameraActionLoading, setCameraActionLoading] = useState(false);
+    const [sideSnapshotLoading, setSideSnapshotLoading] = useState(false);
     const [showDismissedLogs, setShowDismissedLogs] = useState(false);
     const [downloadingSubId, setDownloadingSubId] = useState(null);
     const [previewModal, setPreviewModal] = useState(null);
@@ -130,7 +135,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
         setDownloadingSubId(subId);
         try {
             const targetUrl = assetUrl(sub.filePath.startsWith('http') ? sub.filePath : `${API_BASE_URL}${sub.filePath}`);
-            const token = localStorage.getItem('token');
+            const token = getInMemoryToken();
             const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             const response = await fetch(targetUrl, { headers });
             if (!response.ok) throw new Error('Download failed');
@@ -171,7 +176,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                 sub: sub
             });
             try {
-                const token = localStorage.getItem('token');
+                const token = getInMemoryToken();
                 const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
                 const res = await fetch(targetUrl, { headers });
                 if (!res.ok) throw new Error('Failed to load file preview');
@@ -340,6 +345,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
         if (!sessionId) return;
         setCameraActionLoading(true);
 
+        const previousStatus = sessionData?.cameraVerificationStatus;
         setSessionData(prev => prev ? ({ ...prev, cameraVerificationStatus: status }) : prev);
 
         try {
@@ -353,13 +359,82 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                 const data = await res.json();
                 setSessionData(data.session);
                 fetchHistory();
+                if (status === 'verified') notify.success('Identity Approved', 'Candidate verification photo marked as verified.');
+                else if (status === 'flagged') notify.warning('Identity Flagged', 'Candidate verification status marked as flagged.');
+                else notify.info('Re-verification Requested', 'Candidate will be prompted to capture a fresh photo.');
+            } else {
+                setSessionData(prev => prev ? ({ ...prev, cameraVerificationStatus: previousStatus }) : prev);
+                const errData = await res.json().catch(() => ({}));
+                notify.error('Verification Update Failed', errData.error || 'Could not update camera verification.');
             }
         } catch (err) {
             console.error('Error updating camera verification:', err);
+            setSessionData(prev => prev ? ({ ...prev, cameraVerificationStatus: previousStatus }) : prev);
+            notify.error('Verification Update Failed', err.message || 'Network error while updating verification.');
         } finally {
             setCameraActionLoading(false);
         }
     };
+
+    const handleRequestFreshPhoto = async () => {
+        if (!sessionId) return;
+        setCameraActionLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/request-camera-photo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'Examiner requested a fresh identity snapshot.' })
+            });
+            if (res.ok) {
+                setSessionData(prev => prev ? ({ ...prev, cameraVerificationStatus: 're_verify' }) : prev);
+                notify.info('Fresh Photo Requested', 'Candidate app will prompt for a new live verification snapshot.');
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                notify.error('Request Failed', errData.error || 'Could not request a fresh photo.');
+            }
+        } catch (err) {
+            console.error('Error requesting camera photo:', err);
+            notify.error('Request Failed', err.message || 'Network error while requesting photo.');
+        } finally {
+            setCameraActionLoading(false);
+        }
+    };
+
+    const handleRequestDeskSnapshot = async () => {
+        if (!sessionId) return;
+        setSideSnapshotLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/request-side-snapshot`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (res.ok) {
+                notify.info('Desk Check Requested', 'Phone camera will capture a fresh desk reference photo.');
+                setTimeout(fetchSessionData, 2500);
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                notify.error('Desk Check Failed', errData.error || 'Secondary camera is not currently connected.');
+            }
+        } catch (err) {
+            console.error('Error requesting desk snapshot:', err);
+            notify.error('Desk Check Failed', err.message || 'Network error while requesting desk check.');
+        } finally {
+            setSideSnapshotLoading(false);
+        }
+    };
+
+    // Close open EvidenceViewer modals / lightbox with Escape key
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if (e.key !== 'Escape') return;
+            if (modalImageSrc) setModalImageSrc(null);
+            else if (previewModal) setPreviewModal(null);
+            else if (showWarnModal) setShowWarnModal(false);
+            else if (showTerminateModal) setShowTerminateModal(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [modalImageSrc, previewModal, showWarnModal, showTerminateModal]);
 
     const handleSendWarning = async (e) => {
         e.preventDefault();
@@ -374,6 +449,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             });
 
             if (res.ok) {
+                notify.success('Warning Sent', 'Candidate has been notified in real time.');
                 setWarnSuccess(true);
                 setTimeout(() => {
                     setWarnSuccess(false);
@@ -381,9 +457,13 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                     setWarnMessage('');
                     fetchSessionData();
                 }, 1200);
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                notify.error('Warning Failed', errData.error || 'Could not deliver warning to candidate.');
             }
         } catch (err) {
             console.error('Failed to send warning:', err);
+            notify.error('Warning Failed', err.message || 'Network error while sending warning.');
         } finally {
             setActionSubmitting(false);
         }
@@ -402,12 +482,17 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
             });
 
             if (res.ok) {
+                notify.warning('Session Terminated', 'Candidate session has been locked and terminated.');
                 setShowTerminateModal(false);
                 setTerminateReason('');
                 fetchSessionData();
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                notify.error('Termination Failed', errData.error || 'Could not terminate candidate session.');
             }
         } catch (err) {
             console.error('Failed to terminate candidate:', err);
+            notify.error('Termination Failed', err.message || 'Network error while terminating session.');
         } finally {
             setActionSubmitting(false);
         }
@@ -452,7 +537,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                 bundleMap.set(bundleKey, {
                     key: bundleKey,
                     label: cat.label,
-                    icon: cat.icon,
+                    Icon: cat.Icon,
                     color: cat.color,
                     badgeBg: cat.badgeBg,
                     items: [],
@@ -490,18 +575,46 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
     }
 
     if (loading) return (
-        <div className="md-card evidence-card">
-            <div className="md-loading">Loading evidence timeline...</div>
+        <div className="md-card evidence-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="skeleton-line" style={{ width: '48%', height: '22px' }} />
+            <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="skeleton-line" style={{ width: '120px', height: '32px', borderRadius: '9999px' }} />
+                <div className="skeleton-line" style={{ width: '140px', height: '32px', borderRadius: '9999px' }} />
+                <div className="skeleton-line" style={{ width: '130px', height: '32px', borderRadius: '9999px' }} />
+            </div>
+            <div className="skeleton-box" style={{ height: '110px' }} />
+            <div className="skeleton-box" style={{ height: '110px' }} />
         </div>
     );
 
-    const cameraPhotoUrl = sessionData?.cameraVerificationPhoto 
+    const rawCameraPhotoUrl = sessionData?.cameraVerificationPhoto 
         ? (sessionData.cameraVerificationPhoto.startsWith('http://') || sessionData.cameraVerificationPhoto.startsWith('https://')
             ? sessionData.cameraVerificationPhoto
             : `${API_BASE_URL.replace(/\/$/, '')}/${sessionData.cameraVerificationPhoto.replace(/^\//, '')}`)
         : null;
+    const cameraPhotoUrl = rawCameraPhotoUrl ? assetUrl(rawCameraPhotoUrl) : null;
     const cameraStatus = sessionData?.cameraVerificationStatus || 'none';
+    const cameraStatusBadge = !cameraPhotoUrl
+        ? { short: 'No Photo', full: 'No Verification Photo', bg: 'var(--bg-muted)', color: 'var(--text-muted)', cardBg: 'var(--warning-soft)', cardColor: 'var(--warning)' }
+        : cameraStatus === 'verified'
+        ? { short: 'Verified', full: 'Photo Verified', bg: 'var(--success-soft)', color: 'var(--success)', cardBg: 'var(--success-soft)', cardColor: 'var(--success)' }
+        : cameraStatus === 'flagged' || cameraStatus === 'rejected'
+        ? { short: 'Flagged', full: 'Verification Flagged', bg: 'var(--danger-soft)', color: 'var(--danger)', cardBg: 'var(--danger-soft)', cardColor: 'var(--danger)' }
+        : cameraStatus === 're_verify'
+        ? { short: 'Re-verify', full: 'Re-verification Requested', bg: 'var(--warning-soft)', color: 'var(--warning)', cardBg: 'var(--warning-soft)', cardColor: 'var(--warning)' }
+        : { short: 'Pending', full: 'Pending Review', bg: 'var(--warning-soft)', color: 'var(--warning)', cardBg: 'var(--warning-soft)', cardColor: 'var(--warning)' };
     const isTerminated = sessionData?.status === 'terminated';
+    const sideCam = sessionData?.secondaryCamera || null;
+    const showSideCameraCard = Boolean(sessionData?.requireSecondaryCamera || sideCam?.paired || secondaryCameraMeta);
+    const sideCamStatus = secondaryCameraMeta?.status || sideCam?.status || 'not_paired';
+    const sideCamFixedStand = Boolean(secondaryCameraMeta?.fixedStandMode ?? sideCam?.fixedStandMode);
+    const rawSideRefPhoto = secondaryCameraMeta?.referencePhoto ?? sideCam?.referencePhoto ?? null;
+    const sideCamRefPhotoUrl = rawSideRefPhoto
+        ? assetUrl(rawSideRefPhoto.startsWith('http://') || rawSideRefPhoto.startsWith('https://')
+            ? rawSideRefPhoto
+            : `${API_BASE_URL.replace(/\/$/, '')}/${rawSideRefPhoto.replace(/^\//, '')}`)
+        : null;
+    const sideCamRefPhotoAt = secondaryCameraMeta?.referencePhotoAt || sideCam?.referencePhotoAt || null;
 
     const studentDisplayName = sessionData?.studentName || sessionData?.studentId || 'Candidate';
     const rollDisplay = sessionData?.rollNumber ? ` (${sessionData.rollNumber})` : (sessionData?.studentId && sessionData.studentId !== sessionData.studentName ? ` (${sessionData.studentId})` : '');
@@ -653,10 +766,10 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         <span className="md-badge" style={{
                             fontSize: '11px',
                             padding: '2px 7px',
-                            background: cameraPhotoUrl ? 'var(--success-soft)' : 'var(--bg-muted)',
-                            color: cameraPhotoUrl ? 'var(--success)' : 'var(--text-muted)'
+                            background: cameraStatusBadge.bg,
+                            color: cameraStatusBadge.color
                         }}>
-                            {cameraPhotoUrl ? 'Verified' : 'No Photo'}
+                            {cameraStatusBadge.short}
                         </span>
                     </button>
                 </div>
@@ -818,7 +931,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                         justifyContent: 'center',
                                                         fontSize: '16px'
                                                     }}>
-                                                        📄
+                                                        <FileText size={17} />
                                                     </div>
                                                     <div>
                                                         <div style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-main)' }}>
@@ -919,26 +1032,34 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                             <button
                                 className={`sub-tab-btn ${categoryFilter === 'voice' ? 'active' : ''}`}
                                 onClick={() => setCategoryFilter('voice')}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
-                                🎙️ Voice
+                                <Mic size={12} />
+                                <span>Voice</span>
                             </button>
                             <button
                                 className={`sub-tab-btn ${categoryFilter === 'objects' ? 'active' : ''}`}
                                 onClick={() => setCategoryFilter('objects')}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
-                                📱 Mobile/Object
+                                <Smartphone size={12} />
+                                <span>Mobile/Object</span>
                             </button>
                             <button
                                 className={`sub-tab-btn ${categoryFilter === 'head' ? 'active' : ''}`}
                                 onClick={() => setCategoryFilter('head')}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
-                                👤 Head Turn
+                                <User size={12} />
+                                <span>Head Turn</span>
                             </button>
                             <button
                                 className={`sub-tab-btn ${categoryFilter === 'people' ? 'active' : ''}`}
                                 onClick={() => setCategoryFilter('people')}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             >
-                                👥 2nd Person
+                                <Users size={12} />
+                                <span>2nd Person</span>
                             </button>
                         </div>
                     </div>
@@ -990,7 +1111,9 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                         }}
                                     >
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <span style={{ fontSize: '18px' }}>{bundle.icon}</span>
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: bundle.color }}>
+                                                {bundle.Icon ? <bundle.Icon size={17} /> : <AlertTriangle size={17} />}
+                                            </span>
                                             <div>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     <span style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-main)' }}>
@@ -1052,7 +1175,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                                 <span style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-main)' }}>
-                                                                    #{vIdx + 1} &bull; {formatType(v.type, v.details)}
+                                                                    #{vIdx + 1} &bull; {formatType(v.type, v.details)} · {violationSourceLabel(v.source)}
                                                                 </span>
                                                                 <span className="md-badge" style={{ fontSize: '10.5px' }}>
                                                                     Sev {v.severity}
@@ -1218,7 +1341,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                         <div>
                                             <span style={{ fontWeight: 600, fontSize: '14.5px', color: 'var(--text-main)' }}>
-                                                {formatType(v.type, v.details)}
+                                                {formatType(v.type, v.details)} · {violationSourceLabel(v.source)}
                                             </span>
                                             <span className="md-badge" style={{ fontSize: '11px', background: 'var(--bg-muted)', marginLeft: '8px' }}>
                                                 Severity {v.severity}
@@ -1358,16 +1481,16 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                 </div>
                             </div>
                             <span className="md-badge" style={{
-                                background: cameraPhotoUrl ? 'var(--success-soft)' : 'var(--warning-soft)',
-                                color: cameraPhotoUrl ? 'var(--success)' : 'var(--warning)',
+                                background: cameraStatusBadge.cardBg,
+                                color: cameraStatusBadge.cardColor,
                                 fontSize: '12px',
                                 padding: '4px 10px'
                             }}>
-                                {cameraPhotoUrl ? '✓ Photo Verified' : 'No Verification Photo'}
+                                {cameraStatusBadge.full}
                             </span>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: cameraPhotoUrl ? '280px 1fr' : '1fr', gap: '20px', alignItems: 'start' }}>
+                        <div className={cameraPhotoUrl ? 'identity-verification-grid has-photo' : 'identity-verification-grid'}>
                             {cameraPhotoUrl ? (
                                 <div 
                                     style={{
@@ -1437,6 +1560,200 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                                     <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Session ID</div>
                                     <div style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-muted)', marginTop: '2px' }}>{sessionId}</div>
                                 </div>
+
+                                {/* Examiner Identity Verification Action Controls */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                                    <button
+                                        type="button"
+                                        disabled={cameraActionLoading || !cameraPhotoUrl || cameraStatus === 'verified'}
+                                        onClick={() => handleCameraVerificationAction('verified')}
+                                        className="pill-btn"
+                                        style={{
+                                            padding: '7px 14px',
+                                            fontSize: '12.5px',
+                                            background: cameraStatus === 'verified' ? 'var(--success-soft)' : 'var(--success)',
+                                            color: cameraStatus === 'verified' ? 'var(--success)' : '#ffffff',
+                                            border: '1px solid var(--success)',
+                                            opacity: (cameraActionLoading || !cameraPhotoUrl) ? 0.55 : 1
+                                        }}
+                                    >
+                                        <CheckCircle size={14} />
+                                        <span>{cameraStatus === 'verified' ? 'Approved' : 'Approve Identity'}</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        disabled={cameraActionLoading || isTerminated || sessionData?.status === 'completed'}
+                                        onClick={handleRequestFreshPhoto}
+                                        className="frosted-secondary-btn pill-btn"
+                                        style={{
+                                            padding: '7px 14px',
+                                            fontSize: '12.5px',
+                                            opacity: (cameraActionLoading || isTerminated || sessionData?.status === 'completed') ? 0.55 : 1
+                                        }}
+                                    >
+                                        <RefreshCw size={13} className={cameraActionLoading ? 'spin' : ''} />
+                                        <span>Request Fresh Photo</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        disabled={cameraActionLoading || !cameraPhotoUrl || cameraStatus === 'flagged' || cameraStatus === 'rejected'}
+                                        onClick={() => handleCameraVerificationAction('flagged', 'Identity mismatch flagged by examiner')}
+                                        className="pill-btn"
+                                        style={{
+                                            padding: '7px 14px',
+                                            fontSize: '12.5px',
+                                            background: 'var(--danger-soft)',
+                                            color: 'var(--danger)',
+                                            border: '1px solid rgba(244, 63, 94, 0.35)',
+                                            opacity: (cameraActionLoading || !cameraPhotoUrl) ? 0.55 : 1
+                                        }}
+                                    >
+                                        <XCircle size={14} />
+                                        <span>{(cameraStatus === 'flagged' || cameraStatus === 'rejected') ? 'Flagged' : 'Flag Mismatch'}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Secondary Desk Camera Baseline & On-Demand Desk Check */}
+                {mainTab === 'identity' && showSideCameraCard && (
+                    <div className="alert-item" style={{
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '18px 20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '16px',
+                        marginBottom: '16px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ background: 'var(--primary-soft)', color: 'var(--primary)', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Smartphone size={20} />
+                                </div>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
+                                        Secondary Desk Camera Baseline
+                                    </h4>
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                        Clean desk reference frame captured from the paired side-angle phone camera.
+                                    </div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {sideCamFixedStand && (
+                                    <span
+                                        className="md-badge"
+                                        title="Device orientation sensor unavailable on this phone; movement checks rely on visual drift and periodic AI desk checks."
+                                        style={{ background: 'var(--warning-soft)', color: 'var(--warning)', fontSize: '11.5px', padding: '4px 9px' }}
+                                    >
+                                        Fixed Stand Mode
+                                    </span>
+                                )}
+                                <span className="md-badge" style={{
+                                    background: sideCamStatus === 'verified' ? 'var(--success-soft)' : sideCamStatus === 'lost' ? 'var(--danger-soft)' : 'var(--bg-muted)',
+                                    color: sideCamStatus === 'verified' ? 'var(--success)' : sideCamStatus === 'lost' ? 'var(--danger)' : 'var(--text-muted)',
+                                    fontSize: '12px',
+                                    padding: '4px 10px',
+                                    textTransform: 'capitalize'
+                                }}>
+                                    {sideCamStatus.replace('_', ' ')}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className={sideCamRefPhotoUrl ? 'identity-verification-grid has-photo' : 'identity-verification-grid'}>
+                            {sideCamRefPhotoUrl ? (
+                                <div
+                                    style={{
+                                        borderRadius: '8px',
+                                        overflow: 'hidden',
+                                        border: '1px solid var(--border-color)',
+                                        background: '#000',
+                                        cursor: 'pointer',
+                                        position: 'relative'
+                                    }}
+                                    onClick={() => setModalImageSrc(sideCamRefPhotoUrl)}
+                                    title="Click to enlarge desk baseline photo"
+                                >
+                                    <img
+                                        src={sideCamRefPhotoUrl}
+                                        alt="Secondary Camera Clean Desk Baseline"
+                                        style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', display: 'block' }}
+                                    />
+                                    <div style={{
+                                        position: 'absolute',
+                                        bottom: '8px',
+                                        right: '8px',
+                                        background: 'rgba(0,0,0,0.65)',
+                                        color: '#fff',
+                                        borderRadius: '4px',
+                                        padding: '3px 6px',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}>
+                                        <Maximize2 size={12} />
+                                        <span>Enlarge</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{
+                                    padding: '28px 20px',
+                                    background: 'var(--bg-base)',
+                                    borderRadius: '8px',
+                                    border: '1px dashed var(--border-color)',
+                                    textAlign: 'center',
+                                    color: 'var(--text-muted)',
+                                    fontSize: '13px'
+                                }}>
+                                    No side-camera desk reference photo captured yet. A baseline is automatically saved once placement is verified.
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ background: 'var(--bg-base)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Last Desk Capture</div>
+                                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>
+                                        {sideCamRefPhotoAt ? new Date(sideCamRefPhotoAt).toLocaleString() : 'Not captured yet'}
+                                    </div>
+                                </div>
+
+                                <div style={{ background: 'var(--bg-base)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Active Desk AI Checks</div>
+                                    <div style={{ fontSize: '12.5px', color: 'var(--text-main)', marginTop: '4px', lineHeight: 1.5 }}>
+                                        Monitors every ~3s on-device for extra phones, books/notes, second monitors, extra people, candidate absence, camera movement, and lens obstruction.
+                                    </div>
+                                </div>
+
+                                {sideCamFixedStand && (
+                                    <div style={{ background: 'var(--warning-soft)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.35)', fontSize: '12px', color: 'var(--warning)' }}>
+                                        <strong>Fixed Stand Mode:</strong> This phone did not expose a motion/tilt sensor, so camera movement uses visual drift checks instead of gyroscope readings.
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                                    <button
+                                        type="button"
+                                        disabled={sideSnapshotLoading || isTerminated || sessionData?.status === 'completed' || (sideCamStatus !== 'verified' && sideCamStatus !== 'paired')}
+                                        onClick={handleRequestDeskSnapshot}
+                                        className="frosted-secondary-btn pill-btn"
+                                        style={{
+                                            padding: '7px 14px',
+                                            fontSize: '12.5px',
+                                            opacity: (sideSnapshotLoading || isTerminated || sessionData?.status === 'completed' || (sideCamStatus !== 'verified' && sideCamStatus !== 'paired')) ? 0.55 : 1
+                                        }}
+                                    >
+                                        <Camera size={14} className={sideSnapshotLoading ? 'spin' : ''} />
+                                        <span>{sideSnapshotLoading ? 'Requesting…' : 'Capture Desk Check'}</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1445,10 +1762,11 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
 
             {/* High-Resolution Modal Screenshot Preview */}
             {modalImageSrc && (
+                <ModalPortal>
                 <div 
                     className="modal-backdrop" 
                     onClick={() => setModalImageSrc(null)}
-                    style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)' }}
+                    style={{ zIndex: 2200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)' }}
                 >
                     <div 
                         className="md-card" 
@@ -1471,12 +1789,14 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         />
                     </div>
                 </div>
+                </ModalPortal>
             )}
 
             {/* Send Warning Modal */}
             {showWarnModal && (
-                <div className="md-modal-overlay">
-                    <div className="md-modal-card" style={{ maxWidth: '460px' }}>
+                <ModalPortal>
+                <div className="md-modal-overlay" onClick={() => !actionSubmitting && setShowWarnModal(false)}>
+                    <div className="md-modal-card" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header">
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)' }}>
                                 <MessageSquare size={18} /> Send Warning to Candidate
@@ -1538,12 +1858,14 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         )}
                     </div>
                 </div>
+                </ModalPortal>
             )}
 
             {/* Terminate Candidate Modal */}
             {showTerminateModal && (
-                <div className="md-modal-overlay">
-                    <div className="md-modal-card" style={{ maxWidth: '460px' }}>
+                <ModalPortal>
+                <div className="md-modal-overlay" onClick={() => !actionSubmitting && setShowTerminateModal(false)}>
+                    <div className="md-modal-card" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header">
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)' }}>
                                 <AlertOctagon size={18} /> Terminate Candidate Session
@@ -1589,12 +1911,14 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         </form>
                     </div>
                 </div>
+                </ModalPortal>
             )}
 
             {/* Submission File Preview Modal */}
             {previewModal && previewModal.open && (
-                <div className="md-modal-overlay" style={{ zIndex: 1100 }}>
-                    <div className="md-modal-card" style={{ maxWidth: previewModal.type === 'code' ? '860px' : previewModal.type === 'pdf' ? '920px' : '620px', width: '92vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                <ModalPortal>
+                <div className="md-modal-overlay" style={{ zIndex: 2150 }} onClick={() => setPreviewModal(null)}>
+                    <div className="md-modal-card" style={{ maxWidth: previewModal.type === 'code' ? '860px' : previewModal.type === 'pdf' ? '920px' : '620px', width: '92vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header" style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                                 <div style={{
@@ -1740,6 +2064,7 @@ export default function EvidenceViewer({ sessionId, liveViolations = [] }) {
                         </div>
                     </div>
                 </div>
+                </ModalPortal>
             )}
         </div>
     );

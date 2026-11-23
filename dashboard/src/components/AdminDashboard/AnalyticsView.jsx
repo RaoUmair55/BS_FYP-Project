@@ -1,3 +1,4 @@
+import { sideCameraLabels } from '../../utils/violationLabels';
 import React, { useState } from 'react';
 import { 
     Shield, Users, FileText, AlertTriangle, Cloud, CheckCircle, Database, 
@@ -5,6 +6,7 @@ import {
     ArrowRight, Clock, User, Hash, FileCode, Check, Copy, FolderKanban
 } from 'lucide-react';
 import { assetUrl } from '../../services/api';
+import { getInMemoryToken } from '../../context/AuthContext';
 
 const VIOLATION_COLORS = {
     head_turn_away: '#1a73e8',
@@ -126,7 +128,7 @@ export default function AnalyticsView({ stats, loading, assets = [], onPreview, 
         if (!item.url) return;
         try {
             const targetUrl = assetUrl(item.url);
-            const token = localStorage.getItem('token');
+            const token = getInMemoryToken();
             const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             const response = await fetch(targetUrl, { headers });
             if (!response.ok) throw new Error('Download failed');
@@ -257,7 +259,7 @@ export default function AnalyticsView({ stats, loading, assets = [], onPreview, 
                                         <div style={{ display: 'flex', alignItems: 'center' }}>
                                             <span className="legend-color-box" style={{ background: slice.color }}></span>
                                             <span style={{ maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                {slice.type.replace(/_/g, ' ')}
+                                                {sideCameraLabels[slice.type] || slice.type.replace(/_/g, ' ')}
                                             </span>
                                         </div>
                                         <span style={{ fontWeight: 600 }}>{slice.count} ({slice.percent}%)</span>

@@ -1,76 +1,96 @@
-/* Material Design Component Utilities & Styles */
+/* Microsoft Fluent 2 Acrylic Glass Component Utilities & Styles */
 
-/* Common Card & Elevation */
+/* Refined Frosted Glass Card */
 .md-card {
-  background: var(--bg-surface);
-  border-radius: 8px;
-  box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
-  border: 1px solid var(--border-color);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  background: var(--glass-card-bg);
+  backdrop-filter: var(--glass-card-blur);
+  -webkit-backdrop-filter: var(--glass-card-blur);
+  border-radius: var(--glass-card-radius, 14px);
+  box-shadow: var(--glass-card-shadow);
+  border: var(--glass-card-border);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .md-card:hover {
-  box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+  background: var(--glass-card-bg-hover);
+  box-shadow: var(--glass-card-shadow-hover);
 }
 
-/* Material Typography Scale */
+/* Typography Scale */
 .md-title {
-  font-size: 24px;
-  font-weight: 500;
+  font-size: 21px;
+  font-weight: 700;
   color: var(--text-main);
   margin: 0 0 4px 0;
-  letter-spacing: -0.25px;
+  letter-spacing: -0.02em;
 }
 
 .md-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
   margin: 0;
 }
 
-/* Material Buttons */
+/* Fluent Buttons (Crisp 8px / 6px corners — no excessive pills) */
 .md-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  font-family: 'Roboto', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 10px 20px;
+  gap: 7px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 15px;
   border-radius: 8px;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
   outline: none;
 }
 
 .md-btn-sm {
-  padding: 6px 12px;
-  font-size: 13px;
-  border-radius: 6px;
+  padding: 5px 11px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.md-btn:active:not(:disabled) {
+  transform: scale(0.985);
 }
 
 .md-btn-primary {
-  background-color: var(--primary-bg);
-  color: var(--text-on-color);
-  box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3);
+  background: var(--btn-primary-bg, #1F51D6);
+  color: var(--btn-primary-text, #FFFFFF);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px rgba(20, 21, 24, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .md-btn-primary:hover:not(:disabled) {
-  background-color: var(--primary-hover);
-  box-shadow: 0 1px 3px 1px rgba(60,64,67,0.15);
+  background: var(--primary-hover, #1842B4);
+  box-shadow: 0 2px 6px rgba(20, 21, 24, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .md-btn-outlined {
-  background-color: transparent;
-  color: var(--primary);
-  border-color: var(--border-color);
+  background: var(--btn-secondary-bg, #FFFFFF);
+  color: var(--btn-secondary-text, #18191D);
+  border: var(--btn-secondary-border, 1px solid rgba(20, 21, 24, 0.13));
+  box-shadow: 0 1px 2px rgba(20, 21, 24, 0.04);
 }
 
 .md-btn-outlined:hover:not(:disabled) {
-  background-color: var(--bg-base);
-  border-color: var(--primary);
+  background: var(--bg-muted, #EFEFED);
+  border-color: rgba(20, 21, 24, 0.22);
+  color: var(--text-main);
+}
+
+:root[data-theme="dark"] .md-btn-outlined {
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+:root[data-theme="dark"] .md-btn-outlined:hover:not(:disabled) {
+  background: #25272F;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
 }
 
 .md-btn-text {
@@ -79,26 +99,27 @@
 }
 
 .md-btn-text:hover:not(:disabled) {
-  background-color: var(--bg-muted);
+  background-color: var(--bg-muted, #F1F5F9);
   color: var(--text-main);
 }
 
 .md-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
   box-shadow: none;
 }
 
-/* Material Badges */
+/* Badges (Crisp 6px Fluent chips) */
 .md-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 .status-active {
@@ -238,29 +259,32 @@
 /* Modal Styling & Responsiveness Fix */
 .md-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(32, 33, 36, 0.6);
+  background: rgba(7, 26, 34, 0.52);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
+  z-index: 2000;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 20px 16px;
   box-sizing: border-box;
   overflow-y: auto;
 }
 
 .md-modal-card {
-  background: var(--bg-surface);
-  width: 520px;
-  max-width: 92vw;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  width: 560px;
+  max-width: 94vw;
   max-height: calc(100vh - 40px);
-  padding: 24px;
-  border-radius: 12px;
-  box-shadow: 0 4px 16px 3px rgba(60,64,67,0.2), 0 1px 3px 0 rgba(60,64,67,0.3);
+  padding: 24px 26px;
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(7, 26, 34, 0.3);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -269,13 +293,19 @@
   overflow: hidden;
 }
 
+:root[data-theme="dark"] .md-modal-card {
+  background: rgba(24, 25, 30, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
 .md-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--bg-muted);
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
@@ -321,17 +351,32 @@
 
 .md-input, .md-select {
   padding: 10px 12px;
+  background: var(--bg-surface);
+  color: var(--text-main);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+:root[data-theme="dark"] .md-input,
+:root[data-theme="dark"] .md-select {
+  background: rgba(8, 26, 34, 0.85);
+  color: #f8fafc;
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
 .md-input:focus, .md-select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+
+:root[data-theme="dark"] .md-input:focus,
+:root[data-theme="dark"] .md-select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
 }
 
 .md-file-input {
@@ -372,7 +417,9 @@
 
 /* Student List Material Component */
 .student-list-card {
+  flex: 1;
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -384,6 +431,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .student-list-header h3 {
@@ -397,6 +445,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  min-height: 0;
 }
 
 .student-item {
@@ -839,16 +888,16 @@
 /* Modal Overlay & Dialog */
 .modal-backdrop {
   position: fixed;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(32,33,36,0.6);
+  background: rgba(15, 23, 42, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1100;
-  backdrop-filter: blur(2px);
+  z-index: 2100;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   padding: 20px 16px;
   box-sizing: border-box;
   overflow-y: auto;

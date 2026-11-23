@@ -151,8 +151,9 @@ export default function UserManagerView({
                                         </td>
                                         <td>
                                             {isAdmin ? (
-                                                <span className="admin-chip chip-paper" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700 }}>
-                                                    🛡️ Administrator
+                                                <span className="admin-chip chip-paper" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                                    <ShieldCheck size={13} />
+                                                    <span>Administrator</span>
                                                 </span>
                                             ) : (
                                                 <span className="admin-chip chip-verification" style={{ background: 'var(--bg-muted)', color: 'var(--text-muted)' }}>

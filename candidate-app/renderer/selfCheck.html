@@ -330,8 +330,36 @@ Connection: selfCheck.js runs the checks and updates these elements.
       </div>
     </div>
 
+    <section class="check-item" id="check-side-camera" hidden>
+      <div class="check-header">
+        <span>7. Secondary Phone Camera</span>
+        <span id="side-camera-setup-status" role="status" aria-live="polite">Waiting for phone</span>
+      </div>
+      <div class="check-content">
+        <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:12px;padding:14px;margin-bottom:14px;">
+          <h4 style="margin:0 0 8px;color:#0f766e;font-size:15px;display:flex;align-items:center;gap:6px;">
+            <span>📐</span> Visual Setup Guide
+          </h4>
+          <img src="./assets/setup-guide.jpg" alt="How to position your side camera on your desk" style="width:100%;max-width:540px;border-radius:10px;display:block;margin:0 auto 10px;border:1px solid #ccfbf1;box-shadow:0 2px 10px rgba(15,118,110,0.06);">
+          <p style="margin:0;font-size:13px;color:#134e4a;line-height:1.45;">Place your phone in <strong>landscape mode</strong> on your <strong>left or right desk side</strong> (~0.7–1.2 m away), propped <strong>10–20 cm high on 2–3 books or a sturdy stand</strong> so your <strong>head, hands, keyboard, and laptop side</strong> are clearly visible.</p>
+        </div>
+        <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+          <div>
+            <img id="side-camera-qr" alt="Scan to securely pair your side camera" width="220" height="220" style="border:2px solid #0f766e;border-radius:12px;display:block;" hidden>
+            <p id="side-camera-expiry" style="font-size:12px;color:#64748b;max-width:220px;margin:6px 0;"></p>
+            <button id="side-camera-pair" type="button" class="secondary-button" style="margin-top:4px;">Generate New QR Code</button>
+          </div>
+          <div style="flex:1;min-width:260px;">
+            <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#0f766e;">Setup Preview (Temporary • Not Stored):</p>
+            <img id="side-camera-preview" alt="Temporary phone camera placement preview" style="width:100%;max-width:440px;max-height:240px;object-fit:contain;border-radius:10px;background:#0f172a;display:block;margin-bottom:10px;" hidden>
+            <ul id="side-camera-criteria" aria-live="polite" style="padding:0;margin:0;"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
     <button id="btn-begin-exam" disabled>Begin Exam</button>
   </div>
+  <script src="./sideCamera.js"></script>
   <script src="./selfCheck.js"></script>
 </body>
 

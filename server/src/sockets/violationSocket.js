@@ -11,13 +11,16 @@ function initSocket(server) {
     
     const io = new Server(server, {
         cors: {
-            origin: dashboardUrl,
+            origin: [dashboardUrl, process.env.PUBLIC_URL, 'null'].filter(Boolean),
             methods: ["GET", "POST"]
         }
     });
 
     io.use(async (socket, next) => {
         try {
+            if (['candidate_session', 'secondary_camera'].includes(socket.handshake.auth?.scope)) {
+                return require('../services/secondaryCamera').socketAuth(socket, next);
+            }
             const decoded = verifyAccessToken(socket.handshake.auth?.token);
             const teacher = await Teacher.findById(decoded.teacherId);
             if (!teacher) return next(new Error('Authentication required'));
@@ -39,6 +42,7 @@ function initSocket(server) {
         });
     });
 
+    require('../services/secondaryCamera').attach(io);
     return io;
 }
 

@@ -1,3 +1,4 @@
+import { sideCameraLabels } from '../utils/violationLabels';
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { 
@@ -7,10 +8,12 @@ import {
 } from 'lucide-react';
 import RiskScoreBadge from './RiskScoreBadge';
 import EvidenceViewer from './EvidenceViewer';
+import ModalPortal from './ModalPortal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
+    if (sideCameraLabels[typeStr]) return sideCameraLabels[typeStr];
     if (!typeStr) return "Unknown";
     if (typeStr === 'head_turn_away') {
         if (details?.reason) return details.reason;
@@ -34,7 +37,7 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
         const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
         const appName = details?.object_class ? ` in ${details.object_class}` : '';
-        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing File Opened${appName}`;
+        return fileTarget ? `Pre-Existing File: ${fileTarget}${appName}` : `Pre-Existing File Opened${appName}`;
     }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
@@ -388,7 +391,7 @@ const ExamSummary = ({ examId, onBack }) => {
                                                 >
                                                     <CheckCircle size={13} />
                                                     <span>
-                                                        {s.submissionType === 'both' ? '📝 Typed + 📁 File' : s.submissionType === 'text' ? '📝 Typed Script' : '📁 Attached File'}
+                                                        {s.submissionType === 'both' ? 'Typed + File' : s.submissionType === 'text' ? 'Typed Script' : 'Attached File'}
                                                     </span>
                                                 </button>
                                             ) : (
@@ -418,8 +421,9 @@ const ExamSummary = ({ examId, onBack }) => {
 
             {/* Evidence Modal overlay when clicking a student row */}
             {selectedStudentSessionId && (
-                <div className="modal-backdrop no-print">
-                    <div className="modal-dialog large-modal">
+                <ModalPortal>
+                <div className="modal-backdrop no-print" onClick={() => setSelectedStudentSessionId(null)}>
+                    <div className="modal-dialog large-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h3>Candidate Evidence Review</h3>
                             <button 
@@ -434,6 +438,7 @@ const ExamSummary = ({ examId, onBack }) => {
                         </div>
                     </div>
                 </div>
+                </ModalPortal>
             )}
         </div>
     );

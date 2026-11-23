@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>IntegrityFlow · Side Camera</title>
+  <link rel="stylesheet" href="phone.css">
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">INTEGRITYFLOW / SECONDARY CAMERA</span>
+      <h1>Side Camera Setup</h1>
+    </header>
+
+    <section id="instructions">
+      <div class="illustration-wrap">
+        <img src="setup-guide.jpg" alt="Desk-side phone camera placement guide" class="setup-illustration">
+      </div>
+      <h2>Setup Instructions</h2>
+      <ol class="setup-steps">
+        <li>Plug in your charger and prop your phone on a stand, mug, or stacked books (landscape gives a wider view, portrait also works).</li>
+        <li>Place it on your <strong>left or right desk side</strong> (~arm's length away) aimed toward you and your workspace.</li>
+        <li>Check the live preview on your laptop so <strong>you and your laptop/keyboard</strong> are both visible, then hold steady for <strong>3 seconds</strong>.</li>
+      </ol>
+
+      <div class="dnd-guide-card">
+        <div class="dnd-header">
+          <span class="dnd-icon">🌙</span>
+          <strong>Turn on Do Not Disturb (DND)</strong>
+        </div>
+        <p class="dnd-desc">Incoming phone calls or notifications will minimize your camera during the exam.</p>
+        <div class="dnd-tips">
+          <div class="dnd-tip-item">🍎 <strong>iPhone:</strong> Swipe down top-right ➔ tap <em>Focus (Do Not Disturb)</em></div>
+          <div class="dnd-tip-item">🤖 <strong>Android:</strong> Swipe down top bar ➔ tap <em>Do Not Disturb</em></div>
+        </div>
+      </div>
+
+      <p class="privacy-note">🔒 Setup preview passes temporarily to your laptop only and is never stored. The examiner only receives snapshots if a violation occurs.</p>
+    </section>
+
+    <button id="start" type="button">Start Side Camera</button>
+    <p id="message" role="status" aria-live="polite">Tap Start to allow camera &amp; motion access.</p>
+
+    <section id="monitor" hidden>
+      <p class="banner">Keep this page open • Do not touch the phone</p>
+      <div class="video-container">
+        <video id="camera" autoplay muted playsinline aria-label="Rear camera setup view"></video>
+        <div id="hold-progress-container" class="hold-progress-container" hidden>
+          <div id="hold-progress-bar" class="hold-progress-bar"></div>
+        </div>
+      </div>
+      <ul id="criteria" aria-live="polite"></ul>
+      <div id="motion-fallback-box" class="motion-fallback-box" hidden>
+        <p>Motion sensors unavailable or blocked in your browser.</p>
+        <button id="btn-fixed-stand" type="button" class="fallback-btn">Use Fixed Stand Mode (Sensors Blocked)</button>
+      </div>
+      <div id="workstation-fallback-box" class="workstation-fallback-box" hidden>
+        <p>Laptop not recognized from this side angle? If your desk and laptop are clearly visible in the laptop preview, you can confirm below (a desk baseline photo will be sent to your examiner).</p>
+        <button id="btn-confirm-workstation" type="button" class="assist-btn">My Laptop Is Visible — Confirm Placement</button>
+      </div>
+      <p id="connection">Connecting…</p>
+    </section>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="phone.js"></script>
+</body>
+</html>

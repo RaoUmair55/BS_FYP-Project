@@ -7,6 +7,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import VerifyEmail from './pages/VerifyEmail';
 import { Shield, Moon, Sun } from 'lucide-react';
+import { Toaster } from 'sileo';
+import 'sileo/styles.css';
 import './App.css';
 import './pages/Auth.css';
 
@@ -112,6 +114,18 @@ function MainRouter() {
         }
         return (
             <div className="auth-theme-shell">
+                <div className="auth-ambient-scene" aria-hidden="true">
+                    <span className="auth-orb auth-orb-1" />
+                    <span className="auth-orb auth-orb-2" />
+                    <span className="auth-orb auth-orb-3" />
+                    <span className="auth-grid-overlay" />
+                </div>
+                <Toaster
+                    position="top-right"
+                    theme={theme}
+                    offset={{ top: 16, right: 16 }}
+                    options={{ roundness: 12, fill: theme === 'dark' ? '#18191E' : '#FFFFFF' }}
+                />
                 <button className="auth-theme-toggle" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
                     {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
@@ -123,6 +137,12 @@ function MainRouter() {
     // 3. Authenticated: Render Main Examiner Dashboard
     return (
         <div className="app">
+            <Toaster
+                position="top-right"
+                theme={theme}
+                offset={{ top: 16, right: 16 }}
+                options={{ roundness: 12, fill: theme === 'dark' ? '#18191E' : '#FFFFFF' }}
+            />
             <Dashboard theme={theme} onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} />
         </div>
     );

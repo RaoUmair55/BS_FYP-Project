@@ -4,11 +4,13 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "check:side-camera": "node checks/check_secondary_camera.js && node checks/check_secondary_camera_phone.js",
     "check:isolation": "node checks/check_socket_isolation.js",
     "check:late-evidence": "node checks/check_late_evidence.js",
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.21",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.11.0",
     "cookie-parser": "^1.4.7",
@@ -21,6 +23,7 @@
     "mongoose": "^8.1.1",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^10.0.10",
+    "qrcode": "1.5.4",
     "socket.io": "^4.7.4",
     "zod": "^4.6.5"
   },

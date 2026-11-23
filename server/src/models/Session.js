@@ -12,6 +12,20 @@ const sessionSchema = new mongoose.Schema({
         enum: ["active", "completed", "terminated"], 
         default: "active" 
     },
+    requireSecondaryCamera: { type: Boolean, default: false },
+    candidateMonitoringStartedAt: { type: Date, default: null },
+    sideCameraPairing: {
+        hash: String, expiresAt: Date, usedAt: { type: Date, default: null }
+    },
+    secondaryCamera: {
+        paired: { type: Boolean, default: false }, pairedAt: Date, lastHeartbeatAt: Date, disconnectedAt: { type: Date, default: null },
+        placementVerified: { type: Boolean, default: false },
+        fixedStandMode: { type: Boolean, default: false },
+        referencePhoto: { type: String, default: null },
+        referencePhotoAt: { type: Date, default: null },
+        status: { type: String, enum: ['not_paired', 'connected', 'verified', 'lost'], default: 'not_paired' },
+        credentialId: String
+    },
     cameraVerificationPhoto: { type: String, default: null },
     cameraVerificationStatus: { 
         type: String, 
@@ -47,6 +61,7 @@ const sessionSchema = new mongoose.Schema({
 });
 
 // Compound index to support active session monitoring and historical exam queries
+sessionSchema.index({ 'sideCameraPairing.hash': 1 }, { sparse: true });
 sessionSchema.index({ examId: 1, status: 1 });
 
 module.exports = mongoose.model('Session', sessionSchema);

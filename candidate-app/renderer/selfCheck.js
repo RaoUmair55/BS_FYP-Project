@@ -14,13 +14,21 @@ const btnDisplay = document.getElementById('btn-check-display');
 const btnBegin = document.getElementById('btn-begin-exam');
 
 let cameraPassed = false;
-let micPassed = false;
-let voicePassed = false;
+let micPassed = true;    // Audio/voice monitoring disabled for now
+let voicePassed = true;  // Audio/voice monitoring disabled for now
 let appsPassed = false;
 let usbPassed = false;
 let displayPassed = false;
-let devVoiceEnabled = true;
-let canSkipVoice = false;
+let devVoiceEnabled = false;
+let canSkipVoice = true;
+let sideCameraPassed = true;
+
+window.addEventListener('pagehide', () => {
+  if (faceAlignmentInterval) {
+    clearInterval(faceAlignmentInterval);
+    faceAlignmentInterval = null;
+  }
+});
 
 document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOMContentLoaded event and updates the associated screen or process state. */ async () => {
   try {
@@ -33,24 +41,16 @@ document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the D
         sessionInfo = JSON.parse(sessionStorage.getItem('sessionInfo') || localStorage.getItem('sessionInfo') || '{}');
       } catch (e) {}
     }
-    const isLab = sessionInfo && sessionInfo.examType === 'physical_lab';
-    canSkipVoice = sessionInfo?.isDevMode === true && !isLab;
-    if (canSkipVoice) {
-      const control = document.createElement('div');
-      control.className = 'check-item';
-      control.innerHTML = '<label style="display:flex;align-items:center;gap:12px"><input id="dev-voice-toggle" type="checkbox" checked> Voice monitoring (development presentation)</label><p>Turn off to skip microphone and speaker comparison. Camera and environment checks stay enabled.</p>';
-      document.getElementById('check-mic').before(control);
-      control.querySelector('input').addEventListener('change', /* Function purpose: Handles the change event and updates the associated screen or process state. */ (event) => {
-        if (voiceCheckBusy || audioCheckBusy) {
-          event.target.checked = devVoiceEnabled;
-          alert('Finish the current audio check before changing voice monitoring.');
-          return;
-        }
-        devVoiceEnabled = event.target.checked;
-        ['check-mic', 'check-voice'].forEach(/* Function purpose: Runs document.getElementById as part of this callback’s processing. */ id => { document.getElementById(id).style.display = devVoiceEnabled ? '' : 'none'; });
-        updateBeginButton();
-      });
+    if (sessionInfo?.requireSecondaryCamera) {
+      sideCameraPassed = false;
+      window.IntegritySideCamera.setup(sessionInfo, ready => { sideCameraPassed = ready; updateBeginButton(); });
     }
+    const isLab = sessionInfo && sessionInfo.examType === 'physical_lab';
+    // Audio/voice monitoring is temporarily disabled — hide mic & voice check cards
+    ['check-mic', 'check-voice'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
     const badge = document.getElementById('candidateInfoBadge');
     if (badge && sessionInfo) {
       const name = sessionInfo.studentName || sessionInfo.studentId || 'Candidate';
@@ -102,7 +102,7 @@ document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the D
 
 // Function purpose: Enables exam entry only when the required self-checks have passed.
 function updateBeginButton() {
-  btnBegin.disabled = !(cameraPassed && (canSkipVoice && !devVoiceEnabled || micPassed && voicePassed) && appsPassed && usbPassed && displayPassed);
+  btnBegin.disabled = !(cameraPassed && (canSkipVoice && !devVoiceEnabled || micPassed && voicePassed) && appsPassed && usbPassed && displayPassed && sideCameraPassed);
 }
 
 // Function purpose: Uploads the initial candidate camera photo for examiner verification.
@@ -924,6 +924,7 @@ btnDisplay.addEventListener('click', /* Function purpose: Handles the click even
 btnBegin.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
     btnBegin.disabled = true;
     btnBegin.textContent = 'Starting Exam Mode...';
+    if (!sideCameraPassed) { updateBeginButton(); btnBegin.textContent = 'Begin Exam'; return; }
     try {
         if (activeCameraStream) {
             activeCameraStream.getTracks().forEach(/* Function purpose: Runs track.stop as part of this callback’s processing. */ track => track.stop());
@@ -932,12 +933,12 @@ btnBegin.addEventListener('click', /* Function purpose: Handles the click event 
         const result = await window.api.startExamMode({ voiceEnabled: !canSkipVoice || devVoiceEnabled });
         if (!result.success) {
             alert('Failed to start exam mode: ' + result.error);
-            btnBegin.disabled = false;
+            updateBeginButton();
             btnBegin.textContent = 'Begin Exam';
         }
     } catch (err) {
         alert('Error starting exam mode.');
-        btnBegin.disabled = false;
+        updateBeginButton();
         btnBegin.textContent = 'Begin Exam';
     }
 });

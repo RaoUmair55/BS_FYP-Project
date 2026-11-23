@@ -72,7 +72,7 @@ class USBMonitor:
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
                 capture_output=True,
                 text=True,
-                timeout=5.0,
+                timeout=12.0,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
             )
             if res.returncode != 0:
@@ -128,8 +128,21 @@ class USBMonitor:
             self.monitor_thread.join(timeout=3.0)
         print("[USBMonitor] Stopped USB removable storage monitor loop.")
 
+    # Function purpose: Fast in-process Windows logical drive bitmask check (0.1ms, zero PowerShell spawns).
+    def _get_logical_drives_bitmask(self):
+        if os.name != 'nt':
+            return None
+        try:
+            return int(ctypes.windll.kernel32.GetLogicalDrives())
+        except Exception:
+            return None
+
     # Function purpose: Repeatedly checks the monitored resource until this component is stopped.
     def _monitor_loop(self):
+        last_bitmask = None
+        last_full_scan_at = 0.0
+        full_scan_fallback_interval = 30.0  # Safety-net full CIM scan for unmounted/raw USB disks
+
         while self.running:
             # During self-check, continuous violations are paused (one-time checks used instead)
             if self.is_self_check:
@@ -137,11 +150,19 @@ class USBMonitor:
                 continue
 
             try:
-                current_drives = self.get_removable_drives()
-                if self.last_error:
-                    time.sleep(3.0)
-                    continue
-                self._report_connected_drives(current_drives)
+                now = time.monotonic()
+                bitmask = self._get_logical_drives_bitmask()
+                bitmask_changed = (bitmask is None) or (bitmask != last_bitmask)
+                needs_full_scan = bitmask_changed or (now - last_full_scan_at >= full_scan_fallback_interval)
+
+                if needs_full_scan:
+                    current_drives = self.get_removable_drives()
+                    if self.last_error:
+                        time.sleep(3.0)
+                        continue
+                    last_bitmask = bitmask
+                    last_full_scan_at = now
+                    self._report_connected_drives(current_drives)
             except Exception as e:
                 print(f"[USBMonitor] Error during monitor loop poll: {e}")
 

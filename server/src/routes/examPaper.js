@@ -4,15 +4,15 @@ const path = require('path');
 const Exam = require('../models/Exam');
 const Session = require('../models/Session');
 const { requireAuth } = require('../middleware/authMiddleware');
-const { requireOwnedExam } = require('../middleware/examAccess');
+const { requireOwnedExam, findExamByIdentifier } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
 const router = express.Router();
 
-const upload = multer({ 
+const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf' || 
+        if (file.mimetype === 'application/pdf' ||
             file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
             file.mimetype === 'application/msword') {
             cb(null, true);
@@ -51,19 +51,20 @@ router.post('/:examId/paper', requireAuth, requireOwnedExam, uploadMiddleware, a
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        const examId = req.params.examId;
-        const uniqueFilename = `${examId}-${Date.now()}${path.extname(req.file.originalname)}`;
+        const exam = await findExamByIdentifier(req.params.examId);
+        if (!exam) {
+            return res.status(404).json({ error: 'Exam not found' });
+        }
+
+        const safeIdentifier = String(exam.examCode || exam._id).replace(/[^a-zA-Z0-9-]/g, '');
+        const uniqueFilename = `${safeIdentifier}-${Date.now()}${path.extname(req.file.originalname)}`;
         const saved = await storageService.save(req.file.buffer, uniqueFilename, 'papers');
 
-        const paperPath = saved.path;
-        const paperFilename = req.file.originalname;
-
-        // Upsert Exam document
-        const exam = await Exam.findOneAndUpdate(
-            { examId },
-            { paperPath, paperFilename },
-            { new: true, upsert: true }
-        );
+        const previousPaper = exam.paperPath;
+        exam.paperPath = saved.path;
+        exam.paperFilename = req.file.originalname;
+        await exam.save();
+        if (previousPaper) await storageService.delete(previousPaper);
 
         res.status(201).json({ message: 'Exam paper uploaded successfully', exam });
     } catch (err) {
@@ -151,11 +152,11 @@ router.get('/:examId/paper', async (req, res) => {
                     res.setHeader('Content-Disposition', `inline; filename="${exam.paperFilename || 'exam_paper.pdf'}"`);
                     return res.send(Buffer.from(buffer));
                 }
-                
+
                 console.error(`[ExamPaper] Remote fetch failed with status: ${remoteRes.status}`);
                 if (remoteRes.status === 401) {
-                    return res.status(401).json({ 
-                        error: 'Cloudinary blocked PDF delivery (HTTP 401). Please re-upload the exam paper or enable "PDF and ZIP file delivery" in your Cloudinary Security Settings.' 
+                    return res.status(401).json({
+                        error: 'Cloudinary blocked PDF delivery (HTTP 401). Please re-upload the exam paper or enable "PDF and ZIP file delivery" in your Cloudinary Security Settings.'
                     });
                 }
                 return res.status(remoteRes.status).json({ error: 'Failed to fetch exam paper from storage' });

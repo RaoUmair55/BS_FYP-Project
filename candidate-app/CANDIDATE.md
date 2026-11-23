@@ -237,3 +237,7 @@ Phone alerts now trigger on one YOLO inference with at least 60% confidence. Low
 ### Exam-scoped camera review (8 October 2026)
 
 Online exams take three randomly spaced identity snapshots after the exam starts, using the existing AI-monitor camera rather than opening a second stream. The candidate consent notice explains these checkpoints and examiner retake requests. A requested photo opens a preview from the same camera, shows the examiner note and allows capture/retry. Upload failures retain the pending request. Scheduled checkpoints retry through session polling while the exam remains active; no snapshots run in physical-lab mode or after completion. Snapshots are identity-review evidence, not automatic cheating violations.
+
+## Secondary phone camera (part 1)
+
+See [SIDE_CAMERA.md](../SIDE_CAMERA.md). For a required-camera exam, registration passes the session JWT and requirement through identity into Electron. `renderer/sideCamera.js` connects only to the HTTPS backend, displays a QR code, transient setup preview and placement checks, and keeps Begin Exam disabled until verified. Electron rechecks backend readiness and arms the watchdog only after monitoring startup. The exam screen shows side-camera status and a restore-connection warning. Exams without the flag do not create this connection or show the check. Set SERVER_URL to the same HTTPS origin as backend PUBLIC_URL. Consent describes the temporary preview and violation-only snapshots. No `ai-module/` changes were made.

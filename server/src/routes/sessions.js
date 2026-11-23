@@ -159,6 +159,7 @@ router.post('/', async (req, res) => {
                 examEndTime = exam.endTime;
             }
         const newSession = new Session({
+            requireSecondaryCamera: exam.requireSecondaryCamera === true,
             studentId: finalStudentId,
             studentName: trimmedName,
             rollNumber: trimmedRoll,
@@ -169,8 +170,16 @@ router.post('/', async (req, res) => {
             consentGiven: consentGiven === true || consentGiven === 'true',
             consentTimestamp: consentTimestamp ? new Date(consentTimestamp) : (consentGiven ? new Date() : null)
         });
+        if (exam.requireSecondaryCamera && (!process.env.SESSION_TOKEN_SECRET || process.env.SESSION_TOKEN_SECRET.length < 32)) {
+            return res.status(503).json({ error: 'Side-camera session authentication is not configured' });
+        }
         const savedSession = await newSession.save();
-        res.status(201).json(savedSession);
+        const result = savedSession.toObject();
+        if (process.env.SESSION_TOKEN_SECRET && process.env.SESSION_TOKEN_SECRET.length >= 32) {
+            result.sessionToken = require('../middleware/sessionAuth').signSessionToken(savedSession._id);
+        }
+        result.requireSecondaryCamera = exam.requireSecondaryCamera === true;
+        res.status(201).json(result);
     } catch (err) {
         console.error('Error creating session:', err);
         res.status(400).json({ error: 'Failed to create session', details: err.message });
@@ -237,6 +246,35 @@ router.post('/:sessionId/request-camera-photo', requireAuth, requireOwnedSession
         await require('../utils/auditLogger').logTeacherAction(req, { action: 'CAMERA_PHOTO_REQUESTED', targetType: 'session', targetId: session._id, targetSummary: 'Requested a new identity photo', details: { requestId: request.id, note: request.note } });
         res.json({ message: 'Photo requested', session: updated });
     } catch (err) { console.error('Photo request failed:', err); res.status(500).json({ error: 'Unable to request a photo' }); }
+});
+
+// POST /sessions/:sessionId/request-side-snapshot — On-demand examiner desk check via connected phone
+router.post('/:sessionId/request-side-snapshot', requireAuth, requireOwnedSession, async (req, res) => {
+    try {
+        const session = await Session.findById(req.params.sessionId);
+        const exam = session && await Exam.findOne({ $or: [{ examCode: session.examId }, { examId: session.examId }] });
+        if (!exam || exam.status !== 'active' || session.status !== 'active') {
+            return res.status(409).json({ error: 'Exam session is no longer active' });
+        }
+        if (!exam.requireSecondaryCamera || !session.secondaryCamera?.paired) {
+            return res.status(400).json({ error: 'Secondary phone camera is not paired for this session' });
+        }
+        const { requestDeskSnapshot } = require('../services/secondaryCamera');
+        const sent = requestDeskSnapshot(req.app.locals.io, session._id);
+        if (!sent) {
+            return res.status(409).json({ error: 'Side camera phone is not currently connected' });
+        }
+        await require('../utils/auditLogger').logTeacherAction(req, {
+            action: 'SIDE_CAMERA_SNAPSHOT_REQUESTED',
+            targetType: 'session',
+            targetId: session._id,
+            targetSummary: 'Requested on-demand side-camera desk check snapshot'
+        });
+        res.json({ success: true, message: 'Desk check snapshot requested from phone' });
+    } catch (err) {
+        console.error('Side snapshot request failed:', err);
+        res.status(500).json({ error: 'Unable to request side-camera desk check' });
+    }
 });
 
 // PATCH /sessions/:sessionId/camera-verification — Teacher triage (verified vs flagged)
@@ -398,7 +436,16 @@ router.get('/:sessionId/status', async (req, res) => {
             cameraPhotoRequest: exam?.examType !== 'physical_lab' && exam?.status === 'active' && session.status === 'active' ? nextPhotoRequest(session.cameraPhotoRequests, Date.now()) : null,
             cameraVerificationStatus: session.cameraVerificationStatus,
             cameraVerificationPhoto: session.cameraVerificationPhoto,
-            cameraVerificationNote: session.cameraVerificationNote
+            cameraVerificationNote: session.cameraVerificationNote,
+            requireSecondaryCamera: Boolean(exam?.requireSecondaryCamera || session.requireSecondaryCamera),
+            secondaryCamera: session.secondaryCamera ? {
+                paired: Boolean(session.secondaryCamera.paired),
+                status: session.secondaryCamera.status || 'not_paired',
+                placementVerified: Boolean(session.secondaryCamera.placementVerified),
+                fixedStandMode: Boolean(session.secondaryCamera.fixedStandMode),
+                referencePhoto: session.secondaryCamera.referencePhoto || null,
+                referencePhotoAt: session.secondaryCamera.referencePhotoAt || null
+            } : null
         });
     } catch (err) {
         console.error('Error fetching session status:', err);

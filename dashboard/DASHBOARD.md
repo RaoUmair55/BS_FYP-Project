@@ -317,3 +317,7 @@ Signup normalizes email and checks the Teacher collection; the unique MongoDB em
 ### Exam-scoped camera review (8 October 2026)
 
 Webcam Grid is scoped to the selected active exam (including code/ID aliases). Release Paper and exam-wide extensions share that scope. +5/+10 controls are above the grid and explicitly apply to all candidates, not individual cards. The latest identity photo stays visible after verification. Request new photo sends an optional note without creating a violation or changing risk scores; pending requests disable duplicate requests. Expand Photo history for timestamped initial, requested and scheduled photos and per-photo review state. A stale photo cannot be confirmed after a newer upload.
+
+## Secondary phone camera (part 1)
+
+See [SIDE_CAMERA.md](../SIDE_CAMERA.md). ExamManager includes an optional Require secondary phone camera checkbox (default off). StudentList combines initial secondaryCamera status with live owner-scoped secondaryCameraStatus events. `utils/violationLabels.js` defines the three side-camera labels used in Priority Queue, Alert Feed, Evidence Viewer and Exam Summary. Examiners receive alerts and individual snapshots, never setup previews or a live phone view.

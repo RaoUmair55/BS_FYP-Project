@@ -17,9 +17,11 @@ const violationSchema = new mongoose.Schema({
             "usb_device_detected",
             "multiple_displays_detected",
             "second_voice_detected",
-            "pre_existing_file"
+            "pre_existing_file",
+            "secondary_camera_disconnected", "secondary_camera_moved", "secondary_camera_obstructed"
         ]
     },
+    source: { type: String, enum: ['front_camera', 'side_camera'], default: 'front_camera' },
     severity: { type: Number, required: true, min: 1, max: 5 },
     timestamp: { type: Date, required: true },
     eventId: { type: String, maxlength: 128 },

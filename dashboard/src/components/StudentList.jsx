@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { getActiveSessions } from '../services/api';
 import RiskScoreBadge from './RiskScoreBadge';
-import { Users, Search, AlertCircle, Clock } from 'lucide-react';
+import { Users, Search, AlertCircle, Clock, User, CheckCircle, XCircle } from 'lucide-react';
 import './Components.css';
 
-export default function StudentList({ riskScores, onSelectStudent, selectedSessionId, examFilter, violations = [] }) {
+export default function StudentList({ secondaryCameraStatuses = {}, secondaryCameraMeta = {}, riskScores, onSelectStudent, selectedSessionId, examFilter, violations = [] }) {
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -107,13 +107,24 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                         placeholder="Search student name, roll #, or exam..." 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '13px', width: '100%' }}
+                        style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '13px', width: '100%', color: 'var(--text-main)' }}
                     />
                 </div>
             </div>
             
             {loading ? (
-                <div className="md-loading" style={{ padding: '24px' }}>Loading active sessions...</div>
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="skeleton-card-row">
+                            <div className="skeleton-circle" />
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                                <div className="skeleton-line" style={{ width: '62%', height: '13px' }} />
+                                <div className="skeleton-line" style={{ width: '44%', height: '10px' }} />
+                            </div>
+                            <div className="skeleton-line" style={{ width: '46px', height: '22px', borderRadius: '9999px' }} />
+                        </div>
+                    ))}
+                </div>
             ) : sortedSessions.length === 0 ? (
                 <div className="md-empty-card" style={{ border: 'none', background: 'transparent', flex: 1 }}>
                     <Users size={36} className="md-empty-icon" />
@@ -138,70 +149,163 @@ export default function StudentList({ riskScores, onSelectStudent, selectedSessi
                                 onClick={() => onSelectStudent(sid)}
                                 className={`student-item ${isSelected ? 'selected' : ''}`}
                                 style={{
-                                    borderLeft: isTerminated ? '3px solid var(--danger)' : isCompleted ? '3px solid var(--success)' : undefined,
-                                    background: isTerminated ? 'rgba(239, 68, 68, 0.04)' : undefined
+                                    display: 'flex',
+                                    flexDirection: 'row',
+                                    alignItems: 'flex-start',
+                                    gap: '12px',
+                                    borderLeft: isTerminated ? '3.5px solid var(--danger)' : isCompleted ? '3.5px solid var(--success)' : isSelected ? '3.5px solid var(--primary)' : undefined,
+                                    background: isTerminated ? 'rgba(239, 68, 68, 0.05)' : undefined
                                 }}
                             >
-                                <div style={{ overflow: 'hidden', flex: 1 }}>
-                                    <div className="student-info-name" style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-main)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span>{displayName}</span>
+                                {/* Candidate Profile Icon Bubble */}
+                                <div className="candidate-avatar-bubble" style={{
+                                    width: '38px',
+                                    height: '38px',
+                                    marginTop: '2px',
+                                    borderRadius: '50%',
+                                    background: isTerminated 
+                                        ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(244, 63, 94, 0.35))' 
+                                        : isCompleted 
+                                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.35))' 
+                                        : isSelected 
+                                        ? 'linear-gradient(135deg, #0ea5e9, #0284c7)' 
+                                        : 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.25))',
+                                    color: isSelected ? '#ffffff' : isTerminated ? 'var(--danger)' : isCompleted ? 'var(--success)' : 'var(--primary)',
+                                    border: isSelected ? '1.5px solid #38bdf8' : '1px solid rgba(56, 189, 248, 0.3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 700,
+                                    fontSize: '14px',
+                                    flexShrink: 0,
+                                    boxShadow: isSelected ? '0 3px 12px rgba(14, 165, 233, 0.4)' : '0 2px 6px rgba(0, 0, 0, 0.05)',
+                                    position: 'relative'
+                                }}>
+                                    <User size={18} strokeWidth={2.2} />
+                                    {/* Real-time status ping dot */}
+                                    <span style={{
+                                        position: 'absolute',
+                                        bottom: '0',
+                                        right: '0',
+                                        width: '9px',
+                                        height: '9px',
+                                        borderRadius: '50%',
+                                        background: isTerminated ? '#f43f5e' : isCompleted ? '#64748b' : '#10b981',
+                                        border: '1.5px solid var(--bg-surface)',
+                                        boxShadow: isTerminated ? '0 0 6px rgba(244, 63, 94, 0.8)' : isCompleted ? 'none' : '0 0 6px rgba(16, 185, 129, 0.8)'
+                                    }} />
+                                </div>
+
+                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {/* Top Row: Candidate Name + Risk Score (never crushed by status pills) */}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', minWidth: 0 }}>
+                                        <span
+                                            className="student-info-name"
+                                            title={displayName}
+                                            style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}
+                                        >
+                                            {displayName}
+                                        </span>
+                                        <div style={{ flexShrink: 0 }}>
+                                            <RiskScoreBadge score={currentScore} />
+                                        </div>
+                                    </div>
+
+                                    {/* Middle Row: Roll Number & Exam Code */}
+                                    <div className="student-info-sub" style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <span style={{ fontWeight: 600 }}>{displayRoll}</span> &bull; {s.examId}
+                                        <span title={`Session ID: ${sid}`} style={{ opacity: 0.55, fontSize: '10px', marginLeft: '4px' }}>
+                                            ({String(sid).substring(0, 6)}…)
+                                        </span>
+                                    </div>
+
+                                    {/* Bottom Row: Wrapped Status, Alert Count & Side-Camera Pills */}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                                         {isTerminated ? (
                                             <span style={{
-                                                fontSize: '10px',
-                                                padding: '1px 6px',
-                                                borderRadius: '8px',
+                                                fontSize: '10.5px',
+                                                padding: '2px 7px',
+                                                borderRadius: '9999px',
                                                 fontWeight: 600,
                                                 background: 'var(--danger-soft)',
                                                 color: 'var(--danger)',
-                                                border: '1px solid #fca5a5'
+                                                border: '1px solid rgba(244, 63, 94, 0.35)',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
                                             }} title={s.terminationReason || 'Session Terminated'}>
-                                                🛑 Terminated
+                                                <XCircle size={11} />
+                                                <span>Terminated</span>
                                             </span>
                                         ) : isCompleted ? (
                                             <span style={{
-                                                fontSize: '10px',
-                                                padding: '1px 6px',
-                                                borderRadius: '8px',
+                                                fontSize: '10.5px',
+                                                padding: '2px 7px',
+                                                borderRadius: '9999px',
                                                 fontWeight: 600,
                                                 background: 'var(--success-soft)',
                                                 color: 'var(--success)',
-                                                border: '1px solid #a7f3d0'
+                                                border: '1px solid rgba(16, 185, 129, 0.35)',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
                                             }}>
-                                                ✅ Submitted
+                                                <CheckCircle size={11} />
+                                                <span>Submitted</span>
                                             </span>
                                         ) : timeInfo && (
                                             <span style={{
-                                                fontSize: '10px',
-                                                padding: '1px 5px',
-                                                borderRadius: '8px',
+                                                fontSize: '10.5px',
+                                                padding: '2px 7px',
+                                                borderRadius: '9999px',
                                                 fontWeight: 600,
                                                 background: timeInfo.isLobby ? 'var(--primary-soft)' : timeInfo.isUrgent ? 'var(--danger-soft)' : 'var(--bg-muted)',
-                                                color: timeInfo.isLobby ? '#0369a1' : timeInfo.isUrgent ? 'var(--danger)' : 'var(--text-muted)'
+                                                color: timeInfo.isLobby ? 'var(--primary)' : timeInfo.isUrgent ? 'var(--danger)' : 'var(--text-muted)',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: '4px'
                                             }}>
-                                                ⏱️ {timeInfo.text}
+                                                <Clock size={11} />
+                                                <span>{timeInfo.text}</span>
                                             </span>
                                         )}
+
+                                        {pendingAlerts > 0 && (
+                                            <span className="md-badge status-draft" style={{ fontSize: '10.5px', padding: '2px 7px' }}>
+                                                <Clock size={10} />
+                                                <span>{pendingAlerts} New</span>
+                                            </span>
+                                        )}
+
+                                        {(s.requireSecondaryCamera || s.secondaryCamera?.paired || secondaryCameraStatuses[sid]) && (() => {
+                                            const sideStatus = secondaryCameraStatuses[sid] || s.secondaryCamera?.status || 'not_paired';
+                                            const isFixedStand = Boolean(secondaryCameraMeta[sid]?.fixedStandMode ?? s.secondaryCamera?.fixedStandMode);
+                                            const isVerified = sideStatus === 'verified';
+                                            const isLost = sideStatus === 'lost';
+                                            return (
+                                                <span
+                                                    className="md-badge"
+                                                    role="status"
+                                                    title={isFixedStand ? 'Fixed Stand Mode: phone orientation sensor unavailable; using visual drift + AI desk checks.' : undefined}
+                                                    style={{
+                                                        fontSize: '10.5px',
+                                                        padding: '2px 7px',
+                                                        background: isLost ? 'var(--danger-soft)' : isVerified ? 'var(--success-soft)' : 'var(--bg-muted)',
+                                                        color: isLost ? 'var(--danger)' : isVerified ? 'var(--success)' : 'var(--text-muted)',
+                                                        border: isLost ? '1px solid rgba(244,63,94,0.3)' : isVerified ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-color)'
+                                                    }}
+                                                >
+                                                    Side camera: {sideStatus.replace('_', ' ')}{isFixedStand ? ' (fixed stand)' : ''}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
-                                    <div className="student-info-sub" style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                        <span style={{ fontWeight: 500 }}>{displayRoll}</span> &bull; Exam: {s.examId}
-                                        <span title={`Session ID: ${sid}`} style={{ opacity: 0.5, fontSize: '10px', marginLeft: '4px' }}>
-                                            ({String(sid).substring(0, 6)}...)
-                                        </span>
-                                    </div>
+
                                     {isTerminated && s.terminationReason && (
                                         <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             Reason: {s.terminationReason}
                                         </div>
                                     )}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                                    {pendingAlerts > 0 && (
-                                        <span className="md-badge status-draft" style={{ fontSize: '11px', padding: '2px 6px' }}>
-                                            <Clock size={10} />
-                                            <span>{pendingAlerts} New</span>
-                                        </span>
-                                    )}
-                                    <RiskScoreBadge score={currentScore} />
                                 </div>
                             </div>
                         );

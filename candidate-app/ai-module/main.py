@@ -121,7 +121,8 @@ if __name__ == "__main__":
             server.voice_monitor = None
             print("[AI Module] 🏫 Physical Lab Exam Mode active. Webcam AIMonitor and VoiceMonitor are bypassed.")
         else:
-            voice_enabled = not (app_mode == 'dev' and os.environ.get('VOICE_MONITORING_ENABLED') == 'false')
+            # Audio/voice monitoring disabled for now (opt-in via VOICE_MONITORING_ENABLED=true)
+            voice_enabled = os.environ.get('VOICE_MONITORING_ENABLED', 'false').strip().lower() == 'true'
             voice_monitor = None
             if voice_enabled:
                 from voice_monitor import VoiceMonitor
@@ -133,7 +134,7 @@ if __name__ == "__main__":
                 server.voice_monitor = voice_monitor
             else:
                 server.voice_monitor = None
-                print('[AI Module] Development presentation: voice monitoring disabled; camera remains active.')
+                print('[AI Module] Voice/audio monitoring disabled; camera and environment monitors remain active.')
 
             if not is_self_check:
                 try:

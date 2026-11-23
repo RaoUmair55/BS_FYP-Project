@@ -4,7 +4,8 @@ import { assetUrl } from '../services/api';
 import RiskScoreBadge from './RiskScoreBadge';
 import { 
     Users, Camera, Eye, MessageSquare, UserX, AlertTriangle, 
-    ShieldCheck, Clock, RefreshCw, Grid, Check, Lock, Unlock, Send
+    ShieldCheck, Clock, RefreshCw, Grid, Check, Lock, Unlock, Send,
+    Smartphone, Wifi, Activity
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Components.css';
@@ -12,11 +13,20 @@ import { scopedExams, scopedSessions, matchesExam } from '../utils/examScope';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export default function CandidateGrid({ riskScores = {}, violations = [], onSelectCandidate, onOpenChat, examFilter }) {
+export default function CandidateGrid({
+    riskScores = {},
+    violations = [],
+    onSelectCandidate,
+    onOpenChat,
+    examFilter,
+    secondaryCameraStatuses = {},
+    secondaryCameraMeta = {}
+}) {
     const { authFetch } = useAuth();
     const [sessions, setSessions] = useState([]);
     const [exams, setExams] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'normal' | 'needs_review' | 'high_priority' | 'disconnected'
     const [extendingMap, setExtendingMap] = useState({});
     const [releasingMap, setReleasingMap] = useState({});
     const [verifyingMap, setVerifyingMap] = useState({});
@@ -180,12 +190,34 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
         return acc;
     }, {});
 
+    // Classify candidate state for Fluent filter tabs
+    const classifySession = (s) => {
+        const sid = s.sessionId || s._id;
+        const score = riskScores[sid] !== undefined ? riskScores[sid] : (s.riskScore || 0);
+        const pending = unreviewedBySession[sid] || 0;
+        const sideStatus = secondaryCameraStatuses[sid] || s.secondaryCamera?.status;
+        if (s.status === 'terminated' || sideStatus === 'lost') return 'disconnected';
+        if (score >= 60) return 'high_priority';
+        if (pending > 0 || score >= 30 || s.cameraVerificationStatus === 'pending') return 'needs_review';
+        return 'normal';
+    };
+
+    const filterCounts = filteredSessions.reduce((acc, s) => {
+        const bucket = classifySession(s);
+        acc[bucket] = (acc[bucket] || 0) + 1;
+        return acc;
+    }, { normal: 0, needs_review: 0, high_priority: 0, disconnected: 0 });
+
+    const displayedSessions = statusFilter === 'all'
+        ? filteredSessions
+        : filteredSessions.filter(s => classifySession(s) === statusFilter);
+
     if (loading) {
         return (
             <div className="md-card candidate-grid-card">
                 <div className="md-loading">
                     <RefreshCw size={24} className="spin" />
-                    <span>Loading candidate webcam grid...</span>
+                    <span>Loading candidate monitoring grid...</span>
                 </div>
             </div>
         );
@@ -193,17 +225,54 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
     return (
         <div className="md-card candidate-grid-card" style={{ overflowY: 'auto', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Grid size={18} style={{ color: 'var(--primary)' }} />
-                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-main)' }}>
-                        Live Candidate Webcam Grid
+                    <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 700, color: 'var(--text-main)' }}>
+                        Live Candidate Monitoring Grid
                     </h3>
                 </div>
                 <span className="md-badge status-active">
                     <Users size={12} />
                     <span>{filteredSessions.length} Active Candidates</span>
                 </span>
+            </div>
+
+            {/* Fluent Candidate Filter Tabs */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                {[
+                    { key: 'all', label: 'All Candidates', count: filteredSessions.length },
+                    { key: 'normal', label: 'Normal', count: filterCounts.normal },
+                    { key: 'needs_review', label: 'Needs Review', count: filterCounts.needs_review },
+                    { key: 'high_priority', label: 'High Priority', count: filterCounts.high_priority },
+                    { key: 'disconnected', label: 'Disconnected / Ended', count: filterCounts.disconnected }
+                ].map(tab => {
+                    const active = statusFilter === tab.key;
+                    return (
+                        <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setStatusFilter(tab.key)}
+                            style={{
+                                padding: '5px 11px',
+                                borderRadius: '7px',
+                                fontSize: '12px',
+                                fontWeight: active ? 600 : 500,
+                                border: active ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                                background: active ? 'var(--primary-soft)' : 'var(--bg-base)',
+                                color: active ? 'var(--primary)' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                transition: 'all 0.15s ease'
+                            }}
+                        >
+                            <span>{tab.label}</span>
+                            <span className="tabular-nums" style={{ fontSize: '11px', opacity: 0.85 }}>({tab.count})</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {actionError && <div className="md-alert md-alert-error" role="alert">{actionError}</div>}
@@ -276,7 +345,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                 onClick={() => handleReleasePaper(exCode)}
                             >
                                 <Send size={15} />
-                                <span>{releasingMap[exCode] ? 'Releasing Paper...' : `🚀 Release Paper & Start Exam (${lobbyStudents.length} Ready)`}</span>
+                                <span>{releasingMap[exCode] ? 'Releasing Paper...' : `Release Paper & Start Exam (${lobbyStudents.length} Ready)`}</span>
                             </button>
                         </div>
 
@@ -340,7 +409,7 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                         <AlertTriangle size={20} style={{ color: 'var(--warning)', flexShrink: 0 }} />
                         <div>
                             <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--warning)' }}>
-                                ⏳ Exam Approaching Time Limit (Under 5 Minutes Remaining)
+                                Exam Approaching Time Limit (Under 5 Minutes Remaining)
                             </div>
                             <div style={{ fontSize: '12px', color: 'var(--warning)' }}>
                                 Active exam: <strong>{expiringExams.join(', ')}</strong>. Unsubmitted sessions will auto-submit when the timer expires.
@@ -352,16 +421,21 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                 </div>
             )}
 
-            {filteredSessions.length === 0 ? (
+            {displayedSessions.length === 0 ? (
                 <div className="md-empty-card" style={{ border: 'none', background: 'transparent' }}>
-                    <Users size={40} className="md-empty-icon" />
-                    <p style={{ margin: 0 }}>No active candidate sessions found.</p>
+                    <Users size={36} className="md-empty-icon" />
+                    <p style={{ margin: 0 }}>
+                        {statusFilter === 'all' ? 'No active candidate sessions found.' : 'No candidates match the selected status filter.'}
+                    </p>
                 </div>
             ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                    {filteredSessions.map((s) => {
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(275px, 1fr))', gap: '14px' }}>
+                    {displayedSessions.map((s) => {
                         const sid = s.sessionId || s._id;
                         const isLab = visibleExams.some(exam => matchesExam(exam, s.examId) && exam.examType === 'physical_lab');
+                        const requiresSide = Boolean(s.requireSecondaryCamera || s.secondaryCamera?.paired || secondaryCameraStatuses[sid]);
+                        const sideStatus = secondaryCameraStatuses[sid] || s.secondaryCamera?.status || 'not_paired';
+                        const isFixedStand = Boolean(secondaryCameraMeta[sid]?.fixedStandMode ?? s.secondaryCamera?.fixedStandMode);
                         const currentScore = riskScores[sid] !== undefined ? riskScores[sid] : s.riskScore;
                         const pendingAlerts = unreviewedBySession[sid] || 0;
                         const cameraStatus = s.cameraVerificationStatus || 'none';
@@ -407,9 +481,13 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                                     fontWeight: 600,
                                                     background: 'var(--danger-soft)',
                                                     color: 'var(--danger)',
-                                                    border: '1px solid #fca5a5'
+                                                    border: '1px solid #fca5a5',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
                                                 }} title={s.terminationReason || 'Terminated'}>
-                                                    🛑 Terminated
+                                                    <UserX size={10} />
+                                                    <span>Terminated</span>
                                                 </span>
                                             ) : isCompleted ? (
                                                 <span style={{
@@ -419,9 +497,13 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                                     fontWeight: 600,
                                                     background: 'var(--success-soft)',
                                                     color: 'var(--success)',
-                                                    border: '1px solid #a7f3d0'
+                                                    border: '1px solid #a7f3d0',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
                                                 }}>
-                                                    ✅ Submitted
+                                                    <Check size={10} />
+                                                    <span>Submitted</span>
                                                 </span>
                                             ) : (
                                                 <span style={{
@@ -431,9 +513,13 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
                                                     fontWeight: 600,
                                                     background: timeInfo.isLobby ? 'var(--primary-soft)' : timeInfo.isExpired ? 'var(--danger-soft)' : timeInfo.isUrgent ? 'var(--warning-soft)' : 'var(--success-soft)',
                                                     color: timeInfo.isLobby ? '#0369a1' : timeInfo.isExpired ? 'var(--danger)' : timeInfo.isUrgent ? 'var(--warning)' : 'var(--success)',
-                                                    border: `1px solid ${timeInfo.isLobby ? '#bae6fd' : timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`
+                                                    border: `1px solid ${timeInfo.isLobby ? '#bae6fd' : timeInfo.isExpired ? '#fca5a5' : timeInfo.isUrgent ? '#fcd34d' : '#a7f3d0'}`,
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px'
                                                 }}>
-                                                    ⏱️ {timeInfo.text}
+                                                    <Clock size={10} />
+                                                    <span>{timeInfo.text}</span>
                                                 </span>
                                             )}
                                         </div>
@@ -490,12 +576,52 @@ export default function CandidateGrid({ riskScores = {}, violations = [], onSele
 
                                     {/* Verification Badge Overlay (only when active) */}
                                     {!isLab && !isTerminated && !isCompleted && (
-                                        <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', padding: '2px 8px', borderRadius: '12px', color: 'var(--text-on-color)', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                            {isVerified ? <ShieldCheck size={11} style={{ color: 'var(--success)' }} /> : <Clock size={11} style={{ color: 'var(--warning)' }} />}
-                                            <span style={{ textTransform: 'capitalize' }}>{isVerified ? 'Identity Confirmed' : 'Awaiting photo review'}</span>
+                                        <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15, 23, 42, 0.78)', backdropFilter: 'blur(6px)', padding: '3px 8px', borderRadius: '6px', color: '#ffffff', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {isVerified ? <ShieldCheck size={11} style={{ color: '#22c55e' }} /> : <Clock size={11} style={{ color: '#f59e0b' }} />}
+                                            <span>{isVerified ? 'Identity Confirmed' : 'Awaiting Review'}</span>
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Compact Live Telemetry Strip (Camera, Side Camera, AI & Connection) */}
+                                {!isTerminated && !isCompleted && (
+                                    <div style={{
+                                        padding: '7px 12px',
+                                        background: 'var(--bg-base)',
+                                        borderBottom: '1px solid var(--border-color)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        flexWrap: 'wrap',
+                                        gap: '6px',
+                                        fontSize: '11px',
+                                        color: 'var(--text-muted)'
+                                    }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: isLab ? 'var(--text-muted)' : 'var(--success)', fontWeight: 500 }}>
+                                            <Activity size={11} />
+                                            <span>{isLab ? 'Lab Lockdown' : 'AI Monitoring'}</span>
+                                        </span>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: sideStatus === 'lost' ? 'var(--danger)' : 'var(--success)', fontWeight: 500 }}>
+                                            <Wifi size={11} />
+                                            <span>{sideStatus === 'lost' ? 'Side Lost' : 'Connected'}</span>
+                                        </span>
+                                        {requiresSide && (
+                                            <span
+                                                title={isFixedStand ? 'Fixed Stand Mode active on side camera' : undefined}
+                                                style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '3px',
+                                                    color: sideStatus === 'verified' ? 'var(--success)' : sideStatus === 'lost' ? 'var(--danger)' : 'var(--warning)',
+                                                    fontWeight: 600
+                                                }}
+                                            >
+                                                <Smartphone size={11} />
+                                                <span>Side: {sideStatus.replace('_', ' ')}</span>
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
 
                                 {s.cameraPhotos?.length > 0 && <details style={{ padding: '8px 12px', fontSize: 12 }}>
                                     <summary style={{ cursor: 'pointer' }}>Photo history ({s.cameraPhotos.length}) · {isVerified ? 'Verified' : 'Awaiting review'}</summary>

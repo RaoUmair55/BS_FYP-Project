@@ -23,6 +23,10 @@ const uploadFields = upload.fields([
     { name: 'screenshot', maxCount: 1 },
     { name: 'audio', maxCount: 1 }
 ]);
+const sideUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024, files: 1, fields: 8 } })
+    .fields([{ name: 'screenshot', maxCount: 1 }]);
+const sideRateLimit = require('express-rate-limit')({ windowMs: 60000, max: 20,
+    keyGenerator: req => req.sessionClaims.sessionId, standardHeaders: true, legacyHeaders: false });
 
 const router = express.Router();
 
@@ -47,7 +51,15 @@ function stableJson(value) {
 }
 
 // POST /violation — Machine-to-machine (Candidate App -> Server, intentionally open)
-router.post('/violation', uploadFields, async (req, res) => {
+router.post('/violation', (req, res, next) => {
+    if (req.headers.authorization) return require('../middleware/sessionAuth').requireSideCameraAuth(req, res, next);
+    next();
+}, (req, res, next) => req.sessionClaims ? sideRateLimit(req, res, next) : next(), (req, res, next) => {
+    (req.sessionClaims ? sideUpload : uploadFields)(req, res, err => {
+        if (err) return res.status(400).json({ error: 'Invalid or oversized evidence upload' });
+        next();
+    });
+}, async (req, res) => {
     const uploadedAssets = [];
     let committed = false;
     try {
@@ -56,6 +68,23 @@ router.post('/violation', uploadFields, async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(req.body.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
         let session = await Session.findById(req.body.sessionId);
         if (!session) return res.status(404).json({ error: 'Exam session not found' });
+        const source = req.body.source || 'front_camera';
+        const { SIDE_TYPES: sideTypes, SIDE_UPLOAD_SEVERITY: sideUploadSeverity } = require('../services/secondaryCamera');
+        if (!['front_camera', 'side_camera'].includes(source)) return res.status(400).json({ error: 'Invalid source' });
+        if (source === 'side_camera' || sideTypes.includes(req.body.type) || req.sessionClaims) {
+            if (req.sessionClaims?.scope !== 'secondary_camera' || req.sessionClaims.sessionId !== String(session._id) ||
+                source !== 'side_camera' || !Object.prototype.hasOwnProperty.call(sideUploadSeverity, req.body.type)) {
+                return res.status(401).json({ error: 'Side-camera credential and matching session required' });
+            }
+            const exam = await Exam.findOne({ $or: [{ examCode: session.examId }, { examId: session.examId }] });
+            if (!exam?.requireSecondaryCamera || exam.status !== 'active' || !session.candidateMonitoringStartedAt || !exam.startedAt ||
+                (exam.endTime && new Date(exam.endTime) <= new Date()) ||
+                (exam.paperPath && !exam.paperReleased) || !session.secondaryCamera?.placementVerified || session.status !== 'active') return res.status(409).json({ error: 'Side-camera violations are only accepted during a started exam' });
+            const image = req.files?.screenshot?.[0];
+            if (!image || image.mimetype !== 'image/jpeg' || image.buffer.length > 512 * 1024 ||
+                image.buffer[0] !== 0xff || image.buffer[1] !== 0xd8 || req.files?.audio) return res.status(400).json({ error: 'One JPEG snapshot under 512 KB is required' });
+            req.body.severity = sideUploadSeverity[req.body.type];
+        }
         const receivedAt = new Date();
         const rawTimestamp = req.body.timestamp ?? (session.status === 'active' ? receivedAt.toISOString() : null);
         if (typeof rawTimestamp !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.test(rawTimestamp)) {
@@ -82,7 +111,7 @@ router.post('/violation', uploadFields, async (req, res) => {
         }
         const sessionId = String(session._id);
         const deliveryFingerprint = createHash('sha256').update(stableJson({ sessionId, type: req.body.type,
-            severity: numericSeverity, timestamp: timestamp.toISOString(), details: details || {} })).digest('hex');
+            severity: numericSeverity, timestamp: timestamp.toISOString(), details: details || {}, ...(source === 'side_camera' ? { source } : {}) })).digest('hex');
         const eventId = req.body.eventId || deliveryFingerprint;
         // Reuse MongoDB's existing unique _id index: no new index/migration is needed for retry safety.
         const id = new mongoose.Types.ObjectId(createHash('sha256').update(sessionId + ':' + eventId).digest('hex').slice(0, 24));
@@ -99,7 +128,7 @@ router.post('/violation', uploadFields, async (req, res) => {
         let windowError = eventWindowError(session, timestamp.getTime());
         if (windowError) return res.status(windowError.status).json({ error: windowError.error });
         const newViolation = new Violation({
-            _id: id, eventId, deliveryFingerprint, sessionId, type: req.body.type, severity: numericSeverity, timestamp,
+            _id: id, eventId, deliveryFingerprint, sessionId, source, type: req.body.type, severity: numericSeverity, timestamp,
             receivedAt, receivedLate: session.status !== 'active' || Boolean(session.endTime && receivedAt > session.endTime), details,
             reviewed: false, decision: 'pending'
         });

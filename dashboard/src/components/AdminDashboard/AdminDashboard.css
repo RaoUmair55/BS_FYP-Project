@@ -5,7 +5,7 @@
   flex-direction: column;
   height: 100%;
   overflow-y: auto;
-  background-color: var(--bg-base);
+  background-color: transparent;
   color: var(--text-main);
   padding: 24px;
   box-sizing: border-box;
@@ -400,7 +400,7 @@
 }
 
 .google-btn-outlined:hover {
-  background-color: var(--bg-base);
+  background-color: transparent;
   border-color: var(--text-main);
 }
 
@@ -441,7 +441,7 @@
 
 .asset-card.selected {
   border-color: var(--primary);
-  background-color: var(--bg-base);
+  background-color: transparent;
   box-shadow: 0 0 0 2px #1a73e8;
 }
 

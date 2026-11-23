@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { assetUrl } from '../../services/api';
 import AnalyticsView from './AnalyticsView';
 import AssetManagerView from './AssetManagerView';
 import AuditLogView from './AuditLogView';
@@ -18,13 +19,14 @@ import {
     Copy, 
     Check, 
     FileText,
-    FolderX
+    FolderX,
+    Wifi
 } from 'lucide-react';
 import './AdminDashboard.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }) {
+export default function AdminDashboard({ connected = true, socket = null, onNavigateExams, onNavigateMonitoring }) {
     const { authFetch, teacher } = useAuth();
 
     const [activeSubtab, setActiveSubtab] = useState('analytics'); // 'analytics' | 'assets' | 'audit' | 'users'
@@ -295,8 +297,31 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                         <Shield size={22} />
                     </div>
                     <div>
-                        <h1 className="admin-heading">Admin Console</h1>
-                        <p className="admin-subheading">System overview, evidence storage, audit records, and examiner access</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <h1 className="admin-heading">System Administration</h1>
+                            <button
+                                type="button"
+                                onClick={() => { if (!connected) socket?.connect?.(); }}
+                                title={connected ? 'Real-time Socket.IO event mesh connected' : 'Click to reconnect Socket.IO mesh'}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '3px 10px',
+                                    borderRadius: '7px',
+                                    fontSize: '11.5px',
+                                    fontWeight: 600,
+                                    border: connected ? '1px solid rgba(22, 163, 74, 0.3)' : '1px solid rgba(217, 119, 6, 0.35)',
+                                    background: connected ? 'var(--success-soft)' : 'var(--warning-soft)',
+                                    color: connected ? 'var(--success)' : 'var(--warning)',
+                                    cursor: connected ? 'default' : 'pointer'
+                                }}
+                            >
+                                <Wifi size={12} />
+                                <span>{connected ? 'Socket Mesh Online' : 'Mesh Reconnecting'}</span>
+                            </button>
+                        </div>
+                        <p className="admin-subheading">Real-time infrastructure health, evidence storage, audit records, and examiner access</p>
                     </div>
                 </div>
 
@@ -398,12 +423,12 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
 
                         <div className="lightbox-body">
                             {previewItem.assetType === 'verification' || previewItem.assetType === 'screenshot' || (previewItem.url && previewItem.url.match(/\.(jpg|jpeg|png|webp)/i)) ? (
-                                <img src={previewItem.url} alt={previewItem.title} className="lightbox-img" />
+                                <img src={assetUrl(previewItem.url)} alt={previewItem.title} className="lightbox-img" />
                             ) : (
                                 <div style={{ color: 'var(--text-on-color)', textAlign: 'center', padding: '40px' }}>
                                     <FileText size={64} color="#94a3b8" style={{ margin: '0 auto 16px auto' }} />
                                     <div style={{ fontSize: '16px', fontWeight: 600 }}>PDF / Document File</div>
-                                    <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>Click download below to open directly from Cloudinary CDN.</div>
+                                    <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>Click download below to open directly from storage.</div>
                                 </div>
                             )}
                         </div>
@@ -415,7 +440,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <a 
-                                    href={previewItem.url} 
+                                    href={assetUrl(previewItem.url)} 
                                     target="_blank" 
                                     rel="noreferrer"
                                     className="google-btn google-btn-outlined"
@@ -424,7 +449,7 @@ export default function AdminDashboard({ onNavigateExams, onNavigateMonitoring }
                                     Open Direct Link
                                 </a>
                                 <a 
-                                    href={previewItem.url} 
+                                    href={assetUrl(previewItem.url)} 
                                     download={previewItem.filename}
                                     className="google-btn google-btn-primary"
                                 >

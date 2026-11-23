@@ -1,3 +1,4 @@
+import { sideCameraLabels } from '../utils/violationLabels';
 import AudioEvidence from './AudioEvidence';
 import React, { useState, useMemo, useEffect } from 'react';
 import api from '../services/api';
@@ -10,11 +11,14 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { assetUrl } from '../services/api';
 import { groupViolationsList } from './PriorityQueue';
+import notify from '../utils/notify';
+import ModalPortal from './ModalPortal';
 import './Components.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function formatType(typeStr, details = {}) {
+    if (sideCameraLabels[typeStr]) return sideCameraLabels[typeStr];
     if (!typeStr) return "Unknown";
     if (typeStr === 'head_turn_away') {
         if (details?.reason) return details.reason;
@@ -34,7 +38,7 @@ function formatType(typeStr, details = {}) {
     }
     if (typeStr === 'second_voice_detected') {
         const sim = details?.similarity_score !== undefined ? ` (${Math.round(details.similarity_score * 100)}% match)` : '';
-        return `🎙️ Possible Unfamiliar Speaker${sim}`;
+        return `Possible Unfamiliar Speaker${sim}`;
     }
     if (typeStr === 'no_face_detected') {
         return "No Face in View";
@@ -42,7 +46,7 @@ function formatType(typeStr, details = {}) {
     if (typeStr === 'pre_existing_file' || (typeStr === 'unauthorized_app' && (details?.reason?.toLowerCase().includes('pre-existing') || details?.fileName))) {
         const fileTarget = details?.fileName || (details?.reason ? details.reason.split(':').pop().trim() : '');
         const appName = details?.object_class ? ` in ${details.object_class}` : '';
-        return fileTarget ? `📂 Pre-Existing File: ${fileTarget}${appName}` : `📂 Pre-Existing Notes/File Opened${appName}`;
+        return fileTarget ? `Pre-Existing File: ${fileTarget}${appName}` : `Pre-Existing Notes/File Opened${appName}`;
     }
     if (typeStr === 'unauthorized_app') {
         if (details?.object_class) {
@@ -124,16 +128,17 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                         reviewNote: note
                     })
                 });
-                if (res.ok && onReviewViolation) {
+                if (res.ok) {
                     const data = await res.json();
                     const reviewed = data.violation || item;
                     setLoadedAlerts(previous => ({ ...previous, items: previous.items.map(alert =>
                         String(alert._id || alert.id) === String(id) ? { ...alert, ...reviewed } : alert) }));
-                    onReviewViolation(reviewed);
+                    if (onReviewViolation) onReviewViolation(reviewed);
                 }
             }));
         } catch (err) {
             console.error('Error reviewing violation:', err);
+            notify.error('Review Failed', err.message || 'Could not save violation review.');
         }
     };
 
@@ -300,7 +305,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                                         alignItems: 'center',
                                         gap: '6px'
                                     }}>
-                                        <span>⚠️</span>
+                                        <AlertTriangle size={14} style={{ flexShrink: 0 }} />
                                         <strong>{group.details.reason}</strong>
                                     </div>
                                 )}
@@ -534,8 +539,9 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
 
             {/* Note & Review Modal */}
             {selectedViolationForNote && (
-                <div className="md-modal-overlay">
-                    <div className="md-modal-card">
+                <ModalPortal>
+                <div className="md-modal-overlay" onClick={() => setSelectedViolationForNote(null)}>
+                    <div className="md-modal-card" onClick={(e) => e.stopPropagation()}>
                         <div className="md-modal-header">
                             <h3>Review Violation Alert</h3>
                             <button className="md-icon-btn" onClick={() => setSelectedViolationForNote(null)}>
@@ -585,6 +591,7 @@ export default function AlertFeed({ violations, onSelectViolation, onReviewViola
                         </form>
                     </div>
                 </div>
+                </ModalPortal>
             )}
         </div>
     );

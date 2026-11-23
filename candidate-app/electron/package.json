@@ -14,7 +14,7 @@
   "scripts": {
     "prestart": "npm run build:renderer",
     "start": "electron .",
-    "build:renderer": "esbuild ../renderer/examScreen.js ../renderer/login.js ../renderer/identity.js --bundle --outdir=../renderer/dist",
+    "build:renderer": "esbuild ../renderer/examScreen.js ../renderer/login.js ../renderer/identity.js --bundle --minify --outdir=../renderer/dist",
     "check:reliability": "node checks/check_reliability.js",
     "check:consent": "node checks/check_consent.js"
   },

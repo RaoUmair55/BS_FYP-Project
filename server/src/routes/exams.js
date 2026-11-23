@@ -9,7 +9,7 @@ const Session = require('../models/Session');
 const Submission = require('../models/Submission');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
-const { requireOwnedExam } = require('../middleware/examAccess');
+const { requireOwnedExam, findExamByIdentifier } = require('../middleware/examAccess');
 const storageService = require('../services/storage');
 const { broadcastToExam } = require('../sockets/violationSocket');
 
@@ -49,6 +49,7 @@ function generateRandomExamCode() {
 router.post('/', requireAuth, handleUpload, async (req, res) => {
     try {
         const { title, status, durationMinutes, rules } = req.body;
+        if (req.body.requireSecondaryCamera !== undefined && ![true, false, 'true', 'false'].includes(req.body.requireSecondaryCamera)) return res.status(400).json({ error: 'Invalid side-camera requirement' });
         let examCode = req.body.examCode ? req.body.examCode.trim().toUpperCase() : null;
 
         if (typeof title !== 'string' || !title.trim()) {
@@ -116,6 +117,7 @@ router.post('/', requireAuth, handleUpload, async (req, res) => {
             createdByName: teacherName,
             status: status || 'draft',
             examType: req.body.examType === 'physical_lab' ? 'physical_lab' : 'online',
+            requireSecondaryCamera: req.body.requireSecondaryCamera === true || req.body.requireSecondaryCamera === 'true',
             durationMinutes: durationMinutes ? Number(durationMinutes) : 60,
             rules: {
                 detectCellPhone: parsedRules.detectCellPhone !== undefined ? Boolean(parsedRules.detectCellPhone) : true,
@@ -263,6 +265,7 @@ router.get('/code/:code', async (req, res) => {
             status: exam.status,
             allowedApplications: exam.allowedApplications,
             rules: exam.rules,
+            requireSecondaryCamera: exam.requireSecondaryCamera === true,
             paperReleased: exam.paperReleased,
             serverTime: new Date()
         });
@@ -373,7 +376,7 @@ router.get('/:examId/summary', requireAuth, requireOwnedExam, async (req, res) =
 // GET /exams/:examId — Get single exam details (Teacher-facing)
 router.get('/:examId', requireAuth, requireOwnedExam, async (req, res) => {
     try {
-        const exam = await Exam.findById(req.params.examId);
+        const exam = await findExamByIdentifier(req.params.examId);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }
@@ -391,7 +394,7 @@ router.patch('/:examId/status', requireAuth, requireOwnedExam, async (req, res) 
             return res.status(400).json({ error: 'Invalid status value. Must be draft, active, or completed.' });
         }
 
-        const exam = await Exam.findById(req.params.examId);
+        const exam = await findExamByIdentifier(req.params.examId);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }
@@ -623,7 +626,7 @@ router.post('/:examId/paper', requireAuth, requireOwnedExam, handleUpload, async
             return res.status(400).json({ error: 'No paper file uploaded.' });
         }
 
-        const exam = await Exam.findById(req.params.examId);
+        const exam = await findExamByIdentifier(req.params.examId);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }
@@ -657,7 +660,11 @@ router.post('/:examId/paper', requireAuth, requireOwnedExam, handleUpload, async
 // DELETE /exams/:examId — Delete an exam (Teacher-facing)
 router.delete('/:examId', requireAuth, requireOwnedExam, async (req, res) => {
     try {
-        const exam = await Exam.findByIdAndDelete(req.params.examId);
+        const existingExam = await findExamByIdentifier(req.params.examId);
+        if (!existingExam) {
+            return res.status(404).json({ error: 'Exam not found' });
+        }
+        const exam = await Exam.findByIdAndDelete(existingExam._id);
         if (!exam) {
             return res.status(404).json({ error: 'Exam not found' });
         }

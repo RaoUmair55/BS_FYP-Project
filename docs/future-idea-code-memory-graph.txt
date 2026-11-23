@@ -1,0 +1,56 @@
+====================================================================
+FUTURE SIDE PROJECT IDEA (Post-FYP)
+Code-Graph + Bug/Issue Memory Skill for AI Coding Agents
+====================================================================
+
+1. CORE IDEA
+------------
+Build an open-source AI agent skill / MCP tool (inspired by Graphify)
+that solves what Graphify currently lacks:
+  - Graphify maps static code structure (AST + docs -> knowledge graph),
+    but it does NOT track bugs, open issues, architectural decisions,
+    or live development state attached to each code node.
+  - This tool attaches live engineering state directly onto graph nodes
+    (files, functions, routes, components) and keeps itself auto-updated
+    via Git & GitHub.
+
+2. PROBLEMS IT SOLVES (WHAT GRAPHIFY LACKS)
+-------------------------------------------
+- Bug & Issue Binding per Node:
+  Every file/function/module node knows its active bugs, security flags,
+  tech debt items, and past regressions (e.g., "WARNING: this route has
+  open issue #14 - missing auth check").
+- Decision & "Why" Memory:
+  Stores short architectural decision records (ADRs) on nodes so AI agents
+  don't accidentally undo intentional design choices in future chats.
+- Auto-Updating (No Stale Graphs):
+  Uses git hooks / GitHub webhooks / commit diffs (`Fixes #12`, modified
+  files) to incrementally update only the changed nodes and auto-close
+  or link resolved bugs — similar to GitHub's native issue tracking.
+- GitHub Integration:
+  Two-way sync with GitHub Issues, PRs, and commits so humans see normal
+  GitHub tracking while AI agents query the enriched code+issue graph.
+- Multi-Stack Awareness:
+  Links cross-boundary edges that pure AST tools miss (e.g., frontend
+  API calls -> backend routes, Electron IPC -> Python FastAPI endpoints,
+  Socket.IO emit -> listener pairs).
+
+3. ROUGH V1 ARCHITECTURE (TO DESIGN AFTER FYP)
+----------------------------------------------
+- Parser Layer: Tree-sitter for deterministic local AST extraction
+  (JS/TS, Python, etc.) + lightweight regex/heuristics for API/IPC edges.
+- State/Memory Layer: Local SQLite or JSON graph storing:
+    * Nodes (files, symbols, routes, socket events)
+    * Edges (imports, calls, HTTP/IPC/WebSocket contracts)
+    * Annotations (open bugs, GitHub issue IDs, decisions, test status)
+- Sync Engine:
+    * Incremental re-index on `git commit` (only touched files)
+    * GitHub CLI (`gh`) / GitHub API sync for Issues & PRs
+- Agent Interface:
+    * Reusable `SKILL.md` + optional MCP server with tools like:
+      `get_node_context(file_or_symbol)`, `list_node_bugs(module)`,
+      `log_decision(node, reason)`, `sync_github_issues()`.
+
+4. WHEN TO START
+----------------
+Start after IntegrityFlow FYP is completed and defended!

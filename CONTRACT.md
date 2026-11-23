@@ -10,7 +10,8 @@ This document serves as the single source of truth for data contracts between th
 {
   "sessionId": "string (MongoDB Session ObjectId)",
   "eventId": "string, optional (1-128 letters/digits/underscore/hyphen; stable across retries)",
-  "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark",
+  "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark | secondary_camera_disconnected | secondary_camera_moved | secondary_camera_obstructed",
+  "source": "front_camera | side_camera (default front_camera)",
   "severity": "number (1-5)",
   "timestamp": "ISO 8601 string with timezone (original capture time; stored at millisecond precision)",
   "details": {
@@ -113,3 +114,15 @@ CREATE TABLE IF NOT EXISTS violations (
 * **HTTP `200 OK`**: Paper is officially released. Response contains `{ paperUrl, fileName, mimeType }` for in-app rendering.
 * **HTTP `404 Not Found`**: No paper uploaded for this exam code.
 * **HTTP `403 Forbidden`**: Candidate session is not in an active status.
+
+## Secondary phone camera contract (parts 1 & 2)
+
+`Exam.requireSecondaryCamera` is Boolean, default false. Session adds `secondaryCamera {paired,pairedAt,lastHeartbeatAt,placementVerified,fixedStandMode,referencePhoto,referencePhotoAt,status}`; status is `not_paired | connected | verified | lost`. Internal pairing hash/expiry/usedAt, current credential ID, disconnect timestamp, and candidateMonitoringStartedAt support auth and watchdog recovery; none contain preview frames. `POST /sessions` optionally returns a sessionToken (scope candidate_session) when SESSION_TOKEN_SECRET is configured and returns the exam requirement.
+
+`POST /pairing/create {sessionId}` requires the matching candidate bearer token; returns `{token,expiresAt,qrUrl,qrImage}`. Token is 32 random bytes, stored hashed, one use, five minutes. `/pairing/redeem {token}` returns `{sessionId,token}` with a four-hour secondary_camera JWT signed by SESSION_TOKEN_SECRET. `/pairing/start {sessionId,prepare?}` validates the verified recent side camera; prepare=true is read-only, otherwise records successful candidate monitoring start.
+
+`POST /pairing/reference-photo` requires `requireSideCameraAuth` and one multipart JPEG `screenshot` (<=512 KB, JPEG magic-byte checked). It stores the clean-desk baseline (or examiner-requested desk check) under verification storage, deletes any replaced reference photo, updates `secondaryCamera.referencePhoto` and `secondaryCamera.referencePhotoAt`, and publishes `secondaryCameraStatus` to the exam owner. `POST /sessions/:sessionId/request-side-snapshot` (teacher-authenticated, owned session) emits `request-desk-snapshot` to the paired phone socket to trigger a fresh reference photo upload.
+
+Socket auth uses `{token,scope}`. Candidate sockets join only their own laptop room; phone scope is secondary_camera. Phone sends heartbeat `{orientation:{alpha,beta,gamma},luminance,trackLive}` every five seconds, orientation, preview-frame (JPEG data URL, <=60 KB, <=3/sec accepted), and placement-result `{criteria:{person,workstation,lighting,steady},orientation,fixedStandMode,verified}`. The backend relays preview-frame `{sessionId,frame}`, placement-result and side-camera-status `{sessionId,status,placementVerified,fixedStandMode}` only to the matching laptop. Dashboard owners receive secondaryCameraStatus `{sessionId,status,fixedStandMode,referencePhoto}`. Preview data is not persisted or audited.
+
+Violation schema adds top-level `source: front_camera | side_camera`, default front_camera, and side-camera types with server-enforced severities: `secondary_camera_disconnected` (sev 3, watchdog-only), `secondary_camera_moved` (sev 3), `secondary_camera_obstructed` (sev 3), `no_face_detected` (sev 3), `cell_phone` (sev 4), `unauthorized_object` (sev 4), and `second_person_detected` (sev 5). Phone multipart `POST /violation` requires scoped auth, matching session, `source=side_camera`, an allowed side-camera upload type, and exactly one JPEG screenshot <=512 KB, without audio. Existing front-camera delivery and late-evidence semantics remain unchanged; no-token callers cannot submit side-camera types/source. See [SIDE_CAMERA.md](SIDE_CAMERA.md) for limitations and real-device acceptance tests.
