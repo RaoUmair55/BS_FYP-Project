@@ -10,7 +10,7 @@ This document serves as the single source of truth for data contracts between th
 {
   "sessionId": "string (MongoDB Session ObjectId)",
   "eventId": "string, optional (1-128 letters/digits/underscore/hyphen; stable across retries)",
-  "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark",
+  "type": "head_turn_away | second_person_detected | second_voice_detected | no_face_detected | unauthorized_object | unauthorized_app | usb_device_detected | multiple_displays_detected | camera_occluded_or_dark | window_focus_lost",
   "severity": "number (1-5)",
   "timestamp": "ISO 8601 string with timezone (original capture time; stored at millisecond precision)",
   "details": {

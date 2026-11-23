@@ -31,3 +31,10 @@ contextBridge.exposeInMainWorld('api', {
   clearClipboard: /* Function purpose: Sends the clear-clipboard request to Electron through the restricted preload bridge. */ async () => ipcRenderer.invoke('clear-clipboard'),
   onPreExistingFileBlocked: /* Function purpose: Registers the renderer listener for the pre-existing-file-blocked notification. */ (callback) => ipcRenderer.on('pre-existing-file-blocked', /* Function purpose: Handles the pre-existing-file-blocked event and updates the associated screen or process state. */ (_event, data) => callback(data))
 });
+
+// Expose Screen Lock APIs safely to renderer
+contextBridge.exposeInMainWorld('lockApi', {
+  submitExitCode: /* Function purpose: Submits invigilator exit code for hash comparison. */ (code) => ipcRenderer.invoke('lock:submit-exit-code', code),
+  onLockState: /* Function purpose: Subscribes to lock/unlock state events from Electron. */ (callback) => ipcRenderer.on('lock:state', (_event, state) => callback(state)),
+  getLockState: /* Function purpose: Retrieves current lock status on screen load. */ () => ipcRenderer.invoke('lock:get-state')
+});

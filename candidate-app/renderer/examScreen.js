@@ -868,6 +868,7 @@ window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOM
   });
 
   init();
+  setupLockdownUI();
 
   // Enforce clipboard & copy/cut/paste lockdown during exam
   ['copy', 'cut', 'paste', 'contextmenu'].forEach(/* Function purpose: Runs document.addEventListener as part of this callback’s processing. */ evt => {
@@ -1419,4 +1420,112 @@ function showExaminerChatToast(msg) {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+// Function purpose: Connects invigilator unlock modal and exam-lock banner to lockApi events.
+function setupLockdownUI() {
+  const lockedBanner = document.getElementById('examLockedBanner');
+  const bannerUnlockLink = document.getElementById('bannerUnlockLink');
+  const topBarUnlockLink = document.getElementById('topBarUnlockLink');
+  const unlockModal = document.getElementById('invigilatorUnlockModal');
+  const closeUnlockModalBtn = document.getElementById('closeUnlockModalBtn');
+  const cancelUnlockBtn = document.getElementById('cancelUnlockBtn');
+  const submitUnlockBtn = document.getElementById('submitUnlockBtn');
+  const invigilatorCodeInput = document.getElementById('invigilatorCodeInput');
+  const unlockErrorMessage = document.getElementById('unlockErrorMessage');
+
+  function updateLockDisplay(isLocked) {
+    if (lockedBanner) lockedBanner.style.display = isLocked ? 'flex' : 'none';
+    if (topBarUnlockLink) topBarUnlockLink.style.display = isLocked ? 'inline' : 'none';
+    if (!isLocked && unlockModal) {
+      unlockModal.style.display = 'none';
+    }
+  }
+
+  function openModal() {
+    if (unlockModal) {
+      unlockModal.style.display = 'flex';
+      if (unlockErrorMessage) unlockErrorMessage.style.display = 'none';
+      if (invigilatorCodeInput) {
+        invigilatorCodeInput.value = '';
+        setTimeout(() => invigilatorCodeInput.focus(), 50);
+      }
+    }
+  }
+
+  function closeModal() {
+    if (unlockModal) unlockModal.style.display = 'none';
+    if (invigilatorCodeInput) invigilatorCodeInput.value = '';
+    if (unlockErrorMessage) unlockErrorMessage.style.display = 'none';
+  }
+
+  if (bannerUnlockLink) bannerUnlockLink.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
+  if (topBarUnlockLink) topBarUnlockLink.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
+  if (closeUnlockModalBtn) closeUnlockModalBtn.addEventListener('click', closeModal);
+  if (cancelUnlockBtn) cancelUnlockBtn.addEventListener('click', closeModal);
+
+  async function handleSubmitExitCode() {
+    const code = invigilatorCodeInput ? invigilatorCodeInput.value.trim() : '';
+    if (!code) {
+      if (unlockErrorMessage) {
+        unlockErrorMessage.textContent = 'Please enter an exit code.';
+        unlockErrorMessage.style.display = 'block';
+      }
+      return;
+    }
+
+    if (submitUnlockBtn) {
+      submitUnlockBtn.disabled = true;
+      submitUnlockBtn.textContent = 'Checking...';
+    }
+
+    try {
+      if (window.lockApi && typeof window.lockApi.submitExitCode === 'function') {
+        const result = await window.lockApi.submitExitCode(code);
+        if (result && result.success) {
+          closeModal();
+          updateLockDisplay(false);
+        } else {
+          if (unlockErrorMessage) {
+            unlockErrorMessage.textContent = result?.message || 'Incorrect code';
+            unlockErrorMessage.style.display = 'block';
+          }
+        }
+      }
+    } catch (err) {
+      if (unlockErrorMessage) {
+        unlockErrorMessage.textContent = err.message || 'Error validating code.';
+        unlockErrorMessage.style.display = 'block';
+      }
+    } finally {
+      if (submitUnlockBtn) {
+        submitUnlockBtn.disabled = false;
+        submitUnlockBtn.textContent = 'Submit';
+      }
+    }
+  }
+
+  if (submitUnlockBtn) submitUnlockBtn.addEventListener('click', handleSubmitExitCode);
+  if (invigilatorCodeInput) {
+    invigilatorCodeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmitExitCode();
+      }
+    });
+  }
+
+  // Subscribe to lock state events from preload
+  if (window.lockApi && typeof window.lockApi.onLockState === 'function') {
+    window.lockApi.onLockState((state) => {
+      updateLockDisplay(Boolean(state?.locked));
+    });
+  }
+
+  // Check initial state
+  if (window.lockApi && typeof window.lockApi.getLockState === 'function') {
+    window.lockApi.getLockState().then((state) => {
+      updateLockDisplay(Boolean(state?.locked));
+    }).catch(() => {});
+  }
 }

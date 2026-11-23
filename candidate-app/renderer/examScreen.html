@@ -780,8 +780,15 @@ Connection: examScreen.js supplies exam data and interactions; shared styles com
     <div class="top-bar-right">
       <div id="durationBadge" class="badge" style="font-weight:600; background:#edf2f4; color:#334155;">Total: --m</div>
       <div id="timerDisplay" class="timer-badge">Time Left: --:--</div>
+      <a href="#" id="topBarUnlockLink" style="font-size: 12px; color: #64748b; text-decoration: underline; cursor: pointer; display: none;">Invigilator unlock</a>
       <button id="testViolationBtn">Test Alert</button>
     </div>
+  </div>
+
+  <!-- Exam Locked Indicator Banner -->
+  <div id="examLockedBanner" style="display: none; background: #fee2e2; border-bottom: 1px solid #fca5a5; color: #991b1b; padding: 6px 16px; font-size: 13px; font-weight: 600; text-align: center; justify-content: center; align-items: center; gap: 8px; z-index: 99; flex-shrink: 0;">
+    <span>🔒 Exam Locked &mdash; Fullscreen lockdown is active.</span>
+    <a href="#" id="bannerUnlockLink" style="color: #b91c1c; text-decoration: underline; margin-left: 10px; font-size: 12px; font-weight: normal; cursor: pointer;">Invigilator unlock</a>
   </div>
 
   <!-- Two-Panel Split Layout -->
@@ -935,6 +942,27 @@ Connection: examScreen.js supplies exam data and interactions; shared styles com
       </div>
     </div>
   </div>
+  <!-- Invigilator Unlock Modal -->
+  <div id="invigilatorUnlockModal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 400px; text-align: left;">
+      <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <span>🔐 Invigilator Screen Unlock</span>
+        <button id="closeUnlockModalBtn" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #64748b; padding: 0;">✕</button>
+      </div>
+      <div class="modal-desc" style="margin-bottom: 12px;">
+        Enter the invigilator exit code to disable fullscreen exam lockdown:
+      </div>
+      <div id="unlockErrorMessage" style="display: none; background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px;"></div>
+      <div style="margin-bottom: 16px;">
+        <input type="password" id="invigilatorCodeInput" placeholder="Enter exit code" style="width: 100%; padding: 10px 12px; border: 1px solid #d6e1e6; border-radius: 6px; font-size: 14px; box-sizing: border-box;" autocomplete="off" />
+      </div>
+      <div class="modal-actions">
+        <button id="cancelUnlockBtn" class="btn-secondary">Cancel</button>
+        <button id="submitUnlockBtn" class="btn-danger" style="background: #087d78;">Submit</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Floating Student Concern / In-Exam Chat Widget -->
   <button id="floatingChatBtn" class="floating-chat-btn" title="Ask Examiner / Report Question Paper Concern">
     <span>💬</span>

@@ -19,6 +19,8 @@ const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
 const { checkPythonHealth, setPythonPort, getPythonUrl, getLastPythonHealthError, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive } = require('./ipc/pythonBridge');
 const violationBuffer = require('./ipc/violationBuffer');
 const { getPythonExecutable } = require('./ipc/pythonRuntime');
+const { initLockManager, enableLock, disableLock, isLocked } = require('./lockManager');
+const { initLockSocket, updateLockSocketSession } = require('./ipc/lockSocket');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // --- Added for development: Handle EPIPE / Broken pipe errors ---
@@ -86,6 +88,10 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     }
   });
+
+  // Initialize screen lock manager and socket listener
+  initLockManager(mainWindow, () => activeSessionInfo);
+  initLockSocket(mainWindow, () => activeSessionInfo);
 
   mainWindow.webContents.on('render-process-gone', /* Function purpose: Handles the render-process-gone event and updates the associated screen or process state. */ (event, details) => {
     console.error('[Electron] Renderer process crashed/gone:', details);
@@ -481,6 +487,7 @@ ipcMain.handle('monitoring-health', /* Function purpose: Retrieves the Python mo
 ipcMain.handle('finish-exam', /* Function purpose: Marks monitoring inactive and shuts down the exam monitoring process. */ () => {
   setExamActive(false);
   cleanUpPythonProcess();
+  disableLock('exam-ended');
   return { success: true };
 });
 
@@ -507,6 +514,7 @@ ipcMain.handle('login', /* Function purpose: Stores validated candidate entry da
     activeSessionInfo.consentGiven = false;
     activeSessionInfo.consentTimestamp = null;
     activeSessionInfo.examId = examId;
+    updateLockSocketSession();
     if (examType) activeSessionInfo.examType = examType;
     activeSessionInfo.rules = rules || {};
     if (studentId) activeSessionInfo.studentId = studentId;
@@ -579,6 +587,7 @@ ipcMain.handle('proceed-to-self-check', /* Function purpose: Stores identity inf
     activeSessionInfo.rollNumber = identityData.rollNumber;
     activeSessionInfo.studentId = identityData.studentId || identityData.rollNumber;
     if (identityData.examId) activeSessionInfo.examId = identityData.examId;
+    updateLockSocketSession();
   }
   if (mainWindow) {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/selfCheck.html'));
