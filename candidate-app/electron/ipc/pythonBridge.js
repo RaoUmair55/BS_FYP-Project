@@ -4,8 +4,8 @@
  * How it works: Calls the local Python health/process endpoints and uploads violation records and
  * evidence to the central server. Persists failed or durable-first deliveries and retries the 
  * offline buffer without overlapping retry runs.
- * Connection: Uses violationBuffer.js; main.js supplies the discovered Python port and
- * exam-active state.
+ * Connection: Uses violationBuffer.js; main.js supplies the discovered Python port,
+ * session bearer token, and exam-active state.
  */
 const axios = require('axios');
 const dotenv = require('dotenv');
@@ -36,6 +36,66 @@ let wasOffline = false;
 let statusChangeCallback = null;
 let isExamActive = false;
 let bufferDrainRunning = false;
+let currentSessionToken = null;
+const sessionTokens = new Map();
+let localIpcSecret = null;
+let allowedScreenshotRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'screenshots');
+let allowedAudioRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'audio_evidence');
+
+const ALLOWED_SCREENSHOT_EXTS = new Set(['.jpg', '.jpeg', '.png']);
+const ALLOWED_AUDIO_EXTS = new Set(['.wav']);
+
+// Function purpose: Stores the per-launch IPC secret shared between Electron and local Python sidecar.
+function setLocalIpcSecret(secret) {
+  localIpcSecret = typeof secret === 'string' && secret.trim() ? secret.trim() : null;
+}
+
+// Function purpose: Returns headers authenticating Electron -> local Python FastAPI calls.
+function getLocalIpcHeaders(extra = {}) {
+  return {
+    ...(localIpcSecret ? { 'X-IntegrityFlow-IPC-Token': localIpcSecret } : {}),
+    ...extra
+  };
+}
+
+// Function purpose: Allows isolated unit checks to direct evidence roots to a controlled temp directory.
+function setAllowedEvidenceRoots({ screenshotRoot, audioRoot } = {}) {
+  if (screenshotRoot) allowedScreenshotRoot = path.resolve(screenshotRoot);
+  if (audioRoot) allowedAudioRoot = path.resolve(audioRoot);
+}
+
+// Function purpose: Enforces path.relative() + realpath containment and extension allowlisting.
+function isPathWithinRoot(filePath, rootDir, allowedExts = null) {
+  if (typeof filePath !== 'string' || !filePath.trim()) return false;
+  try {
+    const resolvedRoot = fs.existsSync(rootDir) ? fs.realpathSync(rootDir) : path.resolve(rootDir);
+    const resolvedTarget = path.resolve(filePath);
+    if (!fs.existsSync(resolvedTarget)) return false;
+    const realTarget = fs.realpathSync(resolvedTarget);
+    const rel = path.relative(resolvedRoot, realTarget);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    if (allowedExts && !allowedExts.has(path.extname(realTarget).toLowerCase())) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Function purpose: Stores the candidate session Bearer token for authenticated violation delivery.
+function setSessionToken(sessionId, token) {
+  currentSessionToken = token || null;
+  if (sessionId && token) {
+    sessionTokens.set(String(sessionId), token);
+  }
+}
+
+// Function purpose: Resolves the candidate session Bearer token for a given session ID.
+function getSessionToken(sessionId) {
+  if (sessionId && sessionTokens.has(String(sessionId))) {
+    return sessionTokens.get(String(sessionId));
+  }
+  return currentSessionToken;
+}
 
 // Function purpose: Updates whether exam monitoring is currently active.
 function setExamActive(active) {
@@ -53,7 +113,8 @@ async function checkPythonHealth(instanceId) {
   try {
     const response = await axios.get(`${getPythonUrl()}/health`, {
       timeout: 2000,
-      proxy: false
+      proxy: false,
+      headers: getLocalIpcHeaders()
     });
     lastHealthError = (response.data.errors || []).join('; ');
     return response.status === 200 && response.data.status === 'ok' && response.data.instanceId === instanceId;
@@ -65,7 +126,7 @@ async function checkPythonHealth(instanceId) {
 
 /**
  * Direct single-shot HTTP transport to POST /violation.
- * Preserves the exact original timestamp in the payload.
+ * Preserves the exact original timestamp in the payload and authenticates via Bearer sessionToken.
  *
  * @param {Object} violationPayload
  * @returns {Promise<boolean>}
@@ -75,30 +136,38 @@ async function sendViolationDirect(violationPayload) {
   // Assign once before delivery so buffering preserves the same event on a lost acknowledgement.
   violationPayload.eventId ||= randomUUID();
   violationPayload.timestamp ||= new Date().toISOString();
-  let requestData = violationPayload;
+  const authToken = violationPayload.sessionToken || getSessionToken(violationPayload.sessionId);
+  const { sessionToken: _omittedToken, ...cleanPayload } = violationPayload;
+  let requestData = cleanPayload;
   let requestHeaders = {};
 
-  const screenshot = violationPayload.screenshotPath;
-  const audio = violationPayload.audioPath || violationPayload.details?.audioPath;
-
-  const screenshotRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'screenshots');
-  const audioRoot = path.resolve(__dirname, '..', '..', 'ai-module', 'audio_evidence');
+  const screenshot = cleanPayload.screenshotPath;
+  const audio = cleanPayload.audioPath || cleanPayload.details?.audioPath;
 
   const resolvedScreenshot = typeof screenshot === 'string' ? path.resolve(screenshot) : '';
   const resolvedAudio = typeof audio === 'string' ? path.resolve(audio) : '';
 
-  const hasValidScreenshot = resolvedScreenshot && fs.existsSync(resolvedScreenshot);
-  const hasValidAudio = resolvedAudio && fs.existsSync(resolvedAudio);
+  const hasValidScreenshot = isPathWithinRoot(resolvedScreenshot, allowedScreenshotRoot, ALLOWED_SCREENSHOT_EXTS);
+  const hasValidAudio = isPathWithinRoot(resolvedAudio, allowedAudioRoot, ALLOWED_AUDIO_EXTS);
+
+  if (screenshot && !hasValidScreenshot) {
+    console.warn(`[PythonBridge] Blocked screenshotPath outside allowed evidence root: ${screenshot}`);
+    delete cleanPayload.screenshotPath;
+  }
+  if (audio && !hasValidAudio) {
+    console.warn(`[PythonBridge] Blocked audioPath outside allowed evidence root: ${audio}`);
+    delete cleanPayload.audioPath;
+  }
 
   if (hasValidScreenshot || hasValidAudio) {
     const form = new FormData();
-    form.append('sessionId', violationPayload.sessionId);
-    form.append('eventId', violationPayload.eventId);
-    form.append('type', violationPayload.type);
-    form.append('severity', String(violationPayload.severity));
-    form.append('timestamp', violationPayload.timestamp || new Date().toISOString());
-    if (violationPayload.details) {
-      form.append('details', typeof violationPayload.details === 'string' ? violationPayload.details : JSON.stringify(violationPayload.details));
+    form.append('sessionId', cleanPayload.sessionId);
+    form.append('eventId', cleanPayload.eventId);
+    form.append('type', cleanPayload.type);
+    form.append('severity', String(cleanPayload.severity));
+    form.append('timestamp', cleanPayload.timestamp || new Date().toISOString());
+    if (cleanPayload.details) {
+      form.append('details', typeof cleanPayload.details === 'string' ? cleanPayload.details : JSON.stringify(cleanPayload.details));
     }
     if (hasValidScreenshot) {
       form.append('screenshot', fs.createReadStream(resolvedScreenshot), {
@@ -117,17 +186,21 @@ async function sendViolationDirect(violationPayload) {
     requestHeaders = form.getHeaders();
   }
 
+  if (authToken) {
+    requestHeaders = { ...requestHeaders, Authorization: `Bearer ${authToken}` };
+  }
+
   const deliveryStarted = Date.now();
   try {
     const response = await axios.post(`${SERVER_URL}/violation`, requestData, {
       timeout: 8000,
       headers: requestHeaders
     });
-    console.log(`[Alert Delivery] ${violationPayload.type}: server accepted after ${Date.now() - deliveryStarted}ms; event age ${Date.now() - Date.parse(violationPayload.timestamp)}ms`);
+    console.log(`[Alert Delivery] ${cleanPayload.type}: server accepted after ${Date.now() - deliveryStarted}ms; event age ${Date.now() - Date.parse(cleanPayload.timestamp)}ms`);
     return response.status >= 200 && response.status < 300;
   } catch (err) {
-    if (err.response && (err.response.status === 404 || err.response.status === 400)) {
-      // Invalid/stale session on backend - treat as consumed so it doesn't poison the retry loop
+    if (err.response && (err.response.status === 404 || err.response.status === 400 || err.response.status === 401)) {
+      // Invalid/stale/expired session on backend - treat as consumed so it doesn't poison the retry loop
       console.warn(`[PythonBridge] Server rejected invalid event/session (${err.response.status}): ${err.response.data?.error || 'Invalid data'}. Discarding from queue.`);
       return true;
     }
@@ -149,6 +222,11 @@ async function forwardViolationToServer(violationPayload, durableFirst = false) 
     return false;
   }
 
+  const resolvedToken = violationPayload.sessionToken || getSessionToken(violationPayload.sessionId);
+  if (resolvedToken && !violationPayload.sessionToken) {
+    violationPayload.sessionToken = resolvedToken;
+  }
+
   if (durableFirst) {
     try {
       violationPayload.eventId ||= randomUUID();
@@ -164,7 +242,7 @@ async function forwardViolationToServer(violationPayload, durableFirst = false) 
   }
 
   try {
-    console.log(`[PythonBridge] Forwarding violation to backend:`, violationPayload);
+    console.log(`[PythonBridge] Forwarding violation to backend:`, violationPayload.type);
     const success = await sendViolationDirect(violationPayload);
     if (success) {
       console.log(`[PythonBridge] Successfully forwarded violation to backend.`);
@@ -307,7 +385,11 @@ function stopBufferRetryLoop() {
 // Function purpose: Requests termination of the specified application.
 async function killApp(name) {
   try {
-    const response = await axios.post(`${getPythonUrl()}/kill-app`, { name }, { timeout: 3000, proxy: false });
+    const response = await axios.post(`${getPythonUrl()}/kill-app`, { name }, {
+      timeout: 3000,
+      proxy: false,
+      headers: getLocalIpcHeaders()
+    });
     return response.data;
   } catch (error) {
     console.error(`[PythonBridge] Error killing app ${name}:`, error.message);
@@ -327,5 +409,11 @@ module.exports = {
   stopBufferRetryLoop,
   killApp,
   setExamActive,
-  getExamActive
+  getExamActive,
+  setSessionToken,
+  getSessionToken,
+  setLocalIpcSecret,
+  getLocalIpcHeaders,
+  setAllowedEvidenceRoots,
+  isPathWithinRoot
 };

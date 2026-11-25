@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, User, Mail, Lock, AlertCircle, CheckCircle, ArrowRight, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 import './Auth.css';
 import { NAME_PATTERN, validName, validEmail, validPasswordSize } from '../utils/inputValidation';
 
@@ -227,6 +228,13 @@ export default function Signup({ onNavigate }) {
                         )}
                     </button>
                 </form>
+
+                <GoogleSignInButton
+                    text="signup_with"
+                    dividerLabel="or continue with Google"
+                    disabled={isSubmitting || signupSuccess}
+                    onError={(msg) => setError(msg)}
+                />
 
                 <div className="auth-footer-nav">
                     <span>Already have an account?</span>

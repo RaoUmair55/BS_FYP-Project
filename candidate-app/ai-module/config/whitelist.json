@@ -1,17 +1,11 @@
 {
   "exam_whitelist": [
-    "electron.exe",
     "candidate-app-electron.exe",
-    "python.exe",
-    "node.exe",
     "settings.exe",
     "control.exe",
-    "taskmgr.exe",
     "shellExperienceHost.exe",
     "SearchHost.exe",
     "SearchIndexer.exe",
-    "language_server_windows_x64.exe",
-    "esbuild.exe",
     "useroobebroker.exe",
     "filecoauth.exe",
     "comppkgsrv.exe",

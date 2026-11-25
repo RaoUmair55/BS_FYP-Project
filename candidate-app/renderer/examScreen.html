@@ -173,6 +173,101 @@ Connection: examScreen.js supplies exam data and interactions; shared styles com
       overflow: auto;
       width: 100%;
       height: 100%;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .pdf-viewer-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      background: #e9eef2;
+    }
+    .pdf-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 14px;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #d6e1e6;
+      font-size: 12.5px;
+      color: #475569;
+    }
+    .pdf-page-meta {
+      font-weight: 600;
+      color: #334155;
+    }
+    .pdf-zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pdf-zoom-btn {
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #1e293b;
+      border-radius: 6px;
+      height: 28px;
+      min-width: 28px;
+      padding: 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .pdf-zoom-btn:hover:not(:disabled) {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+    .pdf-zoom-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .pdf-zoom-fit {
+      font-size: 12px;
+      padding: 0 10px;
+    }
+    .pdf-zoom-label {
+      min-width: 44px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: #334155;
+    }
+    .pdf-canvas-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 20px 16px 28px 16px;
+    }
+    .pdf-page-card {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+      padding: 8px 8px 6px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .pdf-page-canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .pdf-page-number {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 500;
     }
     .docx-container {
       font-family: 'Times New Roman', Times, serif;
@@ -780,7 +875,7 @@ Connection: examScreen.js supplies exam data and interactions; shared styles com
     <div class="top-bar-right">
       <div id="durationBadge" class="badge" style="font-weight:600; background:#edf2f4; color:#334155;">Total: --m</div>
       <div id="timerDisplay" class="timer-badge">Time Left: --:--</div>
-      <button id="testViolationBtn">Test Alert</button>
+      <button id="testViolationBtn" style="display: none;">Test Alert</button>
     </div>
   </div>
 

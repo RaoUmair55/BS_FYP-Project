@@ -46,7 +46,7 @@ const vm = require('node:vm');
             } },
             sessionStorage: { getItem: /* Function purpose: Provides the get item test helper or stub used by this regression check. */ () => '{}', /* Function purpose: Provides the set item test helper or stub used by this regression check. */ setItem() {} },
             localStorage: { /* Function purpose: Provides the set item test helper or stub used by this regression check. */ setItem() {} },
-            fetch: /* Function purpose: Provides the fetch test helper or stub used by this regression check. */ async (url, options) => { fetchCount++; assert.equal(JSON.parse(options.body).consentGiven, true); return { ok: true, json: /* Function purpose: Provides the json test helper or stub used by this regression check. */ async () => ({ _id: 'check-session' }) }; },
+            fetch: /* Function purpose: Provides the fetch test helper or stub used by this regression check. */ async (url, options) => { fetchCount++; assert.equal(JSON.parse(options.body).consentGiven, true); return { ok: true, json: /* Function purpose: Provides the json test helper or stub used by this regression check. */ async () => ({ _id: 'check-session', sessionToken: 'check-session-token' }) }; },
             console: { /* Function purpose: Provides the log test helper or stub used by this regression check. */ log() {}, /* Function purpose: Provides the warn test helper or stub used by this regression check. */ warn() {}, /* Function purpose: Provides the error test helper or stub used by this regression check. */ error() {} }, Date, AbortSignal
         });
         await ready();

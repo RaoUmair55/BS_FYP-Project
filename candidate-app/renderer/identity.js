@@ -130,6 +130,9 @@ document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the D
       if (!sessionId) {
         throw new Error('Server did not return a valid session ID.');
       }
+      if (!session.sessionToken) {
+        throw new Error('Server did not return a valid session credential.');
+      }
 
       const sessionObj = {
         sessionToken: session.sessionToken,

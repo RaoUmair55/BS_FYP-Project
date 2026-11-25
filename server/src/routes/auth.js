@@ -3,6 +3,7 @@ const sendVerificationEmail = require('../utils/sendVerificationEmail');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('node:crypto');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { nameSchema, emailSchema, passwordSchema } = require('../utils/inputValidation');
@@ -11,7 +12,8 @@ const Teacher = require('../models/Teacher');
 const RefreshToken = require('../models/RefreshToken');
 const AuthAuditLog = require('../models/AuthAuditLog');
 const mailService = require('../services/mail');
-const { generateAccessToken, generateRefreshToken, hashToken } = require('../utils/tokens');
+const { generateAccessToken, generateMediaToken, generateRefreshToken, hashToken } = require('../utils/tokens');
+const { verifyGoogleIdToken } = require('../utils/googleAuth');
 const { requireAuth } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -27,6 +29,15 @@ const loginLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many login attempts from this IP. Please try again after 15 minutes.' }
+});
+
+// /auth/google: max 20 attempts per 15 min per IP
+const googleLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many Google sign-in attempts from this IP. Please try again after 15 minutes.' }
 });
 
 // /auth/forgot-password: max 5 requests per hour per IP
@@ -142,6 +153,7 @@ router.post('/signup', async (req, res) => {
 
         // Verification disabled: retain the existing immediate-login flow.
         const accessToken = generateAccessToken(savedTeacher);
+        const mediaToken = generateMediaToken(savedTeacher);
         const { token: rawRefreshToken, tokenHash } = generateRefreshToken();
         const expiresAt = new Date(Date.now() + REFRESH_COOKIE_MAX_AGE);
 
@@ -156,6 +168,7 @@ router.post('/signup', async (req, res) => {
         return res.status(201).json({
             message: 'Teacher registered successfully',
             accessToken,
+            mediaToken,
             teacher: {
                 id: savedTeacher._id,
                 name: savedTeacher.name,
@@ -207,6 +220,17 @@ router.post('/login', loginLimiter, async (req, res) => {
             return res.status(401).json({ error: genericErrorMessage });
         }
 
+        // Guard accounts created solely via Google SSO (no local password set yet)
+        if (!teacher.passwordHash) {
+            await AuthAuditLog.create({
+                teacherId: teacher._id,
+                email: teacher.email,
+                event: 'login_failed',
+                ipAddress
+            });
+            return res.status(401).json({ error: 'This account uses Google Sign-In. Please continue with Google or reset your password.' });
+        }
+
         // Verify password
         const isMatch = await bcrypt.compare(password, teacher.passwordHash);
         if (!isMatch) {
@@ -245,6 +269,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
         // Generate tokens
         const accessToken = generateAccessToken(teacher);
+        const mediaToken = generateMediaToken(teacher);
         const { token: rawRefreshToken, tokenHash } = generateRefreshToken();
         const expiresAt = new Date(Date.now() + REFRESH_COOKIE_MAX_AGE);
 
@@ -267,6 +292,7 @@ router.post('/login', loginLimiter, async (req, res) => {
         return res.json({
             message: 'Login successful',
             accessToken,
+            mediaToken,
             teacher: {
                 id: teacher._id,
                 name: teacher.name,
@@ -315,8 +341,9 @@ router.post('/refresh', async (req, res) => {
         storedToken.revoked = true;
         await storedToken.save();
 
-        // Generate new access + refresh token
+        // Generate new access + media + refresh token
         const newAccessToken = generateAccessToken(teacher);
+        const newMediaToken = generateMediaToken(teacher);
         const { token: newRawRefreshToken, tokenHash: newTokenHash } = generateRefreshToken();
         const expiresAt = new Date(Date.now() + REFRESH_COOKIE_MAX_AGE);
 
@@ -329,7 +356,8 @@ router.post('/refresh', async (req, res) => {
         res.cookie(REFRESH_COOKIE_NAME, newRawRefreshToken, getCookieOptions());
 
         return res.json({
-            accessToken: newAccessToken
+            accessToken: newAccessToken,
+            mediaToken: newMediaToken
         });
     } catch (err) {
         console.error('Refresh token error:', err);
@@ -392,8 +420,14 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
         if (teacher) {
             const resetSecret = process.env.RESET_TOKEN_SECRET;
             if (!resetSecret) throw new Error('RESET_TOKEN_SECRET is required');
+            const jti = randomUUID();
+            const resetExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+            teacher.passwordResetTokenHash = hashToken(jti);
+            teacher.passwordResetExpiresAt = resetExpiresAt;
+            await teacher.save();
+
             const resetToken = jwt.sign(
-                { teacherId: teacher._id.toString(), email: teacher.email, type: 'password_reset' },
+                { teacherId: teacher._id.toString(), email: teacher.email, type: 'password_reset', jti },
                 resetSecret,
                 { expiresIn: '30m' }
             );
@@ -448,21 +482,35 @@ router.post('/reset-password', async (req, res) => {
             return res.status(400).json({ error: 'Invalid or expired password reset token' });
         }
 
-        if (decoded.type !== 'password_reset' || !decoded.teacherId) {
+        if (decoded.type !== 'password_reset' || !decoded.teacherId || !decoded.jti) {
             return res.status(400).json({ error: 'Invalid reset token payload' });
         }
 
-        const teacher = await Teacher.findById(decoded.teacherId);
-        if (!teacher) {
-            return res.status(404).json({ error: 'Teacher not found' });
-        }
-
-        // Hash new password and reset lockouts
+        // Hash new password and atomically consume the single-use reset token
         const newPasswordHash = await bcrypt.hash(newPassword, 12);
-        teacher.passwordHash = newPasswordHash;
-        teacher.failedLoginAttempts = 0;
-        teacher.lockedUntil = null;
-        await teacher.save();
+        const teacher = await Teacher.findOneAndUpdate(
+            {
+                _id: decoded.teacherId,
+                passwordResetTokenHash: hashToken(decoded.jti),
+                passwordResetExpiresAt: { $gt: new Date() }
+            },
+            {
+                $set: {
+                    passwordHash: newPasswordHash,
+                    failedLoginAttempts: 0,
+                    lockedUntil: null,
+                    passwordResetTokenHash: null,
+                    passwordResetExpiresAt: null
+                },
+                $addToSet: {
+                    authProviders: 'local'
+                }
+            },
+            { new: true }
+        );
+        if (!teacher) {
+            return res.status(400).json({ error: 'Password reset token has already been used or expired' });
+        }
 
         // Revoke ALL existing refresh tokens for this teacher (forces re-login everywhere)
         await RefreshToken.updateMany(
@@ -481,6 +529,170 @@ router.post('/reset-password', async (req, res) => {
     } catch (err) {
         console.error('Reset password error:', err);
         return res.status(500).json({ error: 'Failed to reset password' });
+    }
+});
+
+/**
+ * GET /auth/providers
+ * Public capability discovery so the dashboard enables Google Sign-In cleanly when configured.
+ */
+router.get('/providers', (_req, res) => {
+    const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+    return res.json({
+        googleEnabled: Boolean(clientId),
+        googleClientId: clientId || null
+    });
+});
+
+/**
+ * POST /auth/google
+ * Verifies a Google Identity Services ID token, safely links an existing verified
+ * examiner account (preserving its role) or registers a new 'teacher' account,
+ * and issues standard access + media + HttpOnly refresh tokens.
+ */
+router.post('/google', googleLoginLimiter, async (req, res) => {
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const googleClientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+    if (!googleClientId) {
+        return res.status(503).json({ error: 'Google Sign-In is not configured on this server.' });
+    }
+
+    const credential = req.body?.credential;
+    if (typeof credential !== 'string' || !credential.trim()) {
+        return res.status(400).json({ error: 'Google credential token is required.' });
+    }
+
+    try {
+        const verifier = req.app?.locals?.verifyGoogleIdToken || verifyGoogleIdToken;
+        const profile = await verifier(credential.trim(), googleClientId);
+
+        if (!profile.emailVerified) {
+            return res.status(403).json({
+                error: 'Your Google account email is not verified. Verify your Google email before signing in.'
+            });
+        }
+
+        let teacher = await Teacher.findOne({ googleId: profile.sub });
+        let isNewAccount = false;
+        let linkedExistingAccount = false;
+
+        if (!teacher) {
+            const existingByEmail = await Teacher.findOne({ email: profile.email });
+            if (existingByEmail) {
+                if (existingByEmail.googleId && existingByEmail.googleId !== profile.sub) {
+                    return res.status(409).json({
+                        error: 'This email is already linked to a different Google account.'
+                    });
+                }
+                // Safely link existing account without duplicating and preserving its existing role
+                existingByEmail.googleId = profile.sub;
+                const providers = new Set(Array.isArray(existingByEmail.authProviders) ? existingByEmail.authProviders : ['local']);
+                providers.add('google');
+                existingByEmail.authProviders = [...providers];
+                existingByEmail.emailVerified = true;
+                existingByEmail.emailVerificationRequired = false;
+                if (profile.picture && !existingByEmail.avatarUrl) {
+                    existingByEmail.avatarUrl = profile.picture;
+                }
+                teacher = existingByEmail;
+                linkedExistingAccount = true;
+            } else {
+                // Sanitize display name fallback if Google profile name is absent/short
+                const fallbackName = profile.email.split('@')[0].replace(/[^a-zA-Z .'-]/g, ' ').trim() || 'Examiner';
+                const displayName = (profile.name && profile.name.length >= 2) ? profile.name.slice(0, 100) : fallbackName;
+
+                teacher = new Teacher({
+                    name: displayName,
+                    email: profile.email,
+                    passwordHash: null,
+                    googleId: profile.sub,
+                    authProviders: ['google'],
+                    avatarUrl: profile.picture || null,
+                    role: 'teacher', // Public SSO registration always defaults to 'teacher'
+                    emailVerified: true,
+                    emailVerificationRequired: false,
+                    failedLoginAttempts: 0
+                });
+                isNewAccount = true;
+            }
+        }
+
+        if (teacher.lockedUntil && new Date(teacher.lockedUntil) > new Date()) {
+            return res.status(401).json({ error: 'Account is temporarily locked. Please try again later.' });
+        }
+
+        if (requireEmailVerification.needsVerification(teacher)) {
+            return res.status(403).json({
+                error: 'Verify your email before signing in.',
+                code: 'EMAIL_VERIFICATION_REQUIRED'
+            });
+        }
+
+        teacher.failedLoginAttempts = 0;
+        teacher.lockedUntil = null;
+        if (profile.picture && !teacher.avatarUrl) {
+            teacher.avatarUrl = profile.picture;
+        }
+        await teacher.save();
+
+        const accessToken = generateAccessToken(teacher);
+        const mediaToken = generateMediaToken(teacher);
+        const { token: rawRefreshToken, tokenHash } = generateRefreshToken();
+        const expiresAt = new Date(Date.now() + REFRESH_COOKIE_MAX_AGE);
+
+        await RefreshToken.create({
+            teacherId: teacher._id,
+            tokenHash,
+            expiresAt
+        });
+
+        res.cookie(REFRESH_COOKIE_NAME, rawRefreshToken, getCookieOptions());
+
+        if (isNewAccount) {
+            await AuthAuditLog.create({
+                teacherId: teacher._id,
+                email: teacher.email,
+                event: 'google_signup',
+                ipAddress
+            });
+        } else if (linkedExistingAccount) {
+            await AuthAuditLog.create({
+                teacherId: teacher._id,
+                email: teacher.email,
+                event: 'google_linked',
+                ipAddress
+            });
+        }
+
+        await AuthAuditLog.create({
+            teacherId: teacher._id,
+            email: teacher.email,
+            event: 'google_login',
+            ipAddress
+        });
+
+        return res.status(isNewAccount ? 201 : 200).json({
+            message: isNewAccount ? 'Google account registered successfully' : 'Google sign-in successful',
+            accessToken,
+            mediaToken,
+            linkedExistingAccount,
+            teacher: {
+                id: teacher._id,
+                name: teacher.name,
+                email: teacher.email,
+                role: teacher.role,
+                emailVerified: teacher.emailVerified,
+                avatarUrl: teacher.avatarUrl || null,
+                authProviders: teacher.authProviders || ['google']
+            }
+        });
+    } catch (err) {
+        if (err.code === 11000) {
+            return res.status(409).json({ error: 'Account already linked. Please try signing in again.' });
+        }
+        const status = err.statusCode || 500;
+        if (status >= 500) console.error('Google sign-in error:', err);
+        return res.status(status).json({ error: err.message || 'Google sign-in failed' });
     }
 });
 

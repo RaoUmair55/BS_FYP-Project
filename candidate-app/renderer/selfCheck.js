@@ -92,7 +92,9 @@ document.addEventListener('DOMContentLoaded', /* Function purpose: Handles the D
     const allowedNotice = document.getElementById('allowed-apps-notice');
     if (allowedNotice && sessionInfo && sessionInfo.allowedApplications && sessionInfo.allowedApplications.length > 0) {
       const appNames = sessionInfo.allowedApplications.map(/* Function purpose: Transforms each entry into the value needed by this operation. */ a => a.name || a.executable).join(', ');
-      allowedNotice.innerHTML = `<strong>Permitted Tools for this exam:</strong> ${appNames}`;
+      const strong = document.createElement('strong');
+      strong.textContent = 'Permitted Tools for this exam:';
+      allowedNotice.replaceChildren(strong, document.createTextNode(` ${appNames}`));
       allowedNotice.style.display = 'block';
     }
   } catch (err) {
@@ -132,7 +134,10 @@ async function uploadCameraVerificationSnapshot(video) {
 
     const res = await fetch(`${sessionInfo.serverUrl || 'http://localhost:5000'}/sessions/${sessionInfo.sessionId}/camera-verification`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(sessionInfo.sessionToken ? { Authorization: `Bearer ${sessionInfo.sessionToken}` } : {})
+      },
       body: JSON.stringify({ photoBase64 }),
       signal: AbortSignal.timeout(15000)
     });

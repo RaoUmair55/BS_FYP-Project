@@ -1,6 +1,7 @@
 const Exam = require('../models/Exam');
 const Session = require('../models/Session');
 const { broadcastToExam } = require('../sockets/violationSocket');
+const { exactCaseInsensitiveRegex } = require('./regex');
 
 /**
  * Automatically checks and expires active exams whose scheduled duration/endTime has passed.
@@ -34,7 +35,7 @@ async function autoExpireFinishedExams(io = null) {
             completedCodes.push(code);
 
             // Auto-complete remaining active candidate sessions for this finished exam
-            const codeRegex = new RegExp('^' + code + '$', 'i');
+            const codeRegex = exactCaseInsensitiveRegex(code);
             await Session.updateMany(
                 { examId: codeRegex, status: 'active' },
                 {

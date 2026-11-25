@@ -229,7 +229,7 @@ router.get('/assets', async (req, res) => {
         if (type === 'all' || type === 'screenshots') {
             const query = { screenshotPath: { $ne: null, $exists: true } };
             const violations = await Violation.find(query).sort({ timestamp: -1 }).limit(200);
-            
+
             // Collect sessionIds to populate student names
             const sessionIds = [...new Set(violations.map(v => v.sessionId).filter(Boolean))];
             const sessionDocs = await Session.find({ _id: { $in: sessionIds.filter(id => mongoose.Types.ObjectId.isValid(id)) } });
@@ -353,7 +353,7 @@ router.delete('/assets/:type/:id', async (req, res) => {
             if (!exam) return res.status(404).json({ error: 'Exam not found' });
             deletedUrl = exam.paperPath;
             targetSummary = `Deleted Question Paper for Exam: ${exam.title || exam.examCode} (${exam.examCode})`;
-            
+
             if (deletedUrl) {
                 try {
                     await storageService.delete(deletedUrl);
@@ -535,8 +535,10 @@ router.post('/assets/purge-exam', async (req, res) => {
             return res.status(400).json({ error: 'examId is required' });
         }
 
+        const safeExamId = escapeRegex(String(examId).trim());
+        const examRegex = new RegExp('^' + safeExamId + '$', 'i');
         const exam = await Exam.findOne({
-            $or: [{ examId: new RegExp('^' + examId + '$', 'i') }, { examCode: new RegExp('^' + examId + '$', 'i') }]
+            $or: [{ examId: examRegex }, { examCode: examRegex }]
         });
 
         let purgedPapers = 0;
@@ -555,7 +557,7 @@ router.post('/assets/purge-exam', async (req, res) => {
         }
 
         // 2. Find sessions
-        const sessions = await Session.find({ examId: new RegExp('^' + examId + '$', 'i') });
+        const sessions = await Session.find({ examId: examRegex });
         const sessionIds = sessions.map(s => s._id.toString());
 
         // 3. Purge Verification photos
@@ -676,7 +678,7 @@ router.get('/audit-logs', async (req, res) => {
 router.get('/audit-logs/export', async (req, res) => {
     try {
         const logs = await AuditLog.find().sort({ timestamp: -1 }).limit(1000);
-        
+
         let csv = 'Timestamp,Examiner Name,Examiner Email,Action,Target Type,Target ID,Summary,IP Address\n';
         logs.forEach(log => {
             const time = new Date(log.timestamp).toISOString();
@@ -712,9 +714,10 @@ router.get('/users', async (req, res) => {
         const query = {};
         if (role) query.role = role;
         if (search) {
+            const safeSearch = escapeRegex(search);
             query.$or = [
-                { name: new RegExp(search, 'i') },
-                { email: new RegExp(search, 'i') }
+                { name: new RegExp(safeSearch, 'i') },
+                { email: new RegExp(safeSearch, 'i') }
             ];
         }
 

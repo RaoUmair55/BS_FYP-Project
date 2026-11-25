@@ -4,14 +4,19 @@ const Session = require('../models/Session');
 const Exam = require('../models/Exam');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { ownsExam, requireOwnedExam } = require('../middleware/examAccess');
+const { requireSessionAuth, requireSessionOrOwnedTeacher } = require('../middleware/sessionAuth');
 const { broadcastToExam } = require('../sockets/violationSocket');
 
 const router = express.Router();
 
 /**
- * POST /messages — Send message (Candidate or Teacher)
+ * POST /messages — Send message (Candidate with session JWT, or Teacher with teacher JWT)
  */
-router.post('/messages', (req, res, next) => req.body?.sender === 'teacher' || req.body?.isBroadcast ? requireAuth(req, res, next) : next(), async (req, res) => {
+router.post('/messages', (req, res, next) => (
+    req.body?.sender === 'teacher' || req.body?.isBroadcast
+        ? requireAuth(req, res, next)
+        : requireSessionAuth(req, res, next)
+), async (req, res) => {
     try {
         const { sessionId, examId, sender, senderName, rollNumber, studentId, text, isBroadcast } = req.body;
 
@@ -25,39 +30,33 @@ router.post('/messages', (req, res, next) => req.body?.sender === 'teacher' || r
 
         const normalizedSender = (sender === 'teacher') ? 'teacher' : 'student';
         if (normalizedSender === 'teacher' && !await ownsExam(req, examId)) return res.status(404).json({ error: 'Exam not found' });
-        if (normalizedSender === 'student') {
-            const session = sessionId && await Session.findById(sessionId);
-            if (!session || session.status !== 'active' || session.examId.toUpperCase() !== examId.toUpperCase()) {
-                return res.status(404).json({ error: 'Active session not found' });
-            }
-        }
+
+        let resolvedSessionId = isBroadcast ? 'ALL' : (sessionId || 'ALL');
         let resolvedName = senderName || (normalizedSender === 'teacher' ? 'Examiner' : 'Candidate');
         let resolvedRoll = rollNumber || '';
         let resolvedStudentId = studentId || '';
 
-        // If sent by student/candidate, enrich from Session document if missing
-        if (normalizedSender === 'student' && sessionId) {
-            try {
-                const session = await Session.findOne({ 
-                    $or: [{ _id: sessionId.match(/^[0-9a-fA-F]{24}$/) ? sessionId : null }, { sessionId: sessionId }] 
-                });
-                if (session) {
-                    resolvedName = session.studentName || resolvedName;
-                    resolvedRoll = session.rollNumber || resolvedRoll;
-                    resolvedStudentId = session.studentId || resolvedStudentId;
-                }
-            } catch (e) {}
+        if (normalizedSender === 'student') {
+            const session = req.candidateSession;
+            if (!session || session.status !== 'active' || String(session.examId || '').toUpperCase() !== examId.trim().toUpperCase()) {
+                return res.status(403).json({ error: 'Active session does not match examId' });
+            }
+            // Authoritatively derive candidate identity from the authenticated session
+            resolvedSessionId = String(session._id);
+            resolvedName = session.studentName || 'Candidate';
+            resolvedRoll = session.rollNumber || '';
+            resolvedStudentId = session.studentId || '';
         }
 
         const newMsg = new Message({
-            sessionId: isBroadcast ? 'ALL' : (sessionId || 'ALL'),
-            examId: examId.toUpperCase(),
+            sessionId: resolvedSessionId,
+            examId: examId.trim().toUpperCase(),
             sender: normalizedSender,
             senderName: resolvedName,
             rollNumber: resolvedRoll,
             studentId: resolvedStudentId,
             text: text.trim(),
-            isBroadcast: Boolean(isBroadcast),
+            isBroadcast: normalizedSender === 'teacher' && Boolean(isBroadcast),
             read: normalizedSender === 'teacher',
             timestamp: new Date()
         });
@@ -81,29 +80,18 @@ router.post('/messages', (req, res, next) => req.body?.sender === 'teacher' || r
 });
 
 /**
- * GET /messages/:sessionId — Get message thread for a candidate session
+ * GET /messages/:sessionId — Get message thread for a candidate session (Candidate or owning Examiner)
  */
-router.get('/messages/:sessionId', async (req, res) => {
+router.get('/messages/:sessionId', requireSessionOrOwnedTeacher({ allowInactive: true }), async (req, res) => {
     try {
-        const { sessionId } = req.params;
-        const { examId } = req.query;
-
-        let session = null;
-        try {
-            session = await Session.findOne({ 
-                $or: [
-                    { _id: sessionId.match(/^[0-9a-fA-F]{24}$/) ? sessionId : null }, 
-                    { sessionId: sessionId }
-                ] 
-            });
-        } catch (e) {}
-
+        const session = req.candidateSession;
         if (!session) return res.status(404).json({ error: 'Session not found' });
+        const canonicalSessionId = String(session._id);
         const activeExamId = session.examId.toUpperCase();
 
         const query = {
             $or: [
-                { sessionId: sessionId },
+                { sessionId: canonicalSessionId },
                 { sessionId: 'ALL' }
             ]
         };

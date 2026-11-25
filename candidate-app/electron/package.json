@@ -16,7 +16,8 @@
     "start": "electron .",
     "build:renderer": "esbuild ../renderer/examScreen.js ../renderer/login.js ../renderer/identity.js --bundle --minify --outdir=../renderer/dist",
     "check:reliability": "node checks/check_reliability.js",
-    "check:consent": "node checks/check_consent.js"
+    "check:consent": "node checks/check_consent.js",
+    "check:security": "node checks/check_window_security.js"
   },
   "dependencies": {
     "axios": "^1.19.0",

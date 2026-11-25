@@ -14,11 +14,11 @@ import ExamTimeExpiryAlert from '../components/ExamTimeExpiryAlert';
 import ActiveExamOverview from '../components/ActiveExamOverview';
 import api, { getActiveSessions } from '../services/api';
 import { 
-    Shield, Layers, Radio, CheckCircle, AlertCircle, X, Volume2, 
-    VolumeX, Grid, User, LogOut, Lock, Sparkles, FolderKanban, 
+    Shield, ClipboardList, Radio, CheckCircle, AlertCircle, X, Volume2, 
+    VolumeX, Monitor, User, LogOut, Lock, Sparkles, SlidersHorizontal, 
     MessageSquare, Menu, Zap, Sun, Moon, Search, Bell, Users,
     PanelLeftClose, PanelLeftOpen, Minimize2, Maximize2,
-    LayoutDashboard, ShieldAlert, Wifi, FileBarChart2
+    LayoutDashboard, ShieldAlert, Flag, Wifi, FileBarChart2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AuthModal from '../components/AuthModal';
@@ -554,21 +554,28 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                     <div className="sidebar-nav-group">
                         <div className="sidebar-section-label">TEACHING</div>
                         <nav className="sidebar-nav-list" aria-label="Teaching Navigation">
-                            <button
-                                className={`sidebar-nav-pill ${activeTab === 'monitoring' && rightPanelView !== 'grid' && rightPanelView !== 'chat' && rightPanelView !== 'priority' ? 'active' : ''}`}
-                                title="Dashboard & Live Desk"
-                                onClick={() => {
-                                    setSelectedSummaryExamId(null);
-                                    setActiveTab('monitoring');
-                                    if (rightPanelView === 'grid' || rightPanelView === 'chat') setRightPanelView('priority');
-                                    setMobileMenuOpen(false);
-                                }}
-                            >
-                                <div className="sidebar-nav-pill-left">
-                                    <span className="sidebar-nav-icon-well"><LayoutDashboard size={15} /></span>
-                                    <span className="sidebar-nav-label">Dashboard</span>
-                                </div>
-                            </button>
+                            {(() => {
+                                const isDashboardActive = activeTab === 'monitoring' && rightPanelView !== 'grid' && rightPanelView !== 'chat' && rightPanelView !== 'priority';
+                                return (
+                                    <button
+                                        className={`sidebar-nav-pill ${isDashboardActive ? 'active' : ''}`}
+                                        title="Dashboard & Live Desk"
+                                        onClick={() => {
+                                            setSelectedSummaryExamId(null);
+                                            setActiveTab('monitoring');
+                                            if (rightPanelView === 'grid' || rightPanelView === 'chat') setRightPanelView('priority');
+                                            setMobileMenuOpen(false);
+                                        }}
+                                    >
+                                        <div className="sidebar-nav-pill-left">
+                                            <span className="sidebar-nav-icon-well">
+                                                <LayoutDashboard size={16} strokeWidth={isDashboardActive ? 2.15 : 1.65} />
+                                            </span>
+                                            <span className="sidebar-nav-label">Dashboard</span>
+                                        </div>
+                                    </button>
+                                );
+                            })()}
 
                             <button
                                 className={`sidebar-nav-pill ${activeTab === 'exams' ? 'active' : ''}`}
@@ -580,7 +587,9 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 }}
                             >
                                 <div className="sidebar-nav-pill-left">
-                                    <span className="sidebar-nav-icon-well"><Layers size={15} /></span>
+                                    <span className="sidebar-nav-icon-well">
+                                        <ClipboardList size={16} strokeWidth={activeTab === 'exams' ? 2.15 : 1.65} />
+                                    </span>
                                     <span className="sidebar-nav-label">My Exams</span>
                                 </div>
                                 {activeExams.length > 0 && (
@@ -600,7 +609,9 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 }}
                             >
                                 <div className="sidebar-nav-pill-left">
-                                    <span className="sidebar-nav-icon-well"><FileBarChart2 size={15} /></span>
+                                    <span className="sidebar-nav-icon-well">
+                                        <FileBarChart2 size={16} strokeWidth={activeTab === 'history' ? 2.15 : 1.65} />
+                                    </span>
                                     <span className="sidebar-nav-label">Reports &amp; Analytics</span>
                                 </div>
                             </button>
@@ -621,7 +632,9 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 }}
                             >
                                 <div className="sidebar-nav-pill-left">
-                                    <span className="sidebar-nav-icon-well"><Grid size={15} /></span>
+                                    <span className="sidebar-nav-icon-well">
+                                        <Monitor size={16} strokeWidth={activeTab === 'monitoring' && rightPanelView === 'grid' ? 2.15 : 1.65} />
+                                    </span>
                                     <span className="sidebar-nav-label">Live Monitoring</span>
                                 </div>
                                 {liveSessionsList.length > 0 && (
@@ -642,7 +655,9 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 }}
                             >
                                 <div className="sidebar-nav-pill-left">
-                                    <span className="sidebar-nav-icon-well"><ShieldAlert size={15} /></span>
+                                    <span className="sidebar-nav-icon-well">
+                                        <Flag size={16} strokeWidth={activeTab === 'monitoring' && rightPanelView === 'priority' ? 2.15 : 1.65} />
+                                    </span>
                                     <span className="sidebar-nav-label">Incident Center</span>
                                 </div>
                                 {highAlertCount > 0 && (
@@ -664,7 +679,9 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 }}
                             >
                                 <div className="sidebar-nav-pill-left">
-                                    <span className="sidebar-nav-icon-well"><MessageSquare size={15} /></span>
+                                    <span className="sidebar-nav-icon-well">
+                                        <MessageSquare size={16} strokeWidth={activeTab === 'monitoring' && rightPanelView === 'chat' ? 2.15 : 1.65} />
+                                    </span>
                                     <span className="sidebar-nav-label">Exam Chat</span>
                                 </div>
                                 {unreadChatCount > 0 && (
@@ -690,7 +707,9 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                     }}
                                 >
                                     <div className="sidebar-nav-pill-left">
-                                        <span className="sidebar-nav-icon-well"><FolderKanban size={15} /></span>
+                                        <span className="sidebar-nav-icon-well">
+                                            <SlidersHorizontal size={16} strokeWidth={activeTab === 'admin' ? 2.15 : 1.65} />
+                                        </span>
                                         <span className="sidebar-nav-label">System Admin</span>
                                     </div>
                                 </button>
@@ -842,7 +861,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                                                 setSearchQuery('');
                                                             }}
                                                         >
-                                                            <Layers size={14} className="search-result-icon" />
+                                                            <ClipboardList size={14} className="search-result-icon" />
                                                             <div className="search-result-text">
                                                                 <strong>{ex.title}</strong>
                                                                 <span>Code: {ex.examCode}</span>
@@ -1057,7 +1076,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                         className="solid-primary-btn pill-btn"
                                         onClick={() => { setSelectedSummaryExamId(null); setActiveTab('exams'); }}
                                     >
-                                        <Layers size={14} />
+                                        <ClipboardList size={14} />
                                         <span>Manage Exams</span>
                                     </button>
                                 </>
@@ -1077,7 +1096,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                         focusMode ? (
                             <div className="focus-kpi-strip">
                                 <button type="button" className="focus-kpi-pill" onClick={() => { setSelectedSummaryExamId(null); setActiveTab('exams'); }}>
-                                    <Layers size={14} style={{ color: 'var(--primary)' }} />
+                                    <ClipboardList size={14} style={{ color: 'var(--primary)' }} />
                                     <strong className="tabular-nums">{activeExams.length}</strong> Active Exams
                                 </button>
                                 <button type="button" className="focus-kpi-pill" onClick={() => setRightPanelView('grid')}>
@@ -1105,7 +1124,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                             >
                                 <div className="kpi-card-top">
                                     <div className="kpi-icon-badge exams">
-                                        <Layers size={17} />
+                                        <ClipboardList size={17} />
                                     </div>
                                     <span className={`kpi-trend-pill ${activeExams.length > 0 ? 'emerald' : 'amber'}`}>
                                         <span className={`kpi-status-dot ${activeExams.length > 0 ? 'emerald' : 'amber'}`} />
@@ -1256,7 +1275,7 @@ export default function Dashboard({ theme = 'light', onToggleTheme = () => {} })
                                 <h2 id="live-empty-title">Your monitoring desk is clear</h2>
                                 <p>No exams are active right now. Create or activate an exam to bring candidates, alerts, and evidence into this view.</p>
                                 <button className="solid-primary-btn pill-btn" onClick={() => setActiveTab('exams')}>
-                                    <Layers size={17} /> Go to Exams
+                                    <ClipboardList size={17} /> Go to Exams
                                 </button>
                                 <div className="live-empty-footer"><span className="status-dot connected" /> Ready when your next exam begins</div>
                             </section>

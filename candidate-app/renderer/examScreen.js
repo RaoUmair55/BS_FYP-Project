@@ -5,6 +5,12 @@
  * Connection: Works with examScreen.html, the central server and window.api; uses Mammoth for DOCX paper display.
  */
 import mammoth from '../electron/node_modules/mammoth/mammoth.browser.js';
+import * as pdfjsLib from '../electron/node_modules/pdfjs-dist/legacy/build/pdf.mjs';
+import * as pdfjsWorker from '../electron/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs';
+
+// Provide bundled legacy worker handler directly on globalThis so file:// Electron renderers
+// with sandbox:true never hit cross-origin Worker errors or Chromium 122 API gaps.
+globalThis.pdfjsWorker = pdfjsWorker;
 
 let sessionInfo = null;
 let timerInterval = null;
@@ -24,6 +30,14 @@ let backendConnected = null;
 
 let isPaperLoaded = false;
 let isPaperReleased = false;
+
+// Function purpose: Returns Bearer authentication headers for candidate session API requests.
+function getSessionAuthHeaders(extra = {}) {
+  return {
+    ...(sessionInfo?.sessionToken ? { Authorization: `Bearer ${sessionInfo.sessionToken}` } : {}),
+    ...extra
+  };
+}
 
 // Function purpose: Locks or unlocks the answer workspace according to the exam state.
 function setWorkspaceLock(locked) {
@@ -132,7 +146,10 @@ async function loadExamPaper() {
 
   try {
     const paperUrl = `${sessionInfo.serverUrl}/exam/${encodeURIComponent(sessionInfo.examId)}/paper?sessionId=${encodeURIComponent(sessionInfo.sessionId)}`;
-    const response = await fetch(paperUrl, { signal: AbortSignal.timeout(15000) });
+    const response = await fetch(paperUrl, {
+      headers: getSessionAuthHeaders(),
+      signal: AbortSignal.timeout(15000)
+    });
 
     // HTTP 423: Paper is locked in waiting lobby by examiner
     if (response.status === 423) {
@@ -242,7 +259,7 @@ async function loadExamPaper() {
     console.error('Error fetching/rendering paper:', error);
     if (loadingEl) {
       loadingEl.style.display = 'block';
-      loadingEl.innerHTML = `<div class="error-message">Failed to load exam paper: ${error.message}</div>`;
+      loadingEl.innerHTML = `<div class="error-message">Failed to load exam paper: ${escapeHtml(error?.message || 'Unknown error')}</div>`;
     }
   }
 }
@@ -268,7 +285,9 @@ async function init() {
 
     // Fetch initial session timing, lobby status, and warnings
     try {
-      const statusRes = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`);
+      const statusRes = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`, {
+        headers: getSessionAuthHeaders()
+      });
       if (statusRes.ok) {
         const statusData = await statusRes.json();
         if (statusData.endTime) {
@@ -309,7 +328,7 @@ async function init() {
     const loadingEl = document.getElementById('loadingMessage');
     if (loadingEl) {
       loadingEl.style.display = 'block';
-      loadingEl.innerHTML = `<div class="error-message">Initialization failed: ${error.message}</div>`;
+      loadingEl.innerHTML = `<div class="error-message">Initialization failed: ${escapeHtml(error?.message || 'Unknown error')}</div>`;
     }
   }
 }
@@ -425,7 +444,10 @@ function startSessionStatusPolling() {
     }
 
     try {
-      const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`, { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/status`, {
+        headers: getSessionAuthHeaders(),
+        signal: AbortSignal.timeout(8000)
+      });
       backendConnected = res.ok;
       updateBufferStatusUI(lastPendingCount);
       if (!res.ok) return;
@@ -483,7 +505,7 @@ function startSessionStatusPolling() {
           try {
             const snapshot = await window.api.captureIdentityPhoto();
             if (!snapshot.success) throw new Error(snapshot.error);
-            const response = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/camera-verification`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoBase64: snapshot.photoBase64, requestId: data.cameraPhotoRequest.id }) });
+            const response = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/camera-verification`, { method: 'POST', headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ photoBase64: snapshot.photoBase64, requestId: data.cameraPhotoRequest.id }) });
             if (!response.ok) throw new Error('Identity checkpoint upload failed');
           } catch (error) { console.warn('Identity checkpoint will retry:', error.message); }
           finally { identitySnapshotBusy = false; }
@@ -566,7 +588,7 @@ async function showCameraReverificationModal(note) {
 
         const res = await fetch(`${sessionInfo.serverUrl}/sessions/${sessionInfo.sessionId}/camera-verification`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ photoBase64, requestId: pendingPhotoRequest?.id })
         });
 
@@ -622,8 +644,9 @@ function showExaminerTimeExtensionToast(addedMinutes) {
     `;
     document.body.appendChild(toast);
   }
+  const safeMinutes = Math.max(0, Number(addedMinutes) || 0);
   toast.innerHTML = `
-    <div>🎉 <strong>TIME EXTENDED!</strong> Your examiner added <strong>+${addedMinutes} minutes</strong> to this exam.</div>
+    <div>🎉 <strong>TIME EXTENDED!</strong> Your examiner added <strong>+${safeMinutes} minutes</strong> to this exam.</div>
     <button onclick="document.getElementById('timeExtensionToast').style.display='none'" 
             style="background:#10b981; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">
       Got it
@@ -651,7 +674,7 @@ function showExaminerWarningToast(msg) {
     document.body.appendChild(toast);
   }
   toast.innerHTML = `
-    <div>⚠️ EXAMINER WARNING: ${msg}</div>
+    <div>⚠️ EXAMINER WARNING: ${escapeHtml(String(msg || ''))}</div>
     <button onclick="document.getElementById('examinerWarningToast').style.display='none'" 
             style="background:#f59e0b; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">
       Acknowledge
@@ -800,7 +823,7 @@ function handleSessionTerminated(reason) {
     </div>
     <h1 style="font-size:24px; font-weight:700; margin-bottom:8px; color:#f87171;">SESSION TERMINATED BY EXAMINER</h1>
     <p style="font-size:15px; color:#cbd5e1; max-width:480px; margin-bottom:24px; line-height:1.5;">
-      Reason: <strong>"${reason || 'Terminated by examiner for integrity violation'}"</strong>
+      Reason: <strong>"${escapeHtml(String(reason || 'Terminated by examiner for integrity violation'))}"</strong>
     </p>
     <div style="background:#1e293b; border:1px solid #334155; padding:12px 20px; border-radius:6px; font-size:13px; color:#94a3b8;">
       Your exam inputs have been locked by the examiner. Please contact your invigilator/teacher for further instructions.
@@ -849,23 +872,205 @@ function updateWordCount() {
   return words;
 }
 
-// Function purpose: Renders the exam PDF into the paper viewer.
+let activePdfDocument = null;
+let pdfRenderVersion = 0;
+
+// Function purpose: Renders the exam PDF onto high-DPI <canvas> elements via pdfjs-dist with no download/print toolbar.
 async function renderPdf(buffer, container) {
-  const blob = new Blob([buffer], { type: 'application/pdf' });
-  const blobUrl = URL.createObjectURL(blob);
-  container.innerHTML = `<iframe src="${blobUrl}" style="width:100%; height:100%; border:none;" title="Exam Paper PDF"></iframe>`;
+  if (activePdfDocument) {
+    try { await activePdfDocument.destroy(); } catch {}
+    activePdfDocument = null;
+  }
+
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true
+  });
+  const pdfDoc = await loadingTask.promise;
+  activePdfDocument = pdfDoc;
+
+  let currentScale = 1.25;
+  const MIN_SCALE = 0.6;
+  const MAX_SCALE = 2.4;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'pdf-viewer-shell';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'pdf-toolbar';
+
+  const pageMeta = document.createElement('span');
+  pageMeta.className = 'pdf-page-meta';
+  pageMeta.textContent = `${pdfDoc.numPages} ${pdfDoc.numPages === 1 ? 'page' : 'pages'} · Read-only`;
+
+  const zoomControls = document.createElement('div');
+  zoomControls.className = 'pdf-zoom-controls';
+
+  const btnOut = document.createElement('button');
+  btnOut.type = 'button';
+  btnOut.className = 'pdf-zoom-btn';
+  btnOut.textContent = '−';
+  btnOut.title = 'Zoom out';
+
+  const zoomLabel = document.createElement('span');
+  zoomLabel.className = 'pdf-zoom-label';
+
+  const btnIn = document.createElement('button');
+  btnIn.type = 'button';
+  btnIn.className = 'pdf-zoom-btn';
+  btnIn.textContent = '+';
+  btnIn.title = 'Zoom in';
+
+  const btnFit = document.createElement('button');
+  btnFit.type = 'button';
+  btnFit.className = 'pdf-zoom-btn pdf-zoom-fit';
+  btnFit.textContent = 'Fit Width';
+  btnFit.title = 'Fit page to viewer width';
+
+  zoomControls.append(btnOut, zoomLabel, btnIn, btnFit);
+  toolbar.append(pageMeta, zoomControls);
+
+  const pagesStack = document.createElement('div');
+  pagesStack.className = 'pdf-canvas-stack';
+
+  wrapper.append(toolbar, pagesStack);
+  container.replaceChildren(wrapper);
+
+  async function computeFitWidthScale() {
+    const firstPage = await pdfDoc.getPage(1);
+    const baseViewport = firstPage.getViewport({ scale: 1 });
+    const availableWidth = Math.max(320, (container.clientWidth || 640) - 44);
+    return Math.min(MAX_SCALE, Math.max(MIN_SCALE, availableWidth / baseViewport.width));
+  }
+
+  async function renderAllPages(scale) {
+    const myVersion = ++pdfRenderVersion;
+    currentScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+    zoomLabel.textContent = `${Math.round(currentScale * 100)}%`;
+    btnOut.disabled = currentScale <= MIN_SCALE + 0.01;
+    btnIn.disabled = currentScale >= MAX_SCALE - 0.01;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const fragment = document.createDocumentFragment();
+    const pageEntries = [];
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      if (myVersion !== pdfRenderVersion) return;
+      const page = await pdfDoc.getPage(pageNum);
+      if (myVersion !== pdfRenderVersion) return;
+      const viewport = page.getViewport({ scale: currentScale });
+
+      const pageCard = document.createElement('div');
+      pageCard.className = 'pdf-page-card';
+
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-page-canvas';
+      canvas.width = Math.floor(viewport.width * dpr);
+      canvas.height = Math.floor(viewport.height * dpr);
+      canvas.style.width = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
+      canvas.setAttribute('draggable', 'false');
+
+      const pageFooter = document.createElement('div');
+      pageFooter.className = 'pdf-page-number';
+      pageFooter.textContent = `Page ${pageNum} of ${pdfDoc.numPages}`;
+
+      pageCard.append(canvas, pageFooter);
+      fragment.appendChild(pageCard);
+      pageEntries.push({ page, canvas, viewport });
+    }
+
+    if (myVersion !== pdfRenderVersion) return;
+    pagesStack.replaceChildren(fragment);
+
+    for (const { page, canvas, viewport } of pageEntries) {
+      if (myVersion !== pdfRenderVersion) return;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }
+  }
+
+  btnOut.addEventListener('click', () => renderAllPages(currentScale - 0.15));
+  btnIn.addEventListener('click', () => renderAllPages(currentScale + 0.15));
+  btnFit.addEventListener('click', async () => renderAllPages(await computeFitWidthScale()));
+
+  const initialScale = await computeFitWidthScale();
+  await renderAllPages(initialScale);
 }
 
-// Function purpose: Converts the exam Word document into content for the paper viewer.
+// Function purpose: Sanitizes converted DOCX HTML by stripping active tags, event handlers, and unsafe URL schemes.
+function sanitizeDocxHtml(rawHtml) {
+  const doc = new DOMParser().parseFromString(String(rawHtml || ''), 'text/html');
+  const blockedTags = 'script,iframe,object,embed,link,style,meta,base,form,input,button,textarea,select,svg,math';
+  doc.querySelectorAll(blockedTags).forEach(el => el.remove());
+  doc.body.querySelectorAll('*').forEach(el => {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      const val = String(attr.value || '').trim().toLowerCase();
+      if (name.startsWith('on') || name === 'srcdoc') {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      if (['href', 'src', 'xlink:href', 'action', 'formaction'].includes(name)) {
+        const safeImageData = name === 'src' && el.tagName === 'IMG' && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(val);
+        const safeHttp = /^https?:\/\//i.test(val) || val.startsWith('#');
+        if (!safeImageData && !safeHttp) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    }
+  });
+  return doc.body.innerHTML;
+}
+
+// Function purpose: Converts the exam Word document into sanitized content for the paper viewer.
 async function renderDocx(buffer, container) {
   const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
-  container.innerHTML = `<div class="docx-container">${result.value}</div>`;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'docx-container';
+  wrapper.innerHTML = sanitizeDocxHtml(result.value);
+  container.replaceChildren(wrapper);
 }
 
 // Setup Event Listeners
 window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOMContentLoaded event and updates the associated screen or process state. */ () => {
-  window.api.onPythonCrash(/* Function purpose: Runs console.warn as part of this callback’s processing. */ () => {
-    console.warn('Python monitoring process exited; inspect Electron logs for details.');
+  window.api.onPythonCrash(/* Function purpose: Displays a calm notice when the local monitoring sidecar restarts or fails. */ (info) => {
+    console.warn('Python monitoring process event:', info);
+    let banner = document.getElementById('pythonCrashNotice');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'pythonCrashNotice';
+      banner.style.cssText = `
+        position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
+        background: #fef3c7; color: #92400e; border: 1.5px solid #f59e0b;
+        padding: 10px 18px; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+        z-index: 999998; font-size: 13px; font-weight: 600; max-width: 90%;
+      `;
+      document.body.appendChild(banner);
+    }
+    if (info?.recovered) {
+      banner.style.background = '#ecfdf5';
+      banner.style.color = '#065f46';
+      banner.style.borderColor = '#10b981';
+      banner.textContent = 'Monitoring service reconnected automatically.';
+      banner.style.display = 'block';
+      setTimeout(() => { if (banner) banner.style.display = 'none'; }, 5000);
+    } else if (info?.restarting) {
+      banner.style.background = '#fef3c7';
+      banner.style.color = '#92400e';
+      banner.style.borderColor = '#f59e0b';
+      banner.textContent = 'Monitoring service interrupted — reconnecting automatically and notifying examiner…';
+      banner.style.display = 'block';
+    } else {
+      banner.style.background = '#fef2f2';
+      banner.style.color = '#991b1b';
+      banner.style.borderColor = '#ef4444';
+      banner.textContent = 'Monitoring service stopped unexpectedly. Your examiner has been notified — please contact your invigilator.';
+      banner.style.display = 'block';
+    }
   });
 
   init();
@@ -1114,6 +1319,7 @@ window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOM
       const response = await fetch(submissionUrl, {
         signal: AbortSignal.timeout(60000),
         method: 'POST',
+        headers: getSessionAuthHeaders(),
         body: formData
       });
 
@@ -1163,21 +1369,30 @@ window.addEventListener('DOMContentLoaded', /* Function purpose: Handles the DOM
     } finally { submissionInFlight = false; }
   }
 
-  // Test violation button handler
+  // Test violation button handler (strictly hidden and disabled outside APP_MODE=dev)
   const testBtn = document.getElementById('testViolationBtn');
   if (testBtn) {
-    testBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
-      const info = await window.api.getSessionInfo();
-      const payload = {
-        sessionId: info ? info.sessionId : "unknown",
-        type: "second_person_detected",
-        severity: 4,
-        timestamp: new Date().toISOString(),
-        details: { confidence: 0.95, duration: 3000 }
-      };
-      window.api.sendTestViolation(payload);
-      testBtn.textContent = 'Sent!';
-      setTimeout(/* Function purpose: Runs the delayed follow-up after the configured timeout. */ () => { testBtn.textContent = 'Test Alert'; }, 1500);
+    window.api.getSessionInfo().then(info => {
+      if (info?.isDevMode === true) {
+        testBtn.style.display = 'inline-flex';
+        testBtn.addEventListener('click', /* Function purpose: Handles the click event and updates the associated screen or process state. */ async () => {
+          const latest = await window.api.getSessionInfo();
+          const payload = {
+            sessionId: latest ? latest.sessionId : "unknown",
+            type: "second_person_detected",
+            severity: 4,
+            timestamp: new Date().toISOString(),
+            details: { confidence: 0.95, duration: 3000 }
+          };
+          window.api.sendTestViolation(payload);
+          testBtn.textContent = 'Sent!';
+          setTimeout(/* Function purpose: Runs the delayed follow-up after the configured timeout. */ () => { testBtn.textContent = 'Test Alert'; }, 1500);
+        });
+      } else {
+        testBtn.remove();
+      }
+    }).catch(() => {
+      testBtn.remove();
     });
   }
 
@@ -1266,7 +1481,10 @@ async function fetchStudentMessages() {
 
   try {
     const examQuery = sessionInfo.examId ? `?examId=${encodeURIComponent(sessionInfo.examId)}` : '';
-    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}${examQuery}`, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${sessionInfo.serverUrl}/messages/${sessionInfo.sessionId}${examQuery}`, {
+      headers: getSessionAuthHeaders(),
+      signal: AbortSignal.timeout(8000)
+    });
     if (!res.ok) return;
     const data = await res.json();
     const newMessages = Array.isArray(data) ? data : (data.messages || []);
@@ -1360,7 +1578,7 @@ async function sendStudentChatMessage(text) {
 
     const res = await fetch(`${sessionInfo.serverUrl}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
 

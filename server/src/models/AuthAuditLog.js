@@ -21,7 +21,10 @@ const authAuditLogSchema = new mongoose.Schema({
             'logout',
             'password_reset_requested',
             'password_reset_completed',
-            'account_locked'
+            'account_locked',
+            'google_login',
+            'google_signup',
+            'google_linked'
         ],
         required: true
     },

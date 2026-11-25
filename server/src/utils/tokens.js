@@ -10,7 +10,26 @@ function generateAccessToken(teacher) {
     const payload = {
         teacherId: teacher._id ? teacher._id.toString() : teacher.teacherId,
         email: teacher.email,
-        role: teacher.role || 'teacher'
+        role: teacher.role || 'teacher',
+        scope: 'teacher_access'
+    };
+
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET is required');
+    return jwt.sign(payload, secret, { expiresIn: '15m' });
+}
+
+/**
+ * Generate a read-only media token strictly scoped for /uploads asset URLs.
+ * Cannot be used to call authenticated teacher/admin API endpoints.
+ * @param {Object} teacher - Teacher document or object containing _id, role
+ * @returns {string} Signed media-scoped JWT
+ */
+function generateMediaToken(teacher) {
+    const payload = {
+        teacherId: teacher._id ? teacher._id.toString() : teacher.teacherId,
+        role: teacher.role || 'teacher',
+        scope: 'media_read'
     };
 
     const secret = process.env.JWT_SECRET;
@@ -38,19 +57,44 @@ function generateRefreshToken() {
 }
 
 /**
- * Verify a JWT access token
+ * Verify a teacher API JWT access token (rejects media_read tokens)
  * @param {string} token - JWT token string
  * @returns {Object} Decoded payload
  */
 function verifyAccessToken(token) {
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error('JWT_SECRET is required');
-    return jwt.verify(token, secret);
+    const decoded = jwt.verify(token, secret);
+    if (decoded.scope && decoded.scope !== 'teacher_access') {
+        const err = new Error('Invalid token scope');
+        err.name = 'JsonWebTokenError';
+        throw err;
+    }
+    return decoded;
+}
+
+/**
+ * Verify a read-only media JWT token (strictly requires scope === 'media_read')
+ * @param {string} token - JWT token string
+ * @returns {Object} Decoded payload
+ */
+function verifyMediaToken(token) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET is required');
+    const decoded = jwt.verify(token, secret);
+    if (decoded.scope !== 'media_read') {
+        const err = new Error('Media-scoped token required');
+        err.name = 'JsonWebTokenError';
+        throw err;
+    }
+    return decoded;
 }
 
 module.exports = {
     generateAccessToken,
+    generateMediaToken,
     generateRefreshToken,
     hashToken,
-    verifyAccessToken
+    verifyAccessToken,
+    verifyMediaToken
 };

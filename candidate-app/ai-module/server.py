@@ -5,12 +5,34 @@
 # voice-reference checks.
 # Connection: main.py attaches the monitor instances;
 # this API is separate from the project central server.
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import hmac
+import re
 import os
 import json
 import time
 
 app = FastAPI()
+
+_FALLBACK_PROTECTED_PROCESSES = {
+    "svchost.exe", "explorer.exe", "system", "wininit.exe", "csrss.exe",
+    "winlogon.exe", "services.exe", "lsass.exe", "smss.exe", "spoolsv.exe",
+    "sihost.exe", "taskhostw.exe", "dwm.exe", "runtimebroker.exe",
+    "startmenuexperiencehost.exe", "shellexperiencehost.exe", "searchhost.exe",
+    "applicationframehost.exe", "textinputhost.exe", "ctfmon.exe",
+    "fontdrvhost.exe", "conhost.exe", "dllhost.exe", "wmiprvse.exe", "audiodg.exe"
+}
+_SAFE_PROCESS_NAME_RE = re.compile(r"^[A-Za-z0-9._ -]{1,128}$")
+
+@app.middleware("http")
+async def require_local_ipc_secret(request: Request, call_next):
+    expected = os.environ.get("INTEGRITYFLOW_IPC_SECRET", "").strip()
+    if expected:
+        provided = request.headers.get("x-integrityflow-ipc-token", "")
+        if not provided or not hmac.compare_digest(provided, expected):
+            return JSONResponse(status_code=401, content={"error": "Unauthorized local IPC request"})
+    return await call_next(request)
 
 # Function purpose: Reports whether the backend and the required monitoring components are healthy.
 @app.get("/health")
@@ -85,34 +107,62 @@ def check_usb():
         return {"removable_drives": removable}
     return {"error": "USB monitor not initialized. Retry the system check."}
 
-# Function purpose: Terminates the requested application while preserving protected processes.
+# Function purpose: Terminates the requested application while preserving protected OS and proctor processes.
 @app.post("/kill-app")
 def kill_app(payload: dict):
     import psutil
     import subprocess
+    import server
     target = payload.get("name")
-    if not target:
+    if not isinstance(target, str) or not target.strip():
         return {"success": False, "error": "No app name provided"}
-    
+    target = target.strip()
+    if not _SAFE_PROCESS_NAME_RE.match(target) or "/" in target or "\\" in target:
+        return {"success": False, "error": "Invalid process name"}
+
     target_lower = target.lower()
+    enforcer = getattr(server, "enforcer", None)
+    safety_list = set(_FALLBACK_PROTECTED_PROCESSES)
+    if enforcer is not None and hasattr(enforcer, "SAFETY_LIST"):
+        safety_list.update(p.lower() for p in enforcer.SAFETY_LIST)
+    if target_lower in safety_list:
+        return {"success": False, "error": f"Protected system process '{target}' cannot be terminated"}
+
+    protected_pids = {os.getpid()}
+    try:
+        parent = psutil.Process(os.getpid()).parent()
+        if parent:
+            protected_pids.add(parent.pid)
+    except Exception:
+        pass
+    if enforcer is not None and hasattr(enforcer, "protected_pids"):
+        protected_pids.update(enforcer.protected_pids)
+
     killed = 0
+    skipped_protected = False
     for proc in psutil.process_iter(['name', 'pid']):
         try:
             if proc.info.get('name', '').lower() == target_lower:
+                if proc.info.get('pid') in protected_pids:
+                    skipped_protected = True
+                    continue
                 proc.kill()
                 killed += 1
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-            
-    # If psutil couldn't kill it (e.g. UWP / Windows Store app), try taskkill
-    if killed == 0:
+
+    if skipped_protected and killed == 0:
+        return {"success": False, "error": f"Protected proctoring process '{target}' cannot be terminated"}
+
+    # If psutil couldn't kill it (e.g. UWP / Windows Store app), try taskkill only when no protected PID matched
+    if killed == 0 and not skipped_protected:
         try:
             res = subprocess.run(["taskkill", "/F", "/IM", target], capture_output=True)
             if res.returncode == 0:
                 killed += 1
         except Exception:
             pass
-            
+
     return {"success": True, "killed": killed}
 
 import cv2

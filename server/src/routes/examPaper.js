@@ -5,6 +5,7 @@ const Exam = require('../models/Exam');
 const Session = require('../models/Session');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { requireOwnedExam, findExamByIdentifier } = require('../middleware/examAccess');
+const { requireSessionAuth } = require('../middleware/sessionAuth');
 const storageService = require('../services/storage');
 const router = express.Router();
 
@@ -32,11 +33,14 @@ const uploadMiddleware = (req, res, next) => {
     });
 };
 
-// GET /exam (Teacher-facing)
-// Lists all created exams
+// GET /exam (Teacher-facing, scoped by owner RBAC; admins view all)
 router.get('/', requireAuth, async (req, res) => {
     try {
-        const exams = await Exam.find().sort({ createdAt: -1 });
+        const isAdmin = req.teacher?.role === 'admin';
+        const teacherId = req.teacher?.teacherId ? String(req.teacher.teacherId) : null;
+        if (!isAdmin && !teacherId) return res.json([]);
+        const filter = isAdmin ? {} : { createdBy: teacherId };
+        const exams = await Exam.find(filter).sort({ createdAt: -1 });
         res.json(exams);
     } catch (err) {
         console.error('Error fetching exams:', err);
@@ -73,36 +77,26 @@ router.post('/:examId/paper', requireAuth, requireOwnedExam, uploadMiddleware, a
     }
 });
 
-// GET /exam/:examId/paper
-router.get('/:examId/paper', async (req, res) => {
+// GET /exam/:examId/paper (Candidate-facing, active session JWT required)
+router.get('/:examId/paper', requireSessionAuth, async (req, res) => {
     try {
-        const examId = req.params.examId;
-        const mongoose = require('mongoose');
-        if (!mongoose.Types.ObjectId.isValid(req.query.sessionId)) return res.status(403).json({ error: 'Active candidate session required' });
-
-        // Security check - must have at least one active session for this exam
-        const sessionQuery = [
-            { examId: new RegExp('^' + examId + '$', 'i') }
-        ];
-        if (mongoose.Types.ObjectId.isValid(examId)) {
-            sessionQuery.push({ examId: examId });
+        const examId = String(req.params.examId || '').trim();
+        const activeSession = req.candidateSession;
+        const exam = await findExamByIdentifier(examId);
+        if (!exam) {
+            return res.status(404).json({ error: 'Exam paper not found' });
         }
 
-        const activeSession = await Session.findOne({ _id: req.query.sessionId, $or: sessionQuery, status: 'active' });
-        if (!activeSession) {
-            return res.status(403).json({ error: 'Exam paper only available once candidate exam session is active.' });
+        // Bind paper delivery strictly to the exam this candidate session belongs to
+        const sessionExamCode = String(activeSession.examId || '').trim().toUpperCase();
+        const examAliases = [exam.examCode, exam.examId, String(exam._id)]
+            .filter(Boolean)
+            .map(v => String(v).trim().toUpperCase());
+        if (!sessionExamCode || !examAliases.includes(sessionExamCode)) {
+            return res.status(403).json({ error: 'Candidate session does not belong to this exam.' });
         }
 
-        const examQuery = [
-            { examCode: new RegExp('^' + examId + '$', 'i') },
-            { examId: new RegExp('^' + examId + '$', 'i') }
-        ];
-        if (mongoose.Types.ObjectId.isValid(examId)) {
-            examQuery.push({ _id: examId });
-        }
-
-        const exam = await Exam.findOne({ $or: examQuery });
-        if (!exam || !exam.paperPath) {
+        if (!exam.paperPath) {
             return res.status(404).json({ error: 'Exam paper not found' });
         }
 

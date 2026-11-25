@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, X, AlertCircle, CheckCircle2, Circle, Eye, EyeOff, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import GoogleSignInButton from './GoogleSignInButton';
 import { NAME_PATTERN, validName, validEmail, validPasswordSize } from '../utils/inputValidation';
 
 export default function AuthModal({ isOpen, onClose }) {
@@ -185,6 +186,17 @@ export default function AuthModal({ isOpen, onClose }) {
                     }}>
                         {isSignUp ? 'Set up credentials to manage exams and proctoring' : 'to continue to IntegrityFlow Examiner Portal'}
                     </p>
+                </div>
+
+                {/* Google Sign-In (auto-renders when GOOGLE_CLIENT_ID is configured) */}
+                <div style={{ marginBottom: '12px' }}>
+                    <GoogleSignInButton
+                        text={isSignUp ? 'signup_with' : 'signin_with'}
+                        showDivider={false}
+                        disabled={loading}
+                        onError={(msg) => setError(msg)}
+                        onSuccess={() => onClose?.()}
+                    />
                 </div>
 
                 {/* 1-Click Quick Demo Sign-in Button */}

@@ -10,7 +10,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const connectDB = require('./config/db');
 const { initSocket } = require('./sockets/violationSocket');
-const { verifyAccessToken } = require('./utils/tokens');
+const { verifyAccessToken, verifyMediaToken } = require('./utils/tokens');
+const { escapeRegex } = require('./utils/regex');
 const Teacher = require('./models/Teacher');
 const Exam = require('./models/Exam');
 const Session = require('./models/Session');
@@ -31,19 +32,50 @@ app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 app.use(cookieParser());
-app.use(cors({
-    origin: (origin, done) => done(null, !origin || origin === 'null' || origin === (process.env.DASHBOARD_URL || 'http://localhost:5173')),
-    credentials: true
+const dashboardOrigin = process.env.DASHBOARD_URL || 'http://localhost:5173';
+app.use(cors((req, callback) => {
+    const origin = req.headers.origin;
+    if (!origin) {
+        return callback(null, { origin: false, credentials: false });
+    }
+    if (origin === dashboardOrigin) {
+        return callback(null, { origin: true, credentials: true });
+    }
+    // Electron file:// candidate renderer sends Origin: null and authenticates strictly via Bearer JWT (never cookies).
+    // Never grant credentials: true to Origin: null to prevent sandboxed-iframe cookie theft.
+    if (origin === 'null') {
+        return callback(null, { origin: true, credentials: false });
+    }
+    return callback(null, { origin: false, credentials: false });
 }));
 app.use('/sessions/:sessionId/camera-verification', express.json({ limit: '2mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static uploads (for screenshots, papers, verification photos)
+// Serve static uploads (for screenshots, papers, verification photos, submissions)
 app.use('/uploads', async (req, res, next) => {
     try {
-        const token = req.query.token || req.headers.authorization?.replace(/^Bearer /, '');
-        const decoded = verifyAccessToken(token);
+        const headerToken = req.headers.authorization?.startsWith('Bearer ')
+            ? req.headers.authorization.slice(7).trim()
+            : null;
+        const queryToken = typeof req.query.token === 'string' && req.query.token.trim()
+            ? req.query.token.trim()
+            : null;
+
+        let decoded;
+        if (headerToken) {
+            try {
+                decoded = verifyAccessToken(headerToken);
+            } catch {
+                decoded = verifyMediaToken(headerToken);
+            }
+        } else if (queryToken) {
+            // Query-string tokens must be read-only media_read JWTs; reject full API access tokens in URLs
+            decoded = verifyMediaToken(queryToken);
+        } else {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
         const teacher = await Teacher.findById(decoded.teacherId);
         if (!teacher) return res.status(401).json({ error: 'Authentication required' });
         if (requireEmailVerification.needsVerification(teacher)) return res.status(403).json({ error: 'Email verification required', code: 'EMAIL_VERIFICATION_REQUIRED' });
@@ -52,7 +84,7 @@ app.use('/uploads', async (req, res, next) => {
         const storedUrl = `/uploads${req.path}`;
         let examCode = null;
         if (folder === 'papers') {
-            const filename = path.basename(req.path).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const filename = escapeRegex(path.basename(req.path));
             const exam = await Exam.findOne({ paperPath: new RegExp(filename + '$') });
             examCode = exam?.examCode;
         } else if (folder === 'screenshots' || folder === 'audio_clips') {
@@ -62,7 +94,13 @@ app.use('/uploads', async (req, res, next) => {
             const session = violation && await Session.findById(violation.sessionId);
             examCode = session?.examId;
         } else if (folder === 'verification') {
-            const session = await Session.findOne({ $or: [{ cameraVerificationPhoto: storedUrl }, { 'cameraPhotos.url': storedUrl }] });
+            const session = await Session.findOne({
+                $or: [
+                    { cameraVerificationPhoto: storedUrl },
+                    { 'cameraPhotos.url': storedUrl },
+                    { 'secondaryCamera.referencePhoto': storedUrl }
+                ]
+            });
             examCode = session?.examId;
         } else if (folder === 'submissions') {
             const submission = await Submission.findOne({ filePath: storedUrl });
@@ -70,6 +108,12 @@ app.use('/uploads', async (req, res, next) => {
             examCode = session?.examId;
         }
         if (!examCode || !await ownsExam(req, examCode)) return res.status(404).json({ error: 'Asset not found' });
+
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        if (folder === 'submissions') {
+            res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+            res.setHeader('Content-Disposition', 'attachment');
+        }
         next();
     } catch (err) { res.status(401).json({ error: 'Authentication required' }); }
 }, express.static(path.join(__dirname, '../uploads')));

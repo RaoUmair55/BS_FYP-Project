@@ -7,6 +7,9 @@
     "check:side-camera": "node checks/check_secondary_camera.js && node checks/check_secondary_camera_phone.js",
     "check:isolation": "node checks/check_socket_isolation.js",
     "check:late-evidence": "node checks/check_late_evidence.js",
+    "check:candidate-auth": "node checks/check_candidate_auth.js",
+    "check:security": "node checks/check_security_hardening.js",
+    "check:google-auth": "node checks/check_google_auth.js",
     "dev": "nodemon src/index.js"
   },
   "dependencies": {

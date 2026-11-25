@@ -48,7 +48,11 @@ def deliver_one(url, path=None):
         row = connection.execute('SELECT id, payload FROM alerts ORDER BY rowid LIMIT 1').fetchone()
         if row is None:
             return False
-        response = requests.post(url, json=json.loads(row[1]), timeout=5)
+        headers = {}
+        ipc_secret = os.environ.get('INTEGRITYFLOW_IPC_SECRET', '').strip()
+        if ipc_secret:
+            headers['X-IntegrityFlow-IPC-Token'] = ipc_secret
+        response = requests.post(url, json=json.loads(row[1]), headers=headers, timeout=5)
         response.raise_for_status()
         if response.json().get('status') != 'accepted':
             raise RuntimeError('Electron did not acknowledge durable alert storage')

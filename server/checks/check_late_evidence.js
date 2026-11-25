@@ -84,12 +84,17 @@ for (const name of ['broadcastViolation', 'broadcastRiskScoreUpdate', 'broadcast
 replace(audit, 'logTeacherAction', async () => {});
 const violationsRouter = require('../src/routes/violations');
 const examRouter = require('../src/routes/exams');
+process.env.SESSION_TOKEN_SECRET = 'late-evidence-test-secret-32-chars!!';
+const { signSessionToken } = require('../src/middleware/sessionAuth');
+const candidateToken = signSessionToken(sessionId);
 const payload = (overrides = {}) => ({ sessionId, type: 'head_turn_away', severity: 2,
     timestamp: new Date(now - 120000).toISOString(), details: {}, ...overrides });
 
-async function post(body) {
+async function post(body, token = candidateToken) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${process.env.SERVER_URL}/violation`, { method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        headers, body: JSON.stringify(body) });
     return { status: res.status, body: await res.json() };
 }
 function handler(router, routePath) { return router.stack.find(l => l.route?.path === routePath).route.stack.at(-1).handle; }
@@ -123,7 +128,17 @@ async function main() {
         bridge = require('../../candidate-app/electron/ipc/pythonBridge');
         buffer = require('../../candidate-app/electron/ipc/violationBuffer');
     } finally { Module._load=load; }
+    bridge.setAllowedEvidenceRoots({ screenshotRoot: temp, audioRoot: temp });
+    bridge.setSessionToken(sessionId, candidateToken);
     bridge.setExamActive(true);
+
+    // Path containment: files outside allowed evidence roots must never be uploaded.
+    assert.equal(bridge.isPathWithinRoot(path.resolve(__dirname, '../package.json'), temp), false);
+
+    // Unauthenticated or mismatched-session violation posts must be rejected with 401.
+    assert.equal((await post(payload({ severity: 1 }), null)).status, 401);
+    assert.equal((await post(payload({ severity: 1 }), signSessionToken('507f1f77bcf86cd799439099'))).status, 401);
+    assert.equal(saved.size, 0);
 
     // Normal delivery retains ordinary scoring and live broadcasts.
     const normal = payload({severity:1});
@@ -271,7 +286,7 @@ async function main() {
     const otherSessionId='507f1f77bcf86cd799439013';
     const otherSession=new Session({...session.toObject(),_id:otherSessionId});
     replace(Session,'findById',async id => String(id)===otherSessionId ? otherSession : session);
-    const other=await post({...raced,sessionId:otherSessionId});
+    const other=await post({...raced,sessionId:otherSessionId}, signSessionToken(otherSessionId));
     assert.equal(other.status,201);assert.notEqual(other.body._id,concurrent[0].body._id);
     console.log('PASS: only explicit confirmation scores late evidence; summary exposes pending late arrivals');
 }

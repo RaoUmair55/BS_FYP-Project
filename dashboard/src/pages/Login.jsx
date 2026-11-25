@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, Mail, Lock, AlertCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 import './Auth.css';
 import { validEmail } from '../utils/inputValidation';
 
@@ -138,6 +139,13 @@ export default function Login({ onNavigate }) {
                         )}
                     </button>
                 </form>
+
+                <GoogleSignInButton
+                    text="signin_with"
+                    dividerLabel="or continue with Google"
+                    disabled={isSubmitting || Boolean(isDemoSubmitting)}
+                    onError={(msg) => setError(msg)}
+                />
 
                 {/* Demo Sign-in: Enabled in development or when VITE_ENABLE_DEMO_LOGIN=true */}
                 {import.meta.env.VITE_ENABLE_DEMO_LOGIN === 'true' && (

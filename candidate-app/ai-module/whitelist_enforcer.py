@@ -76,6 +76,8 @@ class WhitelistEnforcer:
         # Hardcoded list of processes that are strictly forbidden in exam mode,
         # unless explicitly whitelisted by the teacher.
         self.EXAM_BLOCKED = {
+            "taskmgr.exe",
+            "phoneexperiencehost.exe",
             "cmd.exe",
             "powershell.exe",
             "pwsh.exe",
@@ -149,9 +151,7 @@ class WhitelistEnforcer:
             "onedrive.sync.service.exe",
             "onedrive.exe",
             "wlanext.exe",
-            "applemobiledeviceprocess.exe",
-            "phoneexperiencehost.exe",
-            "git-remote-https.exe"
+            "applemobiledeviceprocess.exe"
         }
         
         # Hardcoded list of common Windows services/drivers/telemetry/databases to skip
@@ -173,7 +173,7 @@ class WhitelistEnforcer:
             "nvdisplay.container.exe", "nvcontainer.exe", "nvsphelper64.exe",
             "onedrive.sync.service.exe", "onedrive.exe", "wlanext.exe",
             "applemobiledeviceprocess.exe", "chrome-native-host.exe", "shellexperiencehost.exe",
-            "defendersessionhelper.exe", "phoneexperiencehost.exe", "git-remote-https.exe",
+            "defendersessionhelper.exe",
             # Intel platform & graphics services
             "esif_uf.exe", "esif_assist.exe", "oneapp.igcc.winservice.exe", "jhi_service.exe",
             "ipfsvc.exe", "dptf.exe", "igcc.exe", "igcctray.exe",
@@ -181,13 +181,11 @@ class WhitelistEnforcer:
             "rtkaudioservice64.exe", "ravbg64.exe", "ravcpl64.exe", "rtkngui64.exe", "wavessvc64.exe",
             # Windows system UI, touch keyboard & shell helpers
             "tabtip.exe", "rundll32.exe", "systemsettingsbroker.exe", "appvshnotify.exe", "video.ui.exe",
-            "node_repl.exe", "codex.exe", "codex-code-mode-host.exe",
-            # Hyper-V, virtualization & container services
-            "vmcompute.exe", "vmms.exe", "vmmem", "vmmemx", "wslservice.exe", "wslhost.exe",
-            "docker.exe", "dockerd.exe",
-            # Database and developer background daemons
+            # Hyper-V core host services (WSL/Docker shells are NOT exempted in exam mode)
+            "vmcompute.exe", "vmms.exe", "vmmem", "vmmemx",
+            # Database background daemons
             "postgres.exe", "pg_ctl.exe", "mysqld.exe", "sqlservr.exe", "mongod.exe", "redis-server.exe",
-            "adminservice.exe", "wmiapsrv.exe", "cowork-svc.exe", "git.exe", "git-remote-https.exe",
+            "adminservice.exe", "wmiapsrv.exe",
             # Microsoft Office background telemetry
             "msoia.exe", "msoadfs.exe",
             # System installer / maintenance daemons

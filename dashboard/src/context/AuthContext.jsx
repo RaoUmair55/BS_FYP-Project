@@ -1,19 +1,31 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const AuthContext = createContext(null);
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// In-memory token holder accessible to outside modules (e.g. axios api.js)
+// In-memory token holders accessible to outside modules (e.g. axios api.js)
+// NEVER persisted to localStorage or sessionStorage.
 let inMemoryAccessToken = null;
+let inMemoryMediaToken = null;
 let tokenChangeListeners = [];
+let activeRefreshPromise = null;
 
 export function getInMemoryToken() {
     return inMemoryAccessToken;
 }
 
+export function getInMemoryMediaToken() {
+    return inMemoryMediaToken;
+}
+
+export function setInMemoryTokens(accessToken, mediaToken = null) {
+    inMemoryAccessToken = accessToken || null;
+    inMemoryMediaToken = accessToken ? (mediaToken ?? inMemoryMediaToken) : null;
+    tokenChangeListeners.forEach(listener => listener(inMemoryAccessToken, inMemoryMediaToken));
+}
+
 export function setInMemoryToken(token) {
-    inMemoryAccessToken = token;
-    tokenChangeListeners.forEach(listener => listener(token));
+    setInMemoryTokens(token, token ? inMemoryMediaToken : null);
 }
 
 export function subscribeTokenChange(listener) {
@@ -23,19 +35,81 @@ export function subscribeTokenChange(listener) {
     };
 }
 
+/**
+ * Single-flight refresh lock shared across AuthContext (silent init + authFetch)
+ * and axios api.js interceptors so concurrent 401 responses never rotate/revoke
+ * each other's refresh token cookie.
+ */
+export async function refreshAccessTokenSingleFlight() {
+    if (activeRefreshPromise) {
+        return activeRefreshPromise;
+    }
+
+    activeRefreshPromise = (async () => {
+        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        if (!refreshRes.ok) {
+            setInMemoryTokens(null, null);
+            return null;
+        }
+        const data = await refreshRes.json();
+        if (!data?.accessToken) {
+            setInMemoryTokens(null, null);
+            return null;
+        }
+        setInMemoryTokens(data.accessToken, data.mediaToken || null);
+        return data;
+    })()
+        .catch(() => {
+            setInMemoryTokens(null, null);
+            return null;
+        })
+        .finally(() => {
+            activeRefreshPromise = null;
+        });
+
+    return activeRefreshPromise;
+}
+
 export function AuthProvider({ children }) {
-    // Current in-memory authentication state (NEVER stored in localStorage or sessionStorage)
     const [currentTeacher, setCurrentTeacher] = useState(null);
     const [accessToken, setAccessTokenState] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showAuthModal, setShowAuthModal] = useState(false);
+    const [googleClientId, setGoogleClientId] = useState(() => (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim() || null);
 
-    const updateAccessToken = useCallback((token) => {
-        setInMemoryToken(token);
-        setAccessTokenState(token);
+    // Discover server-configured auth providers (e.g., Google OAuth client ID) once on mount
+    useEffect(() => {
+        if (googleClientId) return;
+        let active = true;
+        fetch(`${API_BASE}/auth/providers`)
+            .then(r => (r.ok ? r.json() : null))
+            .then(data => {
+                if (active && data?.googleEnabled && data.googleClientId) {
+                    setGoogleClientId(data.googleClientId);
+                }
+            })
+            .catch(() => {});
+        return () => { active = false; };
+    }, [googleClientId]);
+
+    const updateAccessToken = useCallback((token, mediaToken = null) => {
+        setInMemoryTokens(token, mediaToken);
+        setAccessTokenState(token || null);
     }, []);
 
-    // Helper to fetch current teacher details with a given access token
+    // Keep React state synced when axios interceptor refreshes or clears the token
+    useEffect(() => {
+        return subscribeTokenChange((nextToken) => {
+            setAccessTokenState(nextToken || null);
+            if (!nextToken) {
+                setCurrentTeacher(null);
+            }
+        });
+    }, []);
+
     const fetchTeacherProfile = async (token) => {
         try {
             const res = await fetch(`${API_BASE}/auth/me`, {
@@ -56,40 +130,27 @@ export function AuthProvider({ children }) {
         }
     };
 
-    // Silent refresh on initial app load
+    // Silent refresh on initial app load (uses shared single-flight lock)
     useEffect(() => {
         let isMounted = true;
 
         const checkSilentAuth = async () => {
             try {
-                // Attempt to rotate/refresh using the httpOnly cookie
-                const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-
-                if (refreshRes.ok) {
-                    const data = await refreshRes.json();
-                    if (data.accessToken && isMounted) {
-                        updateAccessToken(data.accessToken);
-
-                        // Fetch teacher profile using the fresh in-memory access token
-                        const teacherProfile = await fetchTeacherProfile(data.accessToken);
-                        if (teacherProfile && isMounted) {
-                            setCurrentTeacher(teacherProfile);
-                        }
+                const data = await refreshAccessTokenSingleFlight();
+                if (data?.accessToken && isMounted) {
+                    setAccessTokenState(data.accessToken);
+                    const teacherProfile = await fetchTeacherProfile(data.accessToken);
+                    if (teacherProfile && isMounted) {
+                        setCurrentTeacher(teacherProfile);
                     }
-                } else {
-                    // No valid refresh session
-                    if (isMounted) {
-                        updateAccessToken(null);
-                        setCurrentTeacher(null);
-                    }
+                } else if (isMounted) {
+                    setAccessTokenState(null);
+                    setCurrentTeacher(null);
                 }
             } catch (err) {
                 console.warn('[AuthContext] Silent auth check warning:', err);
                 if (isMounted) {
-                    updateAccessToken(null);
+                    updateAccessToken(null, null);
                     setCurrentTeacher(null);
                 }
             } finally {
@@ -106,7 +167,6 @@ export function AuthProvider({ children }) {
         };
     }, [updateAccessToken]);
 
-    // Log In action
     const login = async (email, password) => {
         const res = await fetch(`${API_BASE}/auth/login`, {
             method: 'POST',
@@ -128,12 +188,11 @@ export function AuthProvider({ children }) {
             throw new Error(errorMessage);
         }
 
-        updateAccessToken(data.accessToken);
+        updateAccessToken(data.accessToken, data.mediaToken || null);
         setCurrentTeacher(data.teacher);
         return data.teacher;
     };
 
-    // Sign Up action
     const signup = async (name, email, password, role = 'teacher') => {
         const res = await fetch(`${API_BASE}/auth/signup`, {
             method: 'POST',
@@ -156,12 +215,11 @@ export function AuthProvider({ children }) {
         }
 
         if (data.verificationRequired) return data;
-        updateAccessToken(data.accessToken);
+        updateAccessToken(data.accessToken, data.mediaToken || null);
         setCurrentTeacher(data.teacher);
         return data.teacher;
     };
 
-    // Forgot Password action
     const forgotPassword = async (email) => {
         const res = await fetch(`${API_BASE}/auth/forgot-password`, {
             method: 'POST',
@@ -177,7 +235,6 @@ export function AuthProvider({ children }) {
         return data;
     };
 
-    // Reset Password action
     const resetPassword = async (token, newPassword) => {
         const res = await fetch(`${API_BASE}/auth/reset-password`, {
             method: 'POST',
@@ -201,7 +258,24 @@ export function AuthProvider({ children }) {
         return data;
     };
 
-    // Optional local evaluation account; never ship a credential in source.
+    const loginWithGoogle = async (credential) => {
+        const res = await fetch(`${API_BASE}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ credential })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data.error || 'Google sign-in failed');
+        }
+
+        updateAccessToken(data.accessToken, data.mediaToken || null);
+        setCurrentTeacher(data.teacher);
+        return data;
+    };
+
     const demoLogin = async (role = 'admin') => {
         const demoEmail = role === 'admin' ? import.meta.env.VITE_DEMO_ADMIN_EMAIL : import.meta.env.VITE_DEMO_TEACHER_EMAIL;
         const demoPassword = role === 'admin' ? import.meta.env.VITE_DEMO_ADMIN_PASSWORD : import.meta.env.VITE_DEMO_TEACHER_PASSWORD;
@@ -209,7 +283,6 @@ export function AuthProvider({ children }) {
         return login(demoEmail, demoPassword);
     };
 
-    // Log Out action
     const logout = async () => {
         try {
             await fetch(`${API_BASE}/auth/logout`, {
@@ -219,14 +292,14 @@ export function AuthProvider({ children }) {
         } catch (e) {
             console.warn('[AuthContext] Logout request error:', e);
         } finally {
-            updateAccessToken(null);
+            updateAccessToken(null, null);
             setCurrentTeacher(null);
         }
     };
 
-    // Authenticated fetch wrapper with automatic silent refresh retry on 401
+    // Authenticated fetch wrapper using the shared single-flight refresh lock on 401
     const authFetch = async (url, options = {}) => {
-        let token = inMemoryAccessToken;
+        const token = inMemoryAccessToken;
 
         const headers = { ...(options.headers || {}) };
         if (token) {
@@ -235,26 +308,12 @@ export function AuthProvider({ children }) {
 
         let res = await fetch(url, { ...options, headers, credentials: 'include' });
 
-        // If access token expired or rejected, attempt silent refresh once
         if (res.status === 401) {
-            try {
-                const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-
-                if (refreshRes.ok) {
-                    const refreshData = await refreshRes.json();
-                    updateAccessToken(refreshData.accessToken);
-
-                    // Retry original request with newly issued in-memory access token
-                    headers['Authorization'] = `Bearer ${refreshData.accessToken}`;
-                    res = await fetch(url, { ...options, headers, credentials: 'include' });
-                } else {
-                    // Session expired completely
-                    logout();
-                }
-            } catch (refreshErr) {
+            const refreshed = await refreshAccessTokenSingleFlight();
+            if (refreshed?.accessToken) {
+                headers['Authorization'] = `Bearer ${refreshed.accessToken}`;
+                res = await fetch(url, { ...options, headers, credentials: 'include' });
+            } else {
                 logout();
             }
         }
@@ -267,12 +326,14 @@ export function AuthProvider({ children }) {
             value={{
                 accessToken,
                 currentTeacher,
-                teacher: currentTeacher, // Backwards-compatible alias
+                teacher: currentTeacher,
                 isLoading,
-                loading: isLoading,      // Backwards-compatible alias
+                loading: isLoading,
                 showAuthModal,
                 setShowAuthModal,
                 login,
+                loginWithGoogle,
+                googleClientId,
                 signup,
                 logout,
                 forgotPassword,

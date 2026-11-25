@@ -9,6 +9,8 @@ const { broadcastViolation, broadcastRiskScoreUpdate, broadcastViolationReview }
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { requireOwnedSession, requireOwnedViolation } = require('../middleware/examAccess');
+const { requireViolationAuth } = require('../middleware/sessionAuth');
+const { exactCaseInsensitiveRegex } = require('../utils/regex');
 const storageService = require('../services/storage');
 const { broadcastToExam } = require('../sockets/violationSocket');
 const multer = require('multer');
@@ -50,12 +52,11 @@ function stableJson(value) {
     return JSON.stringify(value);
 }
 
-// POST /violation — Machine-to-machine (Candidate App -> Server, intentionally open)
-router.post('/violation', (req, res, next) => {
-    if (req.headers.authorization) return require('../middleware/sessionAuth').requireSideCameraAuth(req, res, next);
-    next();
-}, (req, res, next) => req.sessionClaims ? sideRateLimit(req, res, next) : next(), (req, res, next) => {
-    (req.sessionClaims ? sideUpload : uploadFields)(req, res, err => {
+// POST /violation — Authenticated candidate (front_camera) or paired phone (side_camera) ingestion
+router.post('/violation', requireViolationAuth, (req, res, next) => (
+    req.sessionClaims.scope === 'secondary_camera' ? sideRateLimit(req, res, next) : next()
+), (req, res, next) => {
+    (req.sessionClaims.scope === 'secondary_camera' ? sideUpload : uploadFields)(req, res, err => {
         if (err) return res.status(400).json({ error: 'Invalid or oversized evidence upload' });
         next();
     });
@@ -66,12 +67,15 @@ router.post('/violation', (req, res, next) => {
         // A failed database write must stay in the candidate's durable retry queue.
         if (mongoose.connection.readyState !== 1) return res.status(503).json({ error: 'Database unavailable; retry later' });
         if (!mongoose.Types.ObjectId.isValid(req.body.sessionId)) return res.status(400).json({ error: 'Invalid sessionId' });
+        if (String(req.body.sessionId) !== req.sessionClaims.sessionId) {
+            return res.status(401).json({ error: 'Session credential does not match sessionId' });
+        }
         let session = await Session.findById(req.body.sessionId);
         if (!session) return res.status(404).json({ error: 'Exam session not found' });
         const source = req.body.source || 'front_camera';
         const { SIDE_TYPES: sideTypes, SIDE_UPLOAD_SEVERITY: sideUploadSeverity } = require('../services/secondaryCamera');
         if (!['front_camera', 'side_camera'].includes(source)) return res.status(400).json({ error: 'Invalid source' });
-        if (source === 'side_camera' || sideTypes.includes(req.body.type) || req.sessionClaims) {
+        if (source === 'side_camera' || sideTypes.includes(req.body.type) || req.sessionClaims.scope === 'secondary_camera') {
             if (req.sessionClaims?.scope !== 'secondary_camera' || req.sessionClaims.sessionId !== String(session._id) ||
                 source !== 'side_camera' || !Object.prototype.hasOwnProperty.call(sideUploadSeverity, req.body.type)) {
                 return res.status(401).json({ error: 'Side-camera credential and matching session required' });
@@ -226,8 +230,8 @@ router.get('/violations', requireAuth, async (req, res) => {
             const myExams = await Exam.find({ createdBy: currentTeacherId, ...(activeOnly ? { status: 'active' } : {}) }).select('examCode examId _id').lean();
             myCodes = [];
             myExams.forEach(e => {
-                if (e.examCode) myCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
-                if (e.examId) myCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+                if (e.examCode) myCodes.push(exactCaseInsensitiveRegex(e.examCode));
+                if (e.examId) myCodes.push(exactCaseInsensitiveRegex(e.examId));
                 if (e._id) myCodes.push(e._id.toString());
             });
 
@@ -317,8 +321,8 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
         const activeExams = await Exam.find(activeExamFilter).select('examCode examId _id').lean();
         const activeExamCodes = [];
         activeExams.forEach(e => {
-            if (e.examCode) activeExamCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
-            if (e.examId) activeExamCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+            if (e.examCode) activeExamCodes.push(exactCaseInsensitiveRegex(e.examCode));
+            if (e.examId) activeExamCodes.push(exactCaseInsensitiveRegex(e.examId));
         });
 
         // If no exams are active, return empty priority queue immediately
@@ -348,7 +352,7 @@ router.get('/violations/priority-queue', requireAuth, async (req, res) => {
             if (!matchesActive) {
                 return res.json([]);
             }
-            sessionFilter.examId = new RegExp('^' + requestedCode + '$', 'i');
+            sessionFilter.examId = exactCaseInsensitiveRegex(requestedCode);
         }
 
         // 1. Fetch relevant sessions (scoped to active exams and optional examId filter)

@@ -9,17 +9,26 @@
  */
 let displayCheckInterval = null;
 let devVoiceEnabled = false;
-const { app, BrowserWindow, dialog, ipcMain, screen, clipboard, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, screen, clipboard, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { randomUUID } = require('crypto');
+const { randomUUID, randomBytes } = require('crypto');
 const { StringDecoder } = require('string_decoder');
 const { spawn, execSync } = require('child_process');
 const { startReceiver, stopReceiver } = require('./ipc/violationForwarder');
-const { checkPythonHealth, setPythonPort, getPythonUrl, getLastPythonHealthError, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive } = require('./ipc/pythonBridge');
+const { checkPythonHealth, setPythonPort, getPythonUrl, getLastPythonHealthError, forwardViolationToServer, killApp, startBufferRetryLoop, stopBufferRetryLoop, setExamActive, getExamActive, setSessionToken, setLocalIpcSecret, getLocalIpcHeaders } = require('./ipc/pythonBridge');
+const { isAllowedRendererUrl, isAllowedPermission, shouldBlockShortcut, verifySessionEndedOnServer } = require('./ipc/windowSecurity');
 const violationBuffer = require('./ipc/violationBuffer');
 const { getPythonExecutable } = require('./ipc/pythonRuntime');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+const RENDERER_DIR = path.resolve(__dirname, '..', 'renderer');
+const isDevMode = () => (process.env.APP_MODE || '').trim().toLowerCase() === 'dev';
+const LOCAL_IPC_SECRET = randomBytes(32).toString('hex');
+setLocalIpcSecret(LOCAL_IPC_SECRET);
+let isAppQuitting = false;
+let pythonCrashRestarts = 0;
+const MAX_PYTHON_CRASH_RESTARTS = 2;
 
 // --- Added for development: Handle EPIPE / Broken pipe errors ---
 // This prevents the Electron app from crashing if the parent process (like Antigravity IDE)
@@ -75,15 +84,59 @@ async function createWindow() {
     ? path.join(__dirname, 'assets', 'icon.ico')
     : path.join(__dirname, 'assets', 'icon.png');
 
+  const devMode = isDevMode();
+  if (!devMode) {
+    Menu.setApplicationMenu(null);
+  }
+
   mainWindow = new BrowserWindow({
     title: 'IntegrityFlow',
     icon: iconPath,
     width: 1024,
     height: 768,
+    autoHideMenuBar: !devMode,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      devTools: devMode,
       preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  if (!devMode) {
+    mainWindow.setMenuBarVisibility(false);
+  }
+
+  // Block popup windows and navigations outside the local IntegrityFlow renderer pages
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (!isAllowedRendererUrl(navigationUrl, RENDERER_DIR)) {
+      console.warn('[Electron] Blocked unauthorized navigation to:', navigationUrl);
+      event.preventDefault();
+    }
+  });
+
+  // Block DevTools, Reload, Print, Save, and exam-exit shortcuts in production/exam builds
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (shouldBlockShortcut(input, { isDevMode: isDevMode(), examActive: getExamActive() })) {
+      event.preventDefault();
+    }
+  });
+
+  // Prevent closing the window mid-exam without submitting first
+  mainWindow.on('close', (event) => {
+    if (getExamActive() && !isDevMode() && !isAppQuitting) {
+      event.preventDefault();
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Exam In Progress',
+        message: 'You cannot close IntegrityFlow while an exam is active.',
+        detail: 'Please submit your exam first. Once submitted, you may safely close the application.',
+        buttons: ['Return to Exam']
+      }).catch(() => {});
     }
   });
 
@@ -150,6 +203,7 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     PYTHONUTF8: '1',
     PYTHON_IPC_PORT: '0',
     AI_INSTANCE_ID: instanceId,
+    INTEGRITYFLOW_IPC_SECRET: LOCAL_IPC_SECRET,
     ELECTRON_RECEIVER_PORT: String(receiverPort),
     AI_SPOOL_DIR: path.join(app.getPath('userData'), 'python-alerts'),
     EXAM_SESSION_ID: activeSessionInfo.sessionId,
@@ -203,12 +257,47 @@ function spawnPythonProcess(mode, isSelfCheck = false) {
     console.log(`[Python Log] ${msg}`);
   });
 
-  proc.on('exit', /* Function purpose: Handles the exit event and updates the associated screen or process state. */ (code, signal) => {
+  proc.on('exit', /* Function purpose: Handles unexpected Python sidecar exits by alerting the examiner and attempting bounded recovery. */ (code, signal) => {
     proc.hasExited = true;
     proc.exitCode = code;
     console.log(`[Electron] Python process exited with code ${code} and signal ${signal}`);
-    if (mainWindow && !mainWindow.isDestroyed() && !proc.killedIntentional) {
-      mainWindow.webContents.send('python-crashed', { code, signal, error: lastPythonStderr });
+    if (proc.killedIntentional) return;
+
+    const examRunning = getExamActive();
+    if (examRunning && activeSessionInfo.sessionId) {
+      forwardViolationToServer({
+        sessionId: activeSessionInfo.sessionId,
+        type: 'camera_issue',
+        severity: 4,
+        timestamp: new Date().toISOString(),
+        details: {
+          reason: `Proctoring AI sidecar exited unexpectedly during active exam (code=${code}, signal=${signal || 'none'}).`
+        }
+      }, true).catch(err => console.error('[Electron] Failed to report Python crash violation:', err));
+
+      if (pythonCrashRestarts < MAX_PYTHON_CRASH_RESTARTS) {
+        pythonCrashRestarts += 1;
+        console.warn(`[Electron] Attempting automatic Python sidecar recovery (${pythonCrashRestarts}/${MAX_PYTHON_CRASH_RESTARTS})...`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('python-crashed', { code, signal, restarting: true, attempt: pythonCrashRestarts });
+        }
+        setTimeout(async () => {
+          if (!getExamActive() || isAppQuitting) return;
+          const targetMode = isDevMode() ? 'dev' : 'exam';
+          pythonProcess = spawnPythonProcess(targetMode, false);
+          const ready = pythonProcess ? await waitForPythonReady(pythonProcess) : false;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('python-crashed', {
+              code, signal, recovered: ready, restarting: false, error: ready ? null : lastPythonStderr
+            });
+          }
+        }, 2000);
+        return;
+      }
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('python-crashed', { code, signal, restarting: false, recovered: false, error: lastPythonStderr });
     }
   });
 
@@ -236,17 +325,15 @@ if (!gotTheLock) {
     try {
       console.log('[Electron] app.whenReady entered');
 
-      // Grant media, camera, and microphone permissions explicitly for local file:// and renderer
-      session.defaultSession.setPermissionRequestHandler(/* Function purpose: Runs if as part of this callback’s processing. */ (webContents, permission, callback) => {
-        const allowed = ['media', 'camera', 'microphone', 'audioCapture', 'videoCapture', 'display-capture', 'notifications'];
-        if (allowed.includes(permission)) {
-          return callback(true);
-        }
-        return callback(true);
+      // Grant only explicitly whitelisted hardware/notification permissions to local renderer pages; deny everything else
+      session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const requestingUrl = webContents?.getURL?.() || '';
+        callback(isAllowedPermission(permission, requestingUrl, RENDERER_DIR));
       });
 
-      session.defaultSession.setPermissionCheckHandler(/* Function purpose: Returns the callback result or updates the state used by the enclosing operation. */ (webContents, permission) => {
-        return true;
+      session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+        const requestingUrl = webContents?.getURL?.() || '';
+        return isAllowedPermission(permission, requestingUrl, RENDERER_DIR);
       });
 
       cleanUpPythonProcess();
@@ -267,7 +354,7 @@ if (!gotTheLock) {
               });
             }
           }
-        });
+        }, LOCAL_IPC_SECRET);
       } catch (error) {
         console.error('[Electron] Failed to start receiver:', error);
         dialog.showErrorBox('Initialization Error', 'Failed to start local violation receiver. ' + error.message);
@@ -323,6 +410,7 @@ function cleanupDisplayMonitoring() {
 }
 
 app.on('before-quit', /* Function purpose: Handles the before-quit event and updates the associated screen or process state. */ () => {
+  isAppQuitting = true;
   console.log('[Electron] Cleaning up processes before quit...');
   setExamActive(false);
   stopBufferRetryLoop();
@@ -348,28 +436,43 @@ ipcMain.handle('get-buffer-status', /* Function purpose: Returns pending offline
   return violationBuffer.getBufferStatus();
 });
 
-// Listen for test violations from renderer
-ipcMain.on('test-violation', /* Function purpose: Forwards a development test event through the real violation pipeline. */ async (event, payload) => {
-  console.log('[Electron] Received test-violation from renderer:', payload);
-  if (!payload.screenshotPath && mainWindow && !mainWindow.isDestroyed()) {
+// Listen for test/pre-existing-file violations from renderer
+ipcMain.on('test-violation', /* Function purpose: Forwards authorized renderer alerts (dev test alerts or pre-existing file upload blocks). */ async (event, payload) => {
+  if (!payload || typeof payload !== 'object') return;
+  const isPreExistingFileBlock = payload.type === 'unauthorized_app' && payload.details?.action === 'file_closed_require_new';
+  if (!isDevMode() && !isPreExistingFileBlock) {
+    console.warn('[Electron] Ignored renderer test-violation outside dev mode:', payload.type);
+    return;
+  }
+  const safePayload = {
+    sessionId: activeSessionInfo.sessionId || payload.sessionId,
+    type: payload.type,
+    severity: payload.severity,
+    timestamp: payload.timestamp || new Date().toISOString(),
+    details: payload.details
+  };
+  if (mainWindow && !mainWindow.isDestroyed()) {
     try {
       const image = await mainWindow.webContents.capturePage();
       const screenshotsDir = path.join(__dirname, '..', 'ai-module', 'screenshots');
       if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir, { recursive: true });
-      const screenshotFile = path.join(screenshotsDir, `shot_${payload.sessionId || 'session'}_${Date.now()}.jpg`);
+      const screenshotFile = path.join(screenshotsDir, `shot_${safePayload.sessionId || 'session'}_${Date.now()}.jpg`);
       fs.writeFileSync(screenshotFile, image.toJPEG(80));
-      payload.screenshotPath = screenshotFile;
+      safePayload.screenshotPath = screenshotFile;
     } catch (e) {
       console.warn('[Electron] Could not capture renderer page screenshot:', e);
     }
   }
-  await forwardViolationToServer(payload);
+  await forwardViolationToServer(safePayload);
 });
 
 // Check apps via Python
 ipcMain.handle('check-apps', /* Function purpose: Asks Python which running applications violate the exam whitelist. */ async () => {
   try {
-    const response = await fetch(`${getPythonUrl()}/check-apps`, { signal: AbortSignal.timeout(12000) });
+    const response = await fetch(`${getPythonUrl()}/check-apps`, {
+      headers: getLocalIpcHeaders(),
+      signal: AbortSignal.timeout(12000)
+    });
     if (!response.ok) return { error: 'App check unavailable' };
     return await response.json();
   } catch (error) {
@@ -381,7 +484,10 @@ ipcMain.handle('check-apps', /* Function purpose: Asks Python which running appl
 // Check USB removable storage drives via Python
 ipcMain.handle('check-usb-drives', /* Function purpose: Asks Python for removable drives during the candidate self-check. */ async () => {
   try {
-    const response = await fetch(`${getPythonUrl()}/check-usb`, { signal: AbortSignal.timeout(15000) });
+    const response = await fetch(`${getPythonUrl()}/check-usb`, {
+      headers: getLocalIpcHeaders(),
+      signal: AbortSignal.timeout(15000)
+    });
     if (!response.ok) return { error: 'USB check unavailable' };
     return await response.json();
   } catch (error) {
@@ -440,7 +546,7 @@ ipcMain.handle('set-reference-voice', /* Function purpose: Sends the recorded en
   try {
     const response = await fetch(`${getPythonUrl()}/set-reference-voice`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getLocalIpcHeaders({ 'Content-Type': 'application/json' }),
       signal: AbortSignal.timeout(60000),
       body: JSON.stringify({
         audio_base64: typeof audioBase64 === "string" ? audioBase64 : audioBase64.audio,
@@ -460,7 +566,10 @@ ipcMain.handle('set-reference-voice', /* Function purpose: Sends the recorded en
 // Check Voice profile calibration status
 ipcMain.handle('check-voice', /* Function purpose: Checks whether voice enrollment and monitoring are ready. */ async () => {
   try {
-    const response = await fetch(`${getPythonUrl()}/check-voice`, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${getPythonUrl()}/check-voice`, {
+      headers: getLocalIpcHeaders(),
+      signal: AbortSignal.timeout(5000)
+    });
     if (!response.ok) return { calibrated: false };
     return await response.json();
   } catch (error) {
@@ -470,7 +579,7 @@ ipcMain.handle('check-voice', /* Function purpose: Checks whether voice enrollme
 
 ipcMain.handle('detect-face', /* Function purpose: Sends a self-check camera image to Python for face-position guidance. */ async (_event, image) => {
   const response = await fetch(`${getPythonUrl()}/detect-face`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: getLocalIpcHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ image }), signal: AbortSignal.timeout(3000)
   });
   if (!response.ok) throw new Error('Face alignment service unavailable.');
@@ -480,7 +589,10 @@ ipcMain.handle('detect-face', /* Function purpose: Sends a self-check camera ima
 ipcMain.handle('capture-identity-photo', /* Function purpose: Retrieves a recent camera frame without opening another webcam stream. */ async () => {
   if (!activeSessionInfo || activeSessionInfo.examType === 'physical_lab') return { success: false, error: 'Camera checks are unavailable for this session' };
   try {
-    const response = await fetch(`${getPythonUrl()}/identity-photo`, { signal: AbortSignal.timeout(3000) });
+    const response = await fetch(`${getPythonUrl()}/identity-photo`, {
+      headers: getLocalIpcHeaders(),
+      signal: AbortSignal.timeout(3000)
+    });
     if (!response.ok) throw new Error('Camera service unavailable');
     return await response.json();
   } catch (error) { return { success: false, error: error.message }; }
@@ -488,15 +600,32 @@ ipcMain.handle('capture-identity-photo', /* Function purpose: Retrieves a recent
 
 ipcMain.handle('monitoring-health', /* Function purpose: Retrieves the Python monitoring health for the candidate connection indicator. */ async () => {
   try {
-    const response = await fetch(`${getPythonUrl()}/health`, { signal: AbortSignal.timeout(3000) });
+    const response = await fetch(`${getPythonUrl()}/health`, {
+      headers: getLocalIpcHeaders(),
+      signal: AbortSignal.timeout(3000)
+    });
     return await response.json();
   } catch (err) { return { status: 'unavailable', errors: [err.message] }; }
 });
 
-ipcMain.handle('finish-exam', /* Function purpose: Marks monitoring inactive and shuts down the exam monitoring process. */ () => {
+ipcMain.handle('finish-exam', /* Function purpose: Verifies server-confirmed completion/termination before shutting down exam monitoring. */ async () => {
+  if (getExamActive() && !isDevMode()) {
+    const check = await verifySessionEndedOnServer({
+      serverUrl: activeSessionInfo.serverUrl,
+      sessionId: activeSessionInfo.sessionId,
+      sessionToken: activeSessionInfo.sessionToken
+    });
+    if (!check.allowed) {
+      console.warn('[Electron] Blocked unverified finish-exam request:', check.reason);
+      return { success: false, error: check.reason };
+    }
+  }
   setExamActive(false);
   cleanupDisplayMonitoring();
   cleanUpPythonProcess();
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()) {
+    mainWindow.setFullScreen(false);
+  }
   return { success: true };
 });
 
@@ -519,6 +648,7 @@ ipcMain.handle('login', /* Function purpose: Stores validated candidate entry da
 
     console.log(`[Electron] Candidate entering exam. Exam: ${examId}, Type: ${examType}, Allowed Apps:`, allowedApplications);
     setExamActive(false);
+    setSessionToken(null, null);
     activeSessionInfo.sessionId = null;
     activeSessionInfo.sessionToken = null;
     activeSessionInfo.consentGiven = false;
@@ -594,6 +724,7 @@ ipcMain.handle('proceed-to-self-check', /* Function purpose: Stores identity inf
   if (identityData) {
     activeSessionInfo.sessionId = identityData.sessionId;
     activeSessionInfo.sessionToken = identityData.sessionToken;
+    setSessionToken(identityData.sessionId, identityData.sessionToken);
     activeSessionInfo.requireSecondaryCamera = identityData.requireSecondaryCamera === true;
     activeSessionInfo.studentName = identityData.studentName;
     activeSessionInfo.rollNumber = identityData.rollNumber;
@@ -714,7 +845,15 @@ ipcMain.handle('start-exam-mode', /* Function purpose: Starts exam monitoring an
         }
         await mainWindow.loadFile(path.join(__dirname, '../renderer/examScreen.html'));
         // Officially activate live proctoring & violation capture now that examScreen is active
+        pythonCrashRestarts = 0;
         setExamActive(true);
+        if (!isDevMode() && mainWindow && !mainWindow.isDestroyed()) {
+          if ((activeSessionInfo.allowedApplications || []).length === 0) {
+            mainWindow.setFullScreen(true);
+          } else {
+            mainWindow.maximize();
+          }
+        }
       }
       return { success: true };
     } else {

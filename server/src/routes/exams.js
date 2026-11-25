@@ -10,6 +10,7 @@ const Submission = require('../models/Submission');
 const { calculateRiskScore } = require('../scoring/severityEngine');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { requireOwnedExam, findExamByIdentifier } = require('../middleware/examAccess');
+const { exactCaseInsensitiveRegex } = require('../utils/regex');
 const storageService = require('../services/storage');
 const { broadcastToExam } = require('../sockets/violationSocket');
 
@@ -205,7 +206,7 @@ router.get('/', requireAuth, async (req, res) => {
         // Enrich exams with active and total student counts and fallback title/code
         const enrichedExams = await Promise.all(exams.map(async (exam) => {
             const code = exam.examCode || exam.examId || 'EXAM';
-            const examRegex = new RegExp('^' + code + '$', 'i');
+            const examRegex = exactCaseInsensitiveRegex(code);
             const [activeStudents, totalStudents] = await Promise.all([
                 Session.countDocuments({ examId: examRegex, status: 'active' }),
                 Session.countDocuments({ examId: examRegex })
@@ -286,8 +287,8 @@ router.get('/:examId/summary', requireAuth, requireOwnedExam, async (req, res) =
         if (!exam) {
             exam = await Exam.findOne({ 
                 $or: [
-                    { examCode: new RegExp('^' + examIdentifier + '$', 'i') },
-                    { examId: new RegExp('^' + examIdentifier + '$', 'i') }
+                    { examCode: exactCaseInsensitiveRegex(examIdentifier) },
+                    { examId: exactCaseInsensitiveRegex(examIdentifier) }
                 ] 
             });
         }
@@ -299,7 +300,7 @@ router.get('/:examId/summary', requireAuth, requireOwnedExam, async (req, res) =
         const code = exam.examCode || exam.examId;
         const sessions = await Session.find({
             $or: [
-                { examId: new RegExp('^' + code + '$', 'i') },
+                { examId: exactCaseInsensitiveRegex(code) },
                 { examId: exam._id.toString() }
             ]
         }).sort({ startTime: -1 });
@@ -413,7 +414,7 @@ router.patch('/:examId/status', requireAuth, requireOwnedExam, async (req, res) 
             const code = exam.examCode || exam.examId;
             await Session.updateMany(
                 { 
-                    examId: new RegExp('^' + code + '$', 'i'), 
+                    examId: exactCaseInsensitiveRegex(code), 
                     status: 'active' 
                 },
                 { 
@@ -446,8 +447,8 @@ router.post('/:examId/extend-time', requireAuth, requireOwnedExam, async (req, r
         if (!exam) {
             exam = await Exam.findOne({
                 $or: [
-                    { examCode: new RegExp('^' + req.params.examId + '$', 'i') },
-                    { examId: new RegExp('^' + req.params.examId + '$', 'i') }
+                    { examCode: exactCaseInsensitiveRegex(req.params.examId) },
+                    { examId: exactCaseInsensitiveRegex(req.params.examId) }
                 ]
             });
         }
@@ -473,7 +474,7 @@ router.post('/:examId/extend-time', requireAuth, requireOwnedExam, async (req, r
         await Session.updateMany(
             {
                 $or: [
-                    { examId: new RegExp('^' + code + '$', 'i') },
+                    { examId: exactCaseInsensitiveRegex(code) },
                     { examId: exam._id.toString() }
                 ],
                 status: 'active'
@@ -537,8 +538,8 @@ router.post('/:examId/release-paper', requireAuth, requireOwnedExam, async (req,
         if (!exam) {
             exam = await Exam.findOne({
                 $or: [
-                    { examCode: new RegExp('^' + req.params.examId + '$', 'i') },
-                    { examId: new RegExp('^' + req.params.examId + '$', 'i') }
+                    { examCode: exactCaseInsensitiveRegex(req.params.examId) },
+                    { examId: exactCaseInsensitiveRegex(req.params.examId) }
                 ]
             });
         }
@@ -566,7 +567,7 @@ router.post('/:examId/release-paper', requireAuth, requireOwnedExam, async (req,
         await Session.updateMany(
             {
                 $or: [
-                    { examId: new RegExp('^' + code + '$', 'i') },
+                    { examId: exactCaseInsensitiveRegex(code) },
                     { examId: exam._id.toString() }
                 ],
                 status: 'active'

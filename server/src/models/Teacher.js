@@ -15,7 +15,22 @@ const teacherSchema = new mongoose.Schema({
     },
     passwordHash: {
         type: String,
-        required: true
+        default: null
+    },
+    googleId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        default: undefined
+    },
+    authProviders: {
+        type: [String],
+        enum: ['local', 'google'],
+        default: ['local']
+    },
+    avatarUrl: {
+        type: String,
+        default: null
     },
     role: {
         type: String,
@@ -36,6 +51,14 @@ const teacherSchema = new mongoose.Schema({
         default: 0
     },
     lockedUntil: {
+        type: Date,
+        default: null
+    },
+    passwordResetTokenHash: {
+        type: String,
+        default: null
+    },
+    passwordResetExpiresAt: {
         type: Date,
         default: null
     },

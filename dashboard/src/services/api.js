@@ -1,11 +1,18 @@
 import axios from 'axios';
-import { getInMemoryToken, setInMemoryToken } from '../context/AuthContext';
+import {
+    getInMemoryToken,
+    getInMemoryMediaToken,
+    refreshAccessTokenSingleFlight
+} from '../context/AuthContext';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 export const assetUrl = (url) => {
     if (!url || !url.includes('/uploads/')) return url;
     const address = new URL(url, baseURL);
-    address.searchParams.set('token', getInMemoryToken() || '');
+    const mediaToken = getInMemoryMediaToken();
+    if (mediaToken) {
+        address.searchParams.set('token', mediaToken);
+    }
     return address.toString();
 };
 
@@ -24,29 +31,17 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Response interceptor to handle token refresh on 401
+// Response interceptor sharing the single-flight 401 refresh lock with AuthContext
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
         const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
             originalRequest._retry = true;
-            try {
-                const refreshRes = await axios.post(
-                    `${baseURL}/auth/refresh`,
-                    {},
-                    { withCredentials: true }
-                );
-                
-                if (refreshRes.data?.accessToken) {
-                    const newToken = refreshRes.data.accessToken;
-                    setInMemoryToken(newToken);
-                    originalRequest.headers.Authorization = `Bearer ${newToken}`;
-                    return api(originalRequest);
-                }
-            } catch (refreshErr) {
-                // Refresh token invalid or expired — clear in-memory auth state
-                setInMemoryToken(null);
+            const refreshed = await refreshAccessTokenSingleFlight();
+            if (refreshed?.accessToken) {
+                originalRequest.headers.Authorization = `Bearer ${refreshed.accessToken}`;
+                return api(originalRequest);
             }
         }
         return Promise.reject(error);

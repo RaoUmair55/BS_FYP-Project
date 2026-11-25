@@ -11,6 +11,8 @@ const { randomUUID } = require('node:crypto');
 const { createPhotoSchedule, nextPhotoRequest } = require('../utils/cameraPhotos');
 const { requireAuth } = require('../middleware/authMiddleware');
 const { requireOwnedSession } = require('../middleware/examAccess');
+const { requireSessionAuth, requireSessionOrOwnedTeacher, signSessionToken } = require('../middleware/sessionAuth');
+const { exactCaseInsensitiveRegex } = require('../utils/regex');
 const storageService = require('../services/storage');
 const { broadcastToExam } = require('../sockets/violationSocket');
 
@@ -33,8 +35,8 @@ router.get('/active', requireAuth, async (req, res) => {
         const activeExams = await Exam.find(activeExamFilter).select('examCode examId _id').lean();
         const activeExamCodes = [];
         activeExams.forEach(e => {
-            if (e.examCode) activeExamCodes.push(new RegExp('^' + e.examCode + '$', 'i'));
-            if (e.examId) activeExamCodes.push(new RegExp('^' + e.examId + '$', 'i'));
+            if (e.examCode) activeExamCodes.push(exactCaseInsensitiveRegex(e.examCode));
+            if (e.examId) activeExamCodes.push(exactCaseInsensitiveRegex(e.examId));
         });
 
         // If no exams are active, return empty candidate roster immediately
@@ -64,7 +66,7 @@ router.get('/active', requireAuth, async (req, res) => {
             if (!matchesActive) {
                 return res.json([]);
             }
-            sessionFilter.examId = new RegExp('^' + requestedCode + '$', 'i');
+            sessionFilter.examId = exactCaseInsensitiveRegex(requestedCode);
         }
 
         const candidateSessions = await Session.find(sessionFilter).sort({ startTime: -1 });
@@ -170,14 +172,12 @@ router.post('/', async (req, res) => {
             consentGiven: consentGiven === true || consentGiven === 'true',
             consentTimestamp: consentTimestamp ? new Date(consentTimestamp) : (consentGiven ? new Date() : null)
         });
-        if (exam.requireSecondaryCamera && (!process.env.SESSION_TOKEN_SECRET || process.env.SESSION_TOKEN_SECRET.length < 32)) {
-            return res.status(503).json({ error: 'Side-camera session authentication is not configured' });
+        if (!process.env.SESSION_TOKEN_SECRET || process.env.SESSION_TOKEN_SECRET.length < 32) {
+            return res.status(503).json({ error: 'Candidate session authentication is not configured on the server' });
         }
         const savedSession = await newSession.save();
         const result = savedSession.toObject();
-        if (process.env.SESSION_TOKEN_SECRET && process.env.SESSION_TOKEN_SECRET.length >= 32) {
-            result.sessionToken = require('../middleware/sessionAuth').signSessionToken(savedSession._id);
-        }
+        result.sessionToken = signSessionToken(savedSession._id);
         result.requireSecondaryCamera = exam.requireSecondaryCamera === true;
         res.status(201).json(result);
     } catch (err) {
@@ -186,8 +186,8 @@ router.post('/', async (req, res) => {
     }
 });
 
-// POST /sessions/:sessionId/camera-verification — Upload initial camera verification photo
-router.post('/:sessionId/camera-verification', async (req, res) => {
+// POST /sessions/:sessionId/camera-verification — Upload initial/re-verify camera photo (Candidate-facing, session JWT required)
+router.post('/:sessionId/camera-verification', requireSessionAuth, async (req, res) => {
     try {
         const { photoBase64, requestId } = req.body;
         if (requestId != null && (typeof requestId !== 'string' || requestId.length > 100)) return res.status(400).json({ error: 'Invalid photo request ID' });
@@ -381,8 +381,8 @@ router.patch('/:sessionId/camera-verification', requireAuth, requireOwnedSession
     }
 });
 
-// GET /sessions/:sessionId/status — Candidate app status & warnings check
-router.get('/:sessionId/status', async (req, res) => {
+// GET /sessions/:sessionId/status — Candidate app & owning examiner status check
+router.get('/:sessionId/status', requireSessionOrOwnedTeacher({ allowInactive: true }), async (req, res) => {
     try {
         const session = await Session.findById(req.params.sessionId);
         if (!session) {
